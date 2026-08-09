@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="timer_rest_title">Rest timer</string>
+    <string name="timer_preset_seconds">%1$d s</string>
+    <string name="timer_pause">Pause</string>
+    <string name="timer_resume">Resume</string>
+    <string name="timer_cancel">Cancel</string>
+    <string name="timer_ok">OK</string>
+    <string name="timer_state_idle">Timer ready</string>
+    <string name="timer_state_preparing">Timer starting</string>
+    <string name="timer_state_running">Timer running</string>
+    <string name="timer_state_paused">Timer paused</string>
+    <string name="timer_state_completed">Time is up</string>
+    <string name="timer_state_cancelled">Timer stopped</string>
+</resources>

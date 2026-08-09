@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DropSync Brand-Icon — Outline, 2px Stroke, 24x24dp-Grid.
+     Farbe wird zur Laufzeit per Icon(tint = ...) gesetzt: Schwarz (BrandBlack)
+     im Standardzustand, Lime (BrandLime) im aktiven Zustand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4.50,15.00 L6.50,15.00 Q7.00,15.00 7.00,15.50 L7.00,18.50 Q7.00,19.00 6.50,19.00 L4.50,19.00 Q4.00,19.00 4.00,18.50 L4.00,15.50 Q4.00,15.00 4.50,15.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M9.50,12.00 L11.50,12.00 Q12.00,12.00 12.00,12.50 L12.00,18.50 Q12.00,19.00 11.50,19.00 L9.50,19.00 Q9.00,19.00 9.00,18.50 L9.00,12.50 Q9.00,12.00 9.50,12.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M14.50,9.00 L16.50,9.00 Q17.00,9.00 17.00,9.50 L17.00,18.50 Q17.00,19.00 16.50,19.00 L14.50,19.00 Q14.00,19.00 14.00,18.50 L14.00,9.50 Q14.00,9.00 14.50,9.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M14.50,7.50 A1.00,1.00 0 1,1 16.50,7.50 A1.00,1.00 0 1,1 14.50,7.50 Z"
+        android:fillColor="#FF0D0D0D" />
+</vector>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Browse-Baum-Kategorien fuer externe Controller (Android Auto/BT, Plan Phase 6). -->
+    <string name="browse_root_title">DropSync</string>
+    <string name="browse_songs">Songs</string>
+    <string name="browse_albums">Albums</string>
+    <string name="browse_artists">Artists</string>
+    <string name="browse_folders">Folders</string>
+</resources>

@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DropSync Brand-Icon — Outline, 2px Stroke, 24x24dp-Grid.
+     Farbe wird zur Laufzeit per Icon(tint = ...) gesetzt: Schwarz (BrandBlack)
+     im Standardzustand, Lime (BrandLime) im aktiven Zustand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M11.00,7.00 L13.00,7.00 Q16.00,7.00 16.00,10.00 L16.00,14.00 Q16.00,17.00 13.00,17.00 L11.00,17.00 Q8.00,17.00 8.00,14.00 L8.00,10.00 Q8.00,7.00 11.00,7.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M5.50,8.00 A1.50,1.50 0 1,1 8.50,8.00 A1.50,1.50 0 1,1 5.50,8.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M15.50,8.00 A1.50,1.50 0 1,1 18.50,8.00 A1.50,1.50 0 1,1 15.50,8.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

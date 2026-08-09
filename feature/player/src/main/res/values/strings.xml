@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_play">Play</string>
+    <string name="player_pause">Pause</string>
+    <string name="player_next">Next song</string>
+    <string name="player_previous">Previous song</string>
+    <string name="now_playing_title">Now playing</string>
+    <string name="now_playing_back">Back</string>
+    <string name="now_playing_more">More options</string>
+    <string name="now_playing_add_marker">Set marker here</string>
+    <string name="now_playing_empty">Nothing is playing right now.</string>
+    <string name="now_playing_cover">Album cover</string>
+    <string name="now_playing_waveform">Waveform: tap to jump, drag to preview</string>
+    <string name="now_playing_waveform_loading">Waveform is being analyzed</string>
+    <string name="now_playing_marker_add_title">Set marker</string>
+    <string name="now_playing_marker_add_position">Position: %1$s</string>
+    <string name="now_playing_marker_label">Label (optional)</string>
+    <string name="now_playing_marker_default_label">Drop</string>
+    <string name="now_playing_marker_add_confirm">Set marker</string>
+    <string name="now_playing_marker_delete_title">Delete marker?</string>
+    <string name="now_playing_marker_delete_message">\"%1$s\" at %2$s will be removed.</string>
+    <string name="now_playing_marker_delete_confirm">Delete</string>
+    <string name="now_playing_marker_cancel">Cancel</string>
+    <string name="player_queue_open">Open queue</string>
+    <string name="player_queue_title">Queue</string>
+    <string name="player_queue_empty">The queue is empty.</string>
+    <string name="player_queue_move_up">Move up</string>
+    <string name="player_queue_move_down">Move down</string>
+    <string name="player_queue_remove">Remove from queue</string>
+    <string name="player_queue_now_playing">Now playing</string>
+    <string name="drop_rest_title">Rest until the next drop</string>
+    <string name="drop_rest_effective_duration">Next drop in %1$d s. The duration always matches the marker and cannot be edited.</string>
+    <string name="drop_rest_start">Start drop rest</string>
+    <string name="drop_rest_running">%1$d s until the drop</string>
+    <string name="drop_rest_completed">Drop reached – go!</string>
+    <string name="drop_rest_cancelled">Drop rest stopped</string>
+    <string name="drop_rest_interrupted">Playback changed – drop rest ended. Your workout set is unchanged.</string>
+    <string name="drop_rest_cancel">Cancel</string>
+    <string name="drop_rest_ok">OK</string>
+    <string name="drop_rest_blocked_no_song">No song is playing.</string>
+    <string name="drop_rest_blocked_not_playing">Playback is paused.</string>
+    <string name="drop_rest_blocked_no_marker">The current song has no upcoming drop marker.</string>
+    <string name="drop_rest_blocked_too_close">The next drop is less than 5 seconds away.</string>
+</resources>

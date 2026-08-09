@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- DropSync Brand-Icon — Outline, 2px Stroke, 24x24dp-Grid.
+     Farbe wird zur Laufzeit per Icon(tint = ...) gesetzt: Schwarz (BrandBlack)
+     im Standardzustand, Lime (BrandLime) im aktiven Zustand. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M4.50,10.00 L5.50,10.00 Q6.00,10.00 6.00,10.50 L6.00,18.50 Q6.00,19.00 5.50,19.00 L4.50,19.00 Q4.00,19.00 4.00,18.50 L4.00,10.50 Q4.00,10.00 4.50,10.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M8.50,6.00 L9.50,6.00 Q10.00,6.00 10.00,6.50 L10.00,18.50 Q10.00,19.00 9.50,19.00 L8.50,19.00 Q8.00,19.00 8.00,18.50 L8.00,6.50 Q8.00,6.00 8.50,6.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M12.50,13.00 L13.50,13.00 Q14.00,13.00 14.00,13.50 L14.00,18.50 Q14.00,19.00 13.50,19.00 L12.50,19.00 Q12.00,19.00 12.00,18.50 L12.00,13.50 Q12.00,13.00 12.50,13.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M16.50,8.00 L17.50,8.00 Q18.00,8.00 18.00,8.50 L18.00,18.50 Q18.00,19.00 17.50,19.00 L16.50,19.00 Q16.00,19.00 16.00,18.50 L16.00,8.50 Q16.00,8.00 16.50,8.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M20.50,11.00 L21.50,11.00 Q22.00,11.00 22.00,11.50 L22.00,18.50 Q22.00,19.00 21.50,19.00 L20.50,19.00 Q20.00,19.00 20.00,18.50 L20.00,11.50 Q20.00,11.00 20.50,11.00 Z"
+        android:fillColor="#00000000"
+        android:strokeColor="#FF0D0D0D"
+        android:strokeWidth="1.7"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>

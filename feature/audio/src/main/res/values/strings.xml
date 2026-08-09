@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="audio_title">Audio &amp; DSP</string>
+    <string name="audio_back">Back</string>
+    <string name="audio_yes">Yes</string>
+    <string name="audio_no">No</string>
+    <string name="audio_auto">Auto</string>
+
+    <!-- Audio information panel (Phase 1) -->
+    <string name="audio_info_title">Audio information</string>
+    <string name="audio_info_idle">Nothing is playing right now.</string>
+    <string name="audio_info_codec">Codec</string>
+    <string name="audio_info_source">Source</string>
+    <string name="audio_info_bitrate">Bitrate</string>
+    <string name="audio_info_output">Output</string>
+    <string name="audio_info_float">Float output</string>
+    <string name="audio_info_dsp">DSP chain</string>
+    <string name="audio_info_dsp_active">Active</string>
+    <string name="audio_info_dsp_bypass">Bypassed</string>
+    <string name="audio_info_device">Output device</string>
+
+    <!-- Master / preamp -->
+    <string name="audio_master_title">Master</string>
+    <string name="audio_master_enable">DSP chain enabled</string>
+    <string name="audio_master_enable_desc">Off bypasses every stage (also used for Bit-Perfect).</string>
+    <string name="audio_preamp">Preamp</string>
+    <string name="audio_limiter">Soft limiter (clipping protection)</string>
+
+    <!-- Tone -->
+    <string name="audio_tone_title">Bass &amp; treble</string>
+    <string name="audio_bass">Bass (100 Hz shelf)</string>
+    <string name="audio_treble">Treble (8 kHz shelf)</string>
+
+    <!-- Equalizer -->
+    <string name="audio_eq_title">Equalizer</string>
+    <string name="audio_eq_enable">Equalizer enabled</string>
+    <string name="audio_eq_mode_graphic">Graphic</string>
+    <string name="audio_eq_mode_parametric">Parametric</string>
+    <string name="audio_eq_bands_count">%1$d bands</string>
+    <string name="audio_eq_presets">Presets</string>
+    <string name="audio_eq_preset_delete">Delete preset</string>
+    <string name="audio_eq_preset_name">Preset name</string>
+    <string name="audio_eq_preset_save">Save</string>
+
+    <!-- Stereo -->
+    <string name="audio_stereo_title">Stereo width</string>
+    <string name="audio_stereo_width">Width (100 % = neutral)</string>
+
+    <!-- Reverb -->
+    <string name="audio_reverb_title">Reverb</string>
+    <string name="audio_reverb_enable">Reverb enabled</string>
+    <string name="audio_reverb_room">Room size</string>
+    <string name="audio_reverb_damping">Damping</string>
+    <string name="audio_reverb_wet">Wet</string>
+
+    <!-- Resampler -->
+    <string name="audio_resampler_title">Resampler</string>
+    <string name="audio_resampler_quality">Quality</string>
+    <string name="audio_resampler_rate">Target sample rate</string>
+    <string name="audio_resampler_linear">Linear</string>
+    <string name="audio_resampler_sinc">High (Sinc)</string>
+    <string name="audio_resampler_battery_hint">High sample rates with the Sinc resampler noticeably increase CPU load and battery drain.</string>
+
+    <!-- Dither -->
+    <string name="audio_dither_title">Dithering</string>
+    <string name="audio_dither_desc">Only applies when the system reduces to 16-bit output.</string>
+    <string name="audio_dither_off">Off</string>
+    <string name="audio_dither_tpdf">TPDF</string>
+    <string name="audio_dither_shaped">Shaped</string>
+
+    <!-- DVC -->
+    <string name="audio_dvc_title">Digital volume (DVC)</string>
+    <string name="audio_dvc_enable">Use lossless digital volume</string>
+    <string name="audio_dvc_desc">Applies a 64-bit gain before dithering; system volume stays the default.</string>
+    <string name="audio_dvc_volume">Volume</string>
+
+    <!-- Crossfade -->
+    <string name="audio_crossfade_title">Crossfade</string>
+    <string name="audio_crossfade_seconds">Duration</string>
+    <string name="audio_crossfade_desc">0 = off. Never applied for gapless albums or in Bit-Perfect mode.</string>
+
+    <!-- MusicFX / system effects -->
+    <string name="audio_musicfx_title">System effects (MusicFX)</string>
+    <string name="audio_musicfx_enable">Use system effects</string>
+    <string name="audio_musicfx_desc">Mutes the internal DSP chain to avoid a double equalizer.</string>
+
+    <!-- Bit-Perfect -->
+    <string name="audio_bitperfect_title">Bit-Perfect</string>
+    <string name="audio_bitperfect_enable">Bit-Perfect output</string>
+    <string name="audio_bitperfect_desc">USB DAC on Android 14+ only. Bypasses the DSP chain and float output; impossible over Bluetooth.</string>
+    <string name="audio_bitperfect_device">Device: %1$s</string>
+    <string name="audio_bitperfect_rates">Sample rates: %1$s</string>
+    <string name="audio_bitperfect_encodings">Encodings: %1$s</string>
+    <string name="audio_bitperfect_unavailable">No Bit-Perfect capable USB DAC connected (requires Android 14+).</string>
+
+    <!-- Output profile -->
+    <string name="audio_profile_title">Output profile</string>
+    <string name="audio_profile_active">Active profile: %1$s</string>
+    <string name="audio_profile_none">No device profile active yet.</string>
+    <string name="audio_profile_bt_hint">DropSync always sends full-resolution PCM to the output. The system chooses the Bluetooth codec (LDAC/aptX-HD).</string>
+    <string name="audio_profile_open_settings">Open system sound settings</string>
+</resources>

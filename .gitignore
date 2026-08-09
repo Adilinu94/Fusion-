@@ -1,0 +1,25 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Local configuration (SDK-Pfad ist maschinenspezifisch)
+local.properties
+
+# IDE
+.idea/
+*.iml
+.aicoding-chat-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Keystores duerfen nie eingecheckt werden
+*.jks
+*.keystore
+
+# Logs / Reports ausserhalb von versionierten Schemas
+captures/
+.externalNativeBuild/
+.cxx/

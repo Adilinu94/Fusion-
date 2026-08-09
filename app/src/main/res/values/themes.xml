@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Systemtheme; das eigentliche Material-3-Theme kommt aus Compose
+         (:core:designsystem, DropSyncTheme). -->
+    <style name="Theme.DropSync" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

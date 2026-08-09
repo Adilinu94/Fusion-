@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="player_play">Wiedergeben</string>
+    <string name="player_pause">Pausieren</string>
+    <string name="player_next">Naechster Song</string>
+    <string name="player_previous">Vorheriger Song</string>
+    <string name="now_playing_title">Laeuft gerade</string>
+    <string name="now_playing_back">Zurueck</string>
+    <string name="now_playing_more">Weitere Optionen</string>
+    <string name="now_playing_add_marker">Marker hier setzen</string>
+    <string name="now_playing_empty">Gerade laeuft nichts.</string>
+    <string name="now_playing_cover">Albumcover</string>
+    <string name="now_playing_waveform">Wellenform: Tippen springt, Ziehen zeigt Vorschau</string>
+    <string name="now_playing_waveform_loading">Wellenform wird analysiert</string>
+    <string name="now_playing_marker_add_title">Marker setzen</string>
+    <string name="now_playing_marker_add_position">Position: %1$s</string>
+    <string name="now_playing_marker_label">Label (optional)</string>
+    <string name="now_playing_marker_default_label">Drop</string>
+    <string name="now_playing_marker_add_confirm">Marker setzen</string>
+    <string name="now_playing_marker_delete_title">Marker loeschen?</string>
+    <string name="now_playing_marker_delete_message">\"%1$s\" bei %2$s wird entfernt.</string>
+    <string name="now_playing_marker_delete_confirm">Loeschen</string>
+    <string name="now_playing_marker_cancel">Abbrechen</string>
+    <string name="player_queue_open">Warteschlange oeffnen</string>
+    <string name="player_queue_title">Warteschlange</string>
+    <string name="player_queue_empty">Die Warteschlange ist leer.</string>
+    <string name="player_queue_move_up">Nach oben</string>
+    <string name="player_queue_move_down">Nach unten</string>
+    <string name="player_queue_remove">Aus Warteschlange entfernen</string>
+    <string name="player_queue_now_playing">Laeuft gerade</string>
+    <string name="drop_rest_title">Rest bis zum naechsten Drop</string>
+    <string name="drop_rest_effective_duration">Naechster Drop in %1$d s. Die Dauer folgt immer dem Marker und ist nicht editierbar.</string>
+    <string name="drop_rest_start">Drop-Rest starten</string>
+    <string name="drop_rest_running">%1$d s bis zum Drop</string>
+    <string name="drop_rest_completed">Drop erreicht – los!</string>
+    <string name="drop_rest_cancelled">Drop-Rest gestoppt</string>
+    <string name="drop_rest_interrupted">Wiedergabe geaendert – Drop-Rest beendet. Dein Trainingssatz bleibt unveraendert.</string>
+    <string name="drop_rest_cancel">Abbrechen</string>
+    <string name="drop_rest_ok">OK</string>
+    <string name="drop_rest_blocked_no_song">Es laeuft kein Song.</string>
+    <string name="drop_rest_blocked_not_playing">Die Wiedergabe ist pausiert.</string>
+    <string name="drop_rest_blocked_no_marker">Der aktuelle Song hat keinen kommenden Drop-Marker.</string>
+    <string name="drop_rest_blocked_too_close">Der naechste Drop ist weniger als 5 Sekunden entfernt.</string>
+</resources>

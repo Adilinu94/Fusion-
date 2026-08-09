@@ -1,0 +1,65 @@
+name: CI
+
+# Setzt die Phase-0-Vorgabe aus docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md
+# um: "CI: ./gradlew test + spotlessCheck + assembleDebug muss gruen." Reihenfolge
+# der Gates entspricht der Build-Sektion im README.
+
+on:
+  push:
+    branches: [main, "fusion/**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test, Spotless, Assemble
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gradlew ausfuehrbar machen
+        run: chmod +x ./gradlew
+
+      - name: Gradle einrichten (Cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Benoetigte Android-SDK-Pakete sicherstellen
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -r | head -n1)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+
+      # Reihenfolge bewusst wie im README (Build-Abschnitt): test, dann
+      # spotlessCheck, dann assembleDebug. Bricht beim ersten roten Gate ab.
+      - name: Unit-Tests (./gradlew test)
+        run: ./gradlew test --stacktrace
+
+      - name: Formatierung/Lint (./gradlew spotlessCheck)
+        run: ./gradlew spotlessCheck --stacktrace
+
+      - name: Debug-Build (./gradlew assembleDebug)
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Testberichte hochladen (bei Fehlschlag)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: "**/build/reports/tests/"
+          retention-days: 7

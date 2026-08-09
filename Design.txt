@@ -1,0 +1,635 @@
+
+
+> Referenzstil: Premium Fitness Tech trifft Editorial Minimalism. Apple Human Interface Design, WHOOP, Nike Training Club und moderne SaaS-Produkte verschmelzen mit einer starken Sportmarken-Ästhetik. Die gesamte visuelle Identität basiert auf maximalem Kontrast, aggressiver Klarheit und einer einzigen dominanten Signalfarbe.
+
+---
+
+# Brand Personality
+
+
+* Energetisch
+* Motivierend
+* Premium
+* Sportlich
+* Zugänglich
+* Technologisch
+* Vertrauenswürdig
+* Fortschrittsorientiert
+* Clean
+* Selbstbewusst
+
+Die Designsprache kommuniziert Leistung statt Luxus. Es geht nicht um High-End-Fashion-Fitness, sondern um sichtbare Ergebnisse, Aktivität und Momentum.
+
+---
+
+# Core Visual Philosophy
+
+Das gesamte System folgt drei Regeln:
+
+### 1. Schwarz erzeugt Fokus.
+
+Fast alle Elemente existieren auf neutralen hellen Flächen oder tiefen schwarzen Flächen.
+
+### 2. Lime erzeugt Energie.
+
+Die Akzentfarbe zieht Aufmerksamkeit ausschließlich auf wichtige Aktionen.
+
+### 3. Weiß erzeugt Ruhe.
+
+Große Weißräume verhindern visuelle Überladung.
+
+Dadurch entsteht ein extrem modernes Interface mit hoher Lesbarkeit und starker Markenwiedererkennung.
+
+---
+
+# Color System
+
+## Primary Black
+
+```css
+#0D0D0D
+```
+
+Verwendung:
+
+* Primäre Buttons
+* Navigation
+* Dark Sections
+* Headlines auf hellem Hintergrund
+* Icons
+* Footer
+* Hero Overlays
+
+---
+
+## Pure White
+
+```css
+#FFFFFF
+```
+
+Verwendung:
+
+* Hauptflächen
+* Cards
+* UI Backgrounds
+* Negative Space
+* Große Contentbereiche
+
+---
+
+## Signature Lime
+
+```css
+#DFFF2F
+```
+
+Ungefährer Bereich:
+
+```css
+#D7FF34
+#DBFF2E
+#E0FF36
+```
+
+Verwendung:
+
+* Primary CTA
+* Stat Highlights
+* Active States
+* Progress Indicators
+* Tags
+* Highlights
+* Icons
+* Charts
+* Hover States
+* QR Codes
+* Feature Highlights
+
+Die Farbe wird sehr kontrolliert eingesetzt.
+
+Lime besitzt fast immer Priorität 1.
+
+---
+
+## Soft Gray
+
+```css
+#F5F5F5
+```
+
+Verwendung:
+
+* Secondary Backgrounds
+* Cards
+* Light Containers
+
+---
+
+## Border Gray
+
+```css
+#EAEAEA
+```
+
+Verwendung:
+
+* Hairline Borders
+* Dividers
+* Input Outlines
+
+---
+
+## Neutral Text Gray
+
+```css
+#6B6B6B
+```
+
+Verwendung:
+
+* Secondary Text
+* Descriptions
+* Labels
+* Metadata
+
+---
+
+# Color Ratios
+
+| Farbe   | Anteil |
+| ------- | ------ |
+| Weiß    | 60%    |
+| Schwarz | 25%    |
+| Lime    | 10%    |
+| Grau    | 5%     |
+
+Die Marke lebt vom Kontrast zwischen Weiß und Lime.
+
+---
+
+# Typography
+
+## Headline Font
+
+# Raleway
+
+Einsatz:
+
+* Headlines
+* Hero Statements
+* Große Zahlen
+* Display Texte
+* Marketing Copy
+
+Eigenschaften:
+
+* Elegant
+* Modern
+* Leicht geometrisch
+* Sportlich
+* Premium
+* Hohe Lesbarkeit
+
+Gewichte:
+
+```text
+Regular 400
+Medium 500
+SemiBold 600
+Bold 700
+ExtraBold 800
+```
+
+Die Designs verwenden hauptsächlich:
+
+```text
+600
+700
+800
+```
+
+---
+
+## Body Font
+
+Ebenfalls Raleway.
+
+Das komplette System verwendet nahezu ausschließlich eine einzige Schriftfamilie.
+
+Dadurch entsteht maximale Konsistenz.
+
+---
+
+# Typography Scale
+
+## Hero
+
+72px bis 96px
+
+Line Height:
+
+95%
+
+Tracking:
+
+-2%
+
+---
+
+## H1
+
+56px
+
+---
+
+## H2
+
+40px
+
+---
+
+## H3
+
+32px
+
+---
+
+## H4
+
+24px
+
+---
+
+## Body Large
+
+18px
+
+---
+
+## Body
+
+16px
+
+---
+
+## Caption
+
+14px
+
+---
+
+## Small Label
+
+12px
+
+---
+
+# Font Characteristics
+
+Große Headlines besitzen:
+
+* Sehr enge Zeilenhöhe
+* Kaum Tracking
+* Starke Gewichtung
+* Hohen Kontrast
+
+Body Texte besitzen:
+
+* Deutlich mehr Zeilenhöhe
+* Luftige Abstände
+* Niedriges Gewicht
+
+---
+
+# Layout System
+
+## Grid
+
+12 Spalten Desktop.
+
+Großzügige Außenabstände.
+
+Max Width:
+
+```css
+1440px
+```
+
+Content Width:
+
+```css
+1280px
+```
+
+---
+
+## Section Padding
+
+Desktop:
+
+```css
+120px
+```
+
+Tablet:
+
+```css
+90px
+```
+
+Mobile:
+
+```css
+64px
+```
+
+---
+
+# Spacing System
+
+```text
+4
+8
+12
+16
+24
+32
+48
+64
+80
+96
+120
+```
+
+Fast alle Abstände basieren auf diesem Raster.
+
+---
+
+# Border Radius
+
+## Buttons
+
+```css
+999px
+```
+
+Pill Shape.
+
+---
+
+## Cards
+
+```css
+24px
+```
+
+---
+
+## Large Images
+
+```css
+32px
+```
+
+---
+
+## Floating Components
+
+```css
+40px
+```
+
+---
+
+# Shadow System
+
+Sehr subtil.
+
+```css
+0 10px 30px rgba(0,0,0,0.08)
+```
+
+oder
+
+```css
+0 20px 60px rgba(0,0,0,0.12)
+```
+
+Nie starke Schatten.
+
+Die Oberfläche bleibt clean.
+
+---
+
+# Buttons
+
+## Primary
+
+Lime Hintergrund.
+
+Schwarzer Text.
+
+Großer Radius.
+
+Hohe Höhe.
+
+```css
+height:56px;
+border-radius:999px;
+font-weight:700;
+```
+
+---
+
+## Secondary
+
+Schwarzer Hintergrund.
+
+Weißer Text.
+
+---
+
+## Ghost
+
+Weiße Fläche.
+
+Schwarzer Border.
+
+---
+
+# Card Design
+
+Alle Cards folgen:
+
+```css
+background:#FFFFFF;
+border:1px solid #ECECEC;
+border-radius:24px;
+padding:24px;
+```
+
+Optional:
+
+```css
+box-shadow:
+0 10px 30px rgba(0,0,0,.05);
+```
+
+---
+
+# Device Mockups
+
+Die Mockups verwenden:
+
+* Perspektivische Winkel
+* Freigestellte Smartphones
+* Weiche Schatten
+* Schwarze Geräte
+* Helle Hintergründe
+* Lime Highlights
+
+Dadurch wirken die Screens hochwertiger.
+
+---
+
+# Photography Direction
+
+Bilder:
+
+* Echte Menschen
+* Starke Athletik
+* Hohe Energie
+* Bewegung
+* Lächeln
+* Positive Emotionen
+* Natürliches Licht
+
+Keine:
+
+* Bodybuilder
+* Extreme Muskeln
+* Dunklen Studios
+* Aggressiven Posen
+
+Bloomfit verkauft Motivation.
+
+Nicht Hardcore-Fitness.
+
+---
+
+# Illustration Style
+
+Illustrationen:
+
+* Minimal
+* Dünne Linien
+* Einfarbig
+* Schwarz
+* Lime Highlights
+
+---
+
+# Iconography
+
+Icons:
+
+* Outline
+* 2px Stroke
+* Geometrisch
+* Einfach
+* Keine Details
+* Apple ähnliche Konsistenz
+
+---
+
+# UI Design Language
+
+Das Produktdesign basiert auf:
+
+* Große Zahlen
+* Große Progress Rings
+* Wenige Farben
+* Viele Weißräume
+* Sehr klare Informationshierarchie
+* Wenig Text
+* Sofort verständliche Statistiken
+
+---
+
+# Motion Design
+
+Animationen:
+
+### Button Hover
+
+```css
+transition:250ms ease;
+transform:translateY(-2px);
+```
+
+---
+
+### Cards
+
+```css
+scale(1.02)
+```
+
+---
+
+### Progress Rings
+
+Smooth Spring Animation.
+
+---
+
+### Counter Animation
+
+Count Up.
+
+---
+
+### Charts
+
+Line Draw Animation.
+
+---
+
+# UX Principles
+
+1. Information sofort sichtbar.
+2. Fortschritt immer visualisieren.
+3. Primäre Aktion immer klar erkennbar.
+4. Maximale Lesbarkeit.
+5. Wenige Entscheidungen pro Screen.
+6. Gamification ohne Überladung.
+7. Jede Seite besitzt einen klaren Fokus.
+
+---
+
+# Keywords
+
+```text
+Premium
+Sportlich
+Energetisch
+Modern
+Lime
+Minimal
+Performance
+Clean
+Editorial
+Motivational
+Trustworthy
+Athletic
+Bold
+Friendly
+High Contrast
+Tech Fitness
+Future Ready
+Apple Inspired
+Nike Inspired
+WHOOP Inspired
+Progress Focused
+```

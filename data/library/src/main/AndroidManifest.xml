@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Lese-Berechtigung fuer den Medienindex (Bauplan Abschnitt 4, Schritt 4):
+  READ_MEDIA_AUDIO ab API 33; auf aelteren Geraeten READ_EXTERNAL_STORAGE
+  (maxSdkVersion 32). Angefragt wird erst beim Oeffnen/Scannen der
+  Bibliothek; bei Ablehnung liefert das Repository PermissionDenied.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+</manifest>

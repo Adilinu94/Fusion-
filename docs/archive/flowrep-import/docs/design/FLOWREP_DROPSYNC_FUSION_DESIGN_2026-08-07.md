@@ -348,9 +348,8 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 3. DataStore `exercise_rest_prefs` pro Übung default 90s.
 4. UI Train Chip Sheet eigene Übungen + Neue anlegen Dialog, Gewicht Feld mit zuletzt Platzhalter + +/- 2.5 Chip, TalkBack Labels.
 5. PR Volumen Use Case max `weightMg * reps` je Übung, Volumen Summe pro Tag für Verlauf.
-6. Vorhandenen DropSync-Code für Routinen und Fortschritts-Klassifizierung entfernen (u. a. `feature/workout/.../RoutineScreens.kt`, `RoutineViewModels.kt`, `domain/workout/.../RoutineExpander.kt`, `ProgressAnalysis.kt`, `feature/workout/.../ProgressScreens.kt`, `ProgressViewModels.kt`) inklusive zugehöriger Tests — löschen, nicht nur unverdrahtet lassen. Voller wegfallender Funktionsumfang in `WORKOUT_FUNKTIONEN_AUSBAU_PLAN.md` Phasen A-F dokumentiert.
 
-**Verifikation:** Anlegen 5 Start Übungen, Sätze speichern, nach Neustart da, PR wechselt bei höherem Volumen. Routinen-Code nicht mehr im Build (kein Vorkommen von `RoutineScreens`/`RoutineExpander` mehr im Projekt).
+**Verifikation:** Anlegen 5 Start Übungen, Sätze speichern, nach Neustart da, PR wechselt bei höherem Volumen.
 
 ---
 
@@ -381,40 +380,41 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 3. Portiere FlowRep WorkoutEngine und PCA Kalibrierung nach Kotlin, persist pro Übung+Gerät, Calibration Wizard Screen 3 langsame Reps 20-30s.
 4. Hilt Module bindet Sensor nur wenn Chip verbunden, sonst Fake Provider für manuelles +/-.
 5. Train Waveform speist Live Samples aus Provider + Blitz bei Peak.
-6. Neue Zähl-Pipeline (`ExerciseEngine`/`PeakDetector`/`PhaseValidator`/`TemplateMatcher`) zusätzlich nach Kotlin portieren, ausschließlich im Shadow-Modus wie im aktuellen FlowRep-Verhalten (`_useNewPipeline=false`, Shadow läuft automatisch mit sobald ein Kalibrierungsprofil vorliegt, zählt aber nicht live). Vorher in FlowRep den bekannten Befund-C-Fix anwenden (`rep_counter.dart`: `TemplateMatcher.match()` zurück auf `peak.window` statt erweitertem `window`, ein Zeiler — Details in `docs/archive/umbauplan/PHASE_VALIDATOR_FIX_AUDIT_2026-08-05.md` Abschnitt 7). Freischalten als live zählende Methode erst nach eigenem Shadow-DoD, siehe Abschnitt 11b.
 
 **Dateien neu:** `domain/sensor/*`, `data/sensor/*`, `feature/train/calibration/*`
 
-**Verifikation:** Mit M5 live 12.5Hz Batches, Parsen grün, Kalibrierung speichert Häkchen, M5 BtnA mit Check. Shadow-Pipeline läuft parallel mit, zählt sichtbar nirgends live.
+**Verifikation:** Mit M5 live 12.5Hz Batches, Parsen grün, Kalibrierung speichert Häkchen, M5 BtnA mit Check.
 
 ---
 
-### Phase 5 – Audio-POC und manuelle Marker (statt Auto-Erkennung)
+### Phase 5 – Musik Import Waveform und Marker auto (A, A, B, A)
 
-**Ziel:** Timing-Grundformel und manuelle Marker beweisen, bevor Crossfade, Route-Kalibrierung und Auto-Erkennung draufgebaut werden (Grundprinzip Abschnitt 12).
+**Ziel:** Jeder neue Song sofort waveformbereit plus Drop Kandidaten, manuell verschiebbar.
 
 **Schritte:**
 
 1. SAF Ordner Scan bleibt, MediaStore Refresh.
 2. TrackAnalyzer Worker `track_analysis_<songId>` streaming Min/Max + RMS, Cache `track_analysis` mit analyzer_version, bucket_count 0 = Fehler fallback Zeitachse.
-3. Manuelle Marker: Tap Drag Long Press Logik, Review Screen in Einstellungen mit Bestätigen/Verwerfen. Keine Auto-Erkennung in dieser Phase — siehe Phase 12.
-4. Import Pipeline: Neuer Song -> Analyse-Chain (Schritt 2) automatisch starten, UI zeigt pulsierenden Placeholder.
-5. Reinen `DropLandingPlanner` in `:domain:timer` isoliert testen (Unit Tests equal power, monotony, FADE identisch, Formel `WorkStart = Go - Marker - Latenz`), fixer Platzhalter-Latenzwert genügt hier, keine Route-Kalibrierung.
+3. OnsetDetection Worker `onset_detection_<songId>` Top 5 Mindestabstand 5s, schreibt `AUTO_DETECTED isEnabled=false`.
+4. Library und Now Playing Waveform zeigt Lime gespielten Anteil, Marker Ticks, Tap Drag Long Press Logik, Review Screen in Einstellungen mit Bestätigen/Verwerfen.
+5. Import Pipeline: Neuer Song -> analyse chain automatisch starten, UI zeigt pulsierenden Placeholder.
 
-**Verifikation:** Import 10 Songs -> alle Waveform-Daten vorhanden. Manuelle Marker per Drag setzbar/verschiebbar, Review bestätigt/verwirft. Planner-Formel gegen Unit Tests grün, P95 Drop-Fehler pro Route mit Platzhalter-Latenz erstmalig dokumentiert (Baseline für Phase 6).
+**Verifikation:** Import 10 Songs -> alle Waveforms sichtbar, Drops in Review, verschieben per Drag wirkt sofort, Landung nutzt neuen Punkt.
 
 ---
 
-### Phase 6 – Crossfade, Audio-FSM und Route-Kalibrierung
+### Phase 6 – Musik Workout Kopplung mit Drop Landung (A, A, A, C, A)
 
-**Ziel:** Rest Musik crossfadet sauber, Latenz wird im Hintergrund pro Route kalibriert, kein Präzisionsversprechen in der UI. Baut auf dem Planner aus Phase 5 auf.
+**Ziel:** Rest Musik leise, Drop knallt bei Go exakt, du hast Vorrang. Latenz wird im Hintergrund pro Route kalibriert, kein Präzisionsversprechen in der UI.
 
 **Konzepte (aus Super-KI Review übernommen):**
 
 * **AudioClock-Abstraktion:** `Media3AudioClock` (MVP) hinter Interface, später `AudioTrackTimestampClock`. Timer basiert auf `SystemClock.elapsedRealtimeNanos()`, Drop-Start rechnet `WorkStart = Go - Marker - Latenz`.
 * **RouteProfile:** `AudioRouteProfile(routeKey, sampleRate, channels, estimatedLatencyMs, p50ErrorMs, p95ErrorMs, calibratedAt, confidence)`. `routeKey` = interner Lautsprecher / USB / Kabel / BT-Gerät + Codec + Sample-Rate. Bei Route-Wechsel, Sample-Rate-Wechsel oder Fokusverlust Profil als unsicher markieren.
-* **Latenz ohne Mikrofon:** Feste Latenz-Tabellen je Codec/BT-Gerät pflegen (siehe Abschnitt 10), wo verfügbar mit `AudioTimestamp` extrapolieren (`audibleFrame ≈ framePosition + (nowNanos - tsNano) * rate`). Kein Loopback-Messaufbau.
+* **Latenz ohne Mikrofon:** Feste Latenz-Tabellen je Codec/BT-Gerät pflegen, wo verfügbar mit `AudioTimestamp` extrapolieren (`audibleFrame ≈ framePosition + (nowNanos - tsNano) * rate`). Kein Loopback-Messaufbau.
 * **Modus intern:** `EXACT / CALIBRATED / BEST_EFFORT / UNAVAILABLE`. Bei `BEST_EFFORT` keine "millisekundengenau"-Aussage in der UI, nur dezenter Hinweis "Timing passt sich Route an".
+* **Ducking nicht additiv:** `effectiveDuckDb = min(restDuckDb, ttsDuckDb)`, nie blind -8 + -12. Rampen: Attack 20-50ms, Release 150-300ms. Kein Doppel-Ducking, Limiter am Master.
+* **Countdown-Piep-Töne statt TTS-Stimme:** 3-2-1-Go wird mit vorgerenderten Piep-Clips (Beep kurz, Beep kurz, Beep kurz, längerer Beep = Go) über den gleichen Gain-/Mixer-Pfad geplant, nicht mit System-TTS. Vor dem Countdown dekodieren, feste Audio-Frames, kein TTS-Callback als Trigger. Go ist damit ein echtes Audio-Event. (TTS als spätere Option möglich, nicht Standard.)
 * **Cue Mode:** Go ist autoritativ. Erste Rep vor Go (Toleranz 250-500ms) wird als `EARLY_START` markiert, Timer und Drop bleiben bei Go, kein Adaptive Mode im Backlog.
 * **Generation Token:** `PlaybackGeneration(id)` bei jedem Skip/Satzwechsel/Route-Wechsel erhöhen; alte geplante Audio-Events ignorieren.
 * **Verpasster Drop (Underrun):** Wenn der Drop am Go exakt verpasst wurde, nicht mehrfach nachtriggern, sondern Zustand `MISSED_UNDERRUN` setzen, Work-Song weiterlaufen lassen und automatisch den nächsten passenden Drop im Song anbieten (weiterschalten). Leiser Hinweis an Nutzer.
@@ -422,51 +422,21 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 **Schritte:**
 
-1. `RestMusicCoordinator` in `:feature:player` beobachtet TimerEngine + Settings, wählt Rest Playlisten label Rest, ruft Planner aus Phase 5, setzt Queue bei Pausenbeginn, crossfadeTo mit Dauer aus DspConfig, Equal Power.
-2. `AudioClock`-Interface + `Media3AudioClock`, RouteProfile-Store (DataStore), Latenz-Tabellen je Codec, Extrapolation via AudioTimestamp wo verfügbar, Wechsel auf BEST_EFFORT bei Underrun/Route-Wechsel.
-3. Bei mehreren Markern wählt Planner nächsten passenden (37 B). Generation Token bei Skip/Neuplanung.
-4. Manueller Skip/Pause -> Coordinator bricht Plan für diese Pause, Schalter im Countdown togge Drop Auto pro Pause, nächste Pause wieder an.
+1. Reinen `DropLandingPlanner` in `:domain:timer` voll testen (Unit Tests equal power, monotony, FADE identisch, Formel `WorkStart = Go - Marker - Latenz`).
+2. `RestMusicCoordinator` in `:feature:player` beobachtet TimerEngine + Settings, wählt Rest Playlisten label Rest, ruft Planner, setzt Queue bei Pausenbeginn, crossfadeTo mit Dauer aus DspConfig, Equal Power.
+3. `AudioClock`-Interface + `Media3AudioClock`, RouteProfile-Store (DataStore), Latenz-Tabellen je Codec, Extrapolation via AudioTimestamp wo verfügbar, Wechsel auf BEST_EFFORT bei Underrun/Route-Wechsel.
+4. Preamp Rest Duck Default -8dB einstellbar -12 bis 0, `min()`-Logik zu TTS, Crossfade endet vor Restende, Fall Rest < Marker -> DIRECT_TO_DROP Sprung.
+5. Bei mehreren Markern wählt Planner nächsten passenden (37 B). Generation Token bei Skip/Neuplanung.
+6. Manueller Skip/Pause -> Coordinator bricht Plan für diese Pause, Schalter im Countdown togge Drop Auto pro Pause, nächste Pause wieder an.
+7. Einstellungen Abschnitt Musik in Pausen mit Label Badges, Duck Regler, Crossfade Dauer und Stil 6 Chips, Bit Perfect Hinweis, dezenter Timing-Hinweis je Route.
 
-**Verifikation:** Rest 90s Marker 47s -> Start Work 43s nach Rest Start (minus kalibrierte Latenz), 3s Xfade fertig bei 90s Drop voll. Rest 60s Marker 80s -> Sprung direkt zum Drop ohne Intro, kein Knacksen. Route-Wechsel während Countdown -> Profil unsicher, BEST_EFFORT, keine kaputte Planung. Skip invalidiert alte Events via Generation. Underrun beim Drop -> MISSED_UNDERRUN, Work läuft weiter, nächster Drop wird weitergeschaltet, kein Mehrfach-Trigger. P95 Drop-Fehler pro Route gegenüber Phase-5-Baseline verbessert.
-
----
-
-### Phase 7 – TTS-Ersatz und Gain-Struktur
-
-**Ziel:** Countdown und Ducking sauber, kein Doppel-Ducking, kein Clipping.
-
-**Konzepte:**
-
-* **Ducking nicht additiv:** `effectiveDuckDb = min(restDuckDb, ttsDuckDb)`, nie blind -8 + -12. Rampen: Attack 20-50ms, Release 150-300ms. Kein Doppel-Ducking, Limiter am Master.
-* **Countdown-Piep-Töne statt TTS-Stimme:** 3-2-1-Go wird mit vorgerenderten Piep-Clips (Beep kurz, Beep kurz, Beep kurz, längerer Beep = Go) über den gleichen Gain-/Mixer-Pfad geplant, nicht mit System-TTS. Vor dem Countdown dekodieren, feste Audio-Frames, kein TTS-Callback als Trigger. Go ist damit ein echtes Audio-Event. (TTS als spätere Option möglich, nicht Standard.)
-
-**Schritte:**
-
-1. Preamp Rest Duck Default -8dB einstellbar -12 bis 0, `min()`-Logik zu TTS, Crossfade endet vor Restende (Mechanik aus Phase 6), Fall Rest < Marker -> DIRECT_TO_DROP Sprung.
-2. Countdown-Piep-Clips vorrendern und in den Gain-/Mixer-Pfad aus Phase 6 einhängen.
-3. Einstellungen Abschnitt Musik in Pausen mit Label Badges, Duck Regler, Crossfade Dauer und Stil 6 Chips, Bit Perfect Hinweis, dezenter Timing-Hinweis je Route.
-
-**Verifikation:** Kein Doppel-Ducking messbar (`effectiveDuckDb` = min beider Quellen). Kein Clipping am Master-Limiter. Countdown-Beeps laufen als echtes Audio-Event, nicht als TTS-Callback, Go landet exakt auf dem letzten Beep.
+**Verifikation:** Rest 90s Marker 47s -> Start Work 43s nach Rest Start (minus Latenz), 3s Xfade fertig bei 90s Drop voll. Rest 60s Marker 80s -> Sprung direkt zum Drop ohne Intro, kein Knacksen. Route-Wechsel während Countdown -> Profil unsicher, BEST_EFFORT, keine kaputte Planung. Skip invalidiert alte Events via Generation. Underrun beim Drop -> MISSED_UNDERRUN, Work läuft weiter, nächster Drop wird weitergeschaltet, kein Mehrfach-Trigger.
 
 ---
 
-### Phase 8 – Waveform Rendering, Scrubbing und Marker-UI
+### Phase 7 – Train Hero Politur (A, hybrid, A, A)
 
-**Ziel:** Waveform sieht gut aus und lässt sich bedienen, nicht nur Rohdaten aus Phase 5.
-
-**Schritte:**
-
-1. Library und Now-Playing-Waveform zeigt Lime gespielten Anteil auf Basis der `track_analysis`-Daten aus Phase 5.
-2. Marker-Ticks visuell auf der Waveform, Scrubbing performant.
-3. Tap/Drag/Long-Press-Interaktion aus Phase 5 an die gerenderte Waveform anbinden (vorher nur Datenmodell, jetzt sichtbar/bedienbar).
-
-**Verifikation:** 60fps beim Scrubben, Marker sichtbar direkt auf der Waveform setzbar, Landung aus Phase 6 nutzt den per Drag verschobenen Punkt.
-
----
-
-### Phase 9 – Train Hero und Verlauf Politur (A, hybrid, A, A, B, A)
-
-**Ziel:** Der Screen den man 95 Prozent sieht ist Apple like fertig, Verlauf motiviert ohne Analyse Labyrinth.
+**Ziel:** Der Screen den man 95 Prozent sieht ist Apple like fertig.
 
 **Schritte:**
 
@@ -475,16 +445,27 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 3. Mini Player Bar mit Badges, Swipe Pager Train/Music/Verlauf, HorizontalPager wie Library.
 4. Leer Zustände mit CTA statt nur Text, Skeleton statt CircularProgress, Fehlertexte in App Stimme.
 5. Barrierefreiheit: 48dp Buttons, stateDescription für Slider.
-6. Verlauf Screen Liste nach Tag, Tagesvolumen Summe, Linien Chart Volumen über Zeit mit fl_chart oder Canvas animiert, PR Abzeichen Lime.
-7. Tap Satz Sheet ändern/löschen mit Undo, danach Domain rechnet PR neu.
-8. Detail pro Übung als Filter Chip oben, nicht als extra Tab.
-9. Leer Zustand mit CTA Neue Übung anlegen.
 
-**Verifikation:** Kompletter Flow Verbinden -> Kalibrieren -> Zählen -> Satz fertig -> Pause mit Musik -> Go mit Drop -> nächster Satz ohne Bruch, TalkBack lesbar, 200% Schrift ok. Charts laden bei >5 Sätzen korrekt, Undo stellt wieder her.
+**Verifikation:** Kompletter Flow Verbinden -> Kalibrieren -> Zählen -> Satz fertig -> Pause mit Musik -> Go mit Drop -> nächster Satz ohne Bruch, TalkBack lesbar, 200% Schrift ok.
 
 ---
 
-### Phase 10 – Berechtigungen und First Start (B, C)
+### Phase 8 – Verlauf schlank (A, B, A)
+
+**Ziel:** Motivation ohne Analyse Labyrinth.
+
+**Schritte:**
+
+1. Verlauf Screen Liste nach Tag, Tagesvolumen Summe, Linien Chart Volumen über Zeit mit fl_chart oder Canvas animiert, PR Abzeichen Lime.
+2. Tap Satz Sheet ändern/löschen mit Undo, danach Domain rechnet PR neu.
+3. Detail pro Übung als Filter Chip oben, nicht als extra Tab.
+4. Leer Zustand mit CTA Neue Übung anlegen.
+
+**Verifikation:** Charts laden bei >5 Sätzen korrekt, Undo stellt wieder her.
+
+---
+
+### Phase 9 – Berechtigungen und First Start (B, C)
 
 **Ziel:** Beim ersten Start alles auf einmal, danach Xiaomi sicher.
 
@@ -498,7 +479,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
-### Phase 11 – Klang Keller (A)
+### Phase 10 – Klang Keller (A)
 
 **Ziel:** Klang nur in Einstellungen, aber vollständig.
 
@@ -510,19 +491,6 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 4. ReplayGain ist NICHT in v1. Als Option unter Audio in Einstellungen vorgemerkt (später möglich), Standard bleibt aus, kein automatischer Lautheitsangleich.
 
 **Verifikation:** Preset Wechsel wirkt sofort, Bit Perfect bypassed DSP Float und Crossfade, Hinweis sichtbar.
-
----
-
-### Phase 12 – Auto-Drop-Erkennung und große Analyse-Queue
-
-**Ziel:** Auto-Erkennung erst wenn manuelle Marker (Phase 5) und die komplette Audio-Kette (Phasen 6-8) bewiesen sind, nicht vorher (Grundprinzip Abschnitt 12).
-
-**Schritte:**
-
-1. `OnsetDetection` Worker `onset_detection_<songId>` Top 5 Mindestabstand 5s, schreibt Kandidaten mit `AUTO_DETECTED isEnabled=false` (Nutzer bestätigt/verwirft über den Review-Screen aus Phase 5/8).
-2. Skalierung auf große Bibliotheken nach dem WorkManager-Modell aus Abschnitt 11a (PENDING/RUNNING/DONE/FAILED_RETRYABLE/FAILED_PERMANENT/STALE/CANCELLED, Priorität angefordert > zuletzt gespielt > aktuelle Playlist > restliche Bibliothek) — nicht 1.000 Songs in einem unteilbaren Worker.
-
-**Verifikation:** Auto-Kandidaten erscheinen deaktiviert im Review-Screen, ändern nichts ohne Bestätigung. Große Bibliothek (>500 Songs) blockiert App-Start nicht, Fortschritt persistiert bei Abbruch.
 
 ---
 
@@ -558,26 +526,6 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
-## 11b. Shadow-DoD Neue Zähl-Pipeline (vor `_useNewPipeline`-Äquivalent = true)
-
-Betrifft die in Phase 4, Schritt 6 portierte `ExerciseEngine`/`PeakDetector`/`PhaseValidator`/`TemplateMatcher`-Pipeline. Läuft ab Portierung im Shadow-Modus (beobachtet mit, zählt nicht live). Für die vergleichbare `DirectionalGpShadow`-Pipeline existiert bereits ein Hardware-Gate mit konkreten Freigabe-Szenarien (`docs/design/DIRECTIONAL_GP_SHADOW_ROLLOUT_2026-07-27.md`) — das Äquivalent für diese Pipeline war bisher nirgends definiert, nur als Regel referenziert (`docs/Version1.0/13_OFFENE_PUNKTE.md` B5/G7: "nicht ohne Shadow-DoD"). Hiermit nachgeholt.
-
-**Vorbedingung:** Befund-C-Fix (Phase 4, Schritt 6) angewendet und mit echtem `flutter test`-Lauf verifiziert, nicht nur per Code-Audit als erledigt betrachtet.
-
-**Freigabe-Szenarien** (alle auf echter M5StickC-Plus2-Hardware, nicht Simulation):
-
-1. Alle 5 bestätigten Übungen (Bizeps-Curl, Iso-Lateral Front Lat Pulldown, Iso-Lateral Incline Press, Plate Loaded Iso-Lateral Row, Scott/Preacher Curls) ohne Kalibrierungsprofil (`noTemplate=true`) — Rep-Diff = 0 gegenüber der Legacy-Engine.
-2. Dieselben 5 Übungen nach echter Kalibrierung mit aktivem Template — der Fall, in dem Befund C überhaupt erst wirkt, muss separat am Gerät nachgemessen werden, nicht nur als per Code-Audit behoben gelten.
-3. Langsame Wiederholungen (ursprünglicher Auslöser von Problem 2) — vollständige exzentrische Phase im Fenster erfasst, keine vorzeitige Ablehnung.
-4. Sensor-Reconnect mitten in der Session.
-5. Übungswechsel mit unterschiedlichen Kalibrierungsprofilen in derselben Session — kein Template-Übersprechen zwischen Übungen.
-
-**Zusätzlich offen, nicht Teil der Szenarien selbst:** Es gibt aktuell keine automatisierte Vergleichs-/Diff-Logik zwischen Shadow- und Live-Zählung — nur die CSV-Aufnahme (`csv_session_recorder.dart`) existiert, keine Auswertung darauf. Muss vor oder während der Szenario-Läufe gebaut werden, sonst lassen sich die Kriterien oben nicht objektiv prüfen.
-
-**Gate:** Erst wenn alle 5 Szenarien über mehrere unabhängige Sessions ein Rep-Diff von 0 zeigen (oder jede Abweichung dokumentiert und einzeln von Adi freigegeben ist), darf die neue Pipeline live zählen. Bis dahin bleibt sie reine Beobachtung — exakt wie in FlowRep heute.
-
----
-
 ## 12. Phasen-Reihenfolge (angepasst nach Super-KI Review)
 
 Grundprinzip: Erst Audio-Grundlage mit manuellem Marker beweisen, dann Crossfade, dann TTS/Gain, dann Waveform, Auto-Erkennung und Skalierung ans Ende. Kein Feature bauen, dessen Fundament nicht steht.
@@ -588,7 +536,7 @@ Grundprinzip: Erst Audio-Grundlage mit manuellem Marker beweisen, dann Crossfade
 | 1 | Designsystem Schwarz/Weiß/Lime | Screens hell/dunkel |
 | 2 | Übungen + flaches Satz-Log | Sätze gespeichert, PR |
 | 3 | Pausen Timer + Notification + Service | Timer im Hintergrund |
-| 4 | Sensor Stack Portierung (Legacy live + neue Pipeline Shadow) | BLE zählt live, Shadow-Pipeline beobachtet mit |
+| 4 | Sensor Stack Portierung | BLE zählt live |
 | 5 | Audio-POC + manuelle Marker (statt Auto-Erkennung) | P95 Drop-Fehler pro Route dokumentiert |
 | 6 | Crossfade + Audio-FSM + Route-Kalibrierung | Crossfade endet vor Drop |
 | 7 | TTS + Gain-Struktur (Ducking min, Limiter) | Kein Doppel-Duck, kein Clipping |
@@ -625,6 +573,31 @@ Kamera Pose, Routinen, Sessions, Export, Herz, Velocity UI, RPE, Bodyweight, lbs
 1. Dieses Dokument reviewen.
 2. Danach `docs/plans/YYYY-MM-DD-fusion-foundation-plan.md` per GSD Plan Phase schreiben.
 3. Phase 0 starten, dann 1 bis 12 in Reihenfolge, jede Phase endet mit Device Check.
+
+---
+
+## 11. Risiken und Antworten
+
+* HyperOS MTU 517 Bug -> Require 185 anfordern aber 517 akzeptieren, Protokoll v2 53 Byte passt.
+* Xiaomi killt Service -> Foreground Priority + Notification sticky, Reconnect mit Dedup.
+* Waveform Analyse langsam -> OneTimeWork dedup, Cache mit Version, pulsierender Placeholder.
+* Drop Erkennung daneben -> nur Kandidaten disabled, Review Pflicht, Primary Logik nächster passender.
+* Keine Sessions verwirrt Filter -> Verlauf gruppiert nur datumsmäßig, kein extra Modell.
+* Flutter zu Kotlin Port Fehler -> Parser Tests gegen FlowRep Fixtures 1:1 übernehmen.
+
+---
+
+## 12. Was bewusst nicht drin ist
+
+Kamera Pose, Routinen, Sessions, Export, Herz, Velocity UI, RPE, Bodyweight, lbs, starke Gamification, Social, Streaming. Alles später per ADR.
+
+---
+
+## 13. Nächste Schritte
+
+1. Dieses Dokument reviewen.
+2. Danach `docs/plans/YYYY-MM-DD-fusion-foundation-plan.md` per GSD Plan Phase schreiben.
+3. Phase 0 starten, dann 1 bis 10 in Reihenfolge, jede Phase endet mit Device Check.
 
 ---
 

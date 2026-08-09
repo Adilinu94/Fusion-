@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FlowRep-Markenicon: geometrisches "F"-Monogramm in Marken-Lime (#DFFF2F)
+     auf schwarzem Adaptive-Icon-Hintergrund (@color/ic_launcher_background).
+     Die Form liegt in der zentralen Safe-Zone und dient auch als monochrome
+     Variante. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#DFFF2F"
+        android:pathData="M40,78 L40,30 L74,30 L74,43 L53,43 L53,51 L67,51 L67,62 L53,62 L53,78 Z" />
+</vector>

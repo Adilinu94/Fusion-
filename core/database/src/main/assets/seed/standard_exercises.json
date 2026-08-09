@@ -1,0 +1,194 @@
+{
+  "seedVersion": 1,
+  "exercises": [
+    {
+      "canonicalName": "barbell_back_squat",
+      "kind": "STRENGTH",
+      "equipment": "BARBELL",
+      "names": { "de": "Kniebeuge (Langhantel)", "en": "Barbell Back Squat" },
+      "muscles": [
+        { "group": "QUADRICEPS", "percent": 50 },
+        { "group": "GLUTES", "percent": 30 },
+        { "group": "HAMSTRINGS", "percent": 10 },
+        { "group": "LOWER_BACK", "percent": 10 }
+      ]
+    },
+    {
+      "canonicalName": "barbell_bench_press",
+      "kind": "STRENGTH",
+      "equipment": "BARBELL",
+      "names": { "de": "Bankdruecken (Langhantel)", "en": "Barbell Bench Press" },
+      "muscles": [
+        { "group": "CHEST", "percent": 60 },
+        { "group": "TRICEPS", "percent": 25 },
+        { "group": "SHOULDERS", "percent": 15 }
+      ]
+    },
+    {
+      "canonicalName": "barbell_deadlift",
+      "kind": "STRENGTH",
+      "equipment": "BARBELL",
+      "names": { "de": "Kreuzheben (Langhantel)", "en": "Barbell Deadlift" },
+      "muscles": [
+        { "group": "HAMSTRINGS", "percent": 30 },
+        { "group": "GLUTES", "percent": 30 },
+        { "group": "LOWER_BACK", "percent": 25 },
+        { "group": "BACK", "percent": 15 }
+      ]
+    },
+    {
+      "canonicalName": "barbell_overhead_press",
+      "kind": "STRENGTH",
+      "equipment": "BARBELL",
+      "names": { "de": "Schulterdruecken (Langhantel)", "en": "Barbell Overhead Press" },
+      "muscles": [
+        { "group": "SHOULDERS", "percent": 65 },
+        { "group": "TRICEPS", "percent": 25 },
+        { "group": "ABDOMINALS", "percent": 10 }
+      ]
+    },
+    {
+      "canonicalName": "barbell_row",
+      "kind": "STRENGTH",
+      "equipment": "BARBELL",
+      "names": { "de": "Langhantelrudern", "en": "Barbell Row" },
+      "muscles": [
+        { "group": "BACK", "percent": 60 },
+        { "group": "BICEPS", "percent": 20 },
+        { "group": "LOWER_BACK", "percent": 20 }
+      ]
+    },
+    {
+      "canonicalName": "dumbbell_bench_press",
+      "kind": "STRENGTH",
+      "equipment": "DUMBBELL",
+      "names": { "de": "Bankdruecken (Kurzhanteln)", "en": "Dumbbell Bench Press" },
+      "muscles": [
+        { "group": "CHEST", "percent": 60 },
+        { "group": "TRICEPS", "percent": 20 },
+        { "group": "SHOULDERS", "percent": 20 }
+      ]
+    },
+    {
+      "canonicalName": "dumbbell_shoulder_press",
+      "kind": "STRENGTH",
+      "equipment": "DUMBBELL",
+      "names": { "de": "Schulterdruecken (Kurzhanteln)", "en": "Dumbbell Shoulder Press" },
+      "muscles": [
+        { "group": "SHOULDERS", "percent": 70 },
+        { "group": "TRICEPS", "percent": 30 }
+      ]
+    },
+    {
+      "canonicalName": "dumbbell_biceps_curl",
+      "kind": "STRENGTH",
+      "equipment": "DUMBBELL",
+      "names": { "de": "Bizepscurls (Kurzhanteln)", "en": "Dumbbell Biceps Curl" },
+      "muscles": [
+        { "group": "BICEPS", "percent": 80 },
+        { "group": "FOREARMS", "percent": 20 }
+      ]
+    },
+    {
+      "canonicalName": "dumbbell_lateral_raise",
+      "kind": "STRENGTH",
+      "equipment": "DUMBBELL",
+      "names": { "de": "Seitheben (Kurzhanteln)", "en": "Dumbbell Lateral Raise" },
+      "muscles": [
+        { "group": "SHOULDERS", "percent": 100 }
+      ]
+    },
+    {
+      "canonicalName": "cable_lat_pulldown",
+      "kind": "STRENGTH",
+      "equipment": "CABLE",
+      "names": { "de": "Latzug", "en": "Lat Pulldown" },
+      "muscles": [
+        { "group": "BACK", "percent": 70 },
+        { "group": "BICEPS", "percent": 30 }
+      ]
+    },
+    {
+      "canonicalName": "cable_triceps_pushdown",
+      "kind": "STRENGTH",
+      "equipment": "CABLE",
+      "names": { "de": "Trizepsdruecken am Kabel", "en": "Cable Triceps Pushdown" },
+      "muscles": [
+        { "group": "TRICEPS", "percent": 100 }
+      ]
+    },
+    {
+      "canonicalName": "machine_leg_press",
+      "kind": "STRENGTH",
+      "equipment": "MACHINE",
+      "names": { "de": "Beinpresse", "en": "Leg Press" },
+      "muscles": [
+        { "group": "QUADRICEPS", "percent": 55 },
+        { "group": "GLUTES", "percent": 30 },
+        { "group": "HAMSTRINGS", "percent": 15 }
+      ]
+    },
+    {
+      "canonicalName": "machine_seated_calf_raise",
+      "kind": "STRENGTH",
+      "equipment": "MACHINE",
+      "names": { "de": "Wadenheben sitzend", "en": "Seated Calf Raise" },
+      "muscles": [
+        { "group": "CALVES", "percent": 100 }
+      ]
+    },
+    {
+      "canonicalName": "bodyweight_pull_up",
+      "kind": "STRENGTH",
+      "equipment": "BODYWEIGHT",
+      "names": { "de": "Klimmzug", "en": "Pull-Up" },
+      "muscles": [
+        { "group": "BACK", "percent": 65 },
+        { "group": "BICEPS", "percent": 25 },
+        { "group": "FOREARMS", "percent": 10 }
+      ]
+    },
+    {
+      "canonicalName": "bodyweight_push_up",
+      "kind": "STRENGTH",
+      "equipment": "BODYWEIGHT",
+      "names": { "de": "Liegestuetz", "en": "Push-Up" },
+      "muscles": [
+        { "group": "CHEST", "percent": 55 },
+        { "group": "TRICEPS", "percent": 25 },
+        { "group": "SHOULDERS", "percent": 20 }
+      ]
+    },
+    {
+      "canonicalName": "bodyweight_plank",
+      "kind": "TIME",
+      "equipment": "BODYWEIGHT",
+      "names": { "de": "Unterarmstuetz", "en": "Plank" },
+      "muscles": [
+        { "group": "ABDOMINALS", "percent": 80 },
+        { "group": "LOWER_BACK", "percent": 20 }
+      ]
+    },
+    {
+      "canonicalName": "kettlebell_swing",
+      "kind": "STRENGTH",
+      "equipment": "KETTLEBELL",
+      "names": { "de": "Kettlebell Swing", "en": "Kettlebell Swing" },
+      "muscles": [
+        { "group": "GLUTES", "percent": 40 },
+        { "group": "HAMSTRINGS", "percent": 30 },
+        { "group": "LOWER_BACK", "percent": 15 },
+        { "group": "SHOULDERS", "percent": 15 }
+      ]
+    },
+    {
+      "canonicalName": "treadmill_run",
+      "kind": "DISTANCE",
+      "equipment": "MACHINE",
+      "names": { "de": "Laufband", "en": "Treadmill Run" },
+      "muscles": [
+        { "group": "FULL_BODY", "percent": 100 }
+      ]
+    }
+  ]
+}
