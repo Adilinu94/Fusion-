@@ -27,6 +27,13 @@ android {
     buildFeatures {
         compose = true
     }
+
+    // Phase 1: Groesserer Heap fuer Unit-Tests mit Compose-Abhaengigkeiten.
+    testOptions {
+        unitTests.all {
+            it.maxHeapSize = "2g"
+        }
+    }
 }
 
 dependencies {

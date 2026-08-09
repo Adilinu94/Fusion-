@@ -12,7 +12,7 @@ import androidx.compose.material3.windowsizeclass.calculateWindowSizeClass
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dropsync.core.designsystem.theme.DropSyncTheme
+import com.dropsync.core.designsystem.theme.FlowRepTheme
 import com.dropsync.core.model.AccentColor
 import com.dropsync.core.model.ThemeMode
 import com.dropsync.domain.settings.AccentColorRepository
@@ -65,7 +65,7 @@ class MainActivity : ComponentActivity() {
                 )
                 onDispose {}
             }
-            DropSyncTheme(darkTheme = darkTheme, accent = accent) {
+            FlowRepTheme(darkTheme = darkTheme, accent = accent) {
                 DropSyncApp(windowSizeClass = calculateWindowSizeClass(this))
             }
         }

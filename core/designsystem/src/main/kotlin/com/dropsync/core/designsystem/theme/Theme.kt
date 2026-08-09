@@ -15,9 +15,10 @@ import com.dropsync.core.model.AccentColor
 // Lime erzeugt Energie, Weiss erzeugt Ruhe. Lime ist ausschliesslich fuer
 // die primaere Aktion reserviert; Kontraste bleiben erhalten (Bauplan 2.6:
 // Lime #DFFF2F zu dunklem Grund erfuellt AA deutlich).
-private val BrandBlack = Color(0xFF0D0D0D)
-private val BrandWhite = Color(0xFFFFFFFF)
-private val BrandLime = Color(0xFFDFFF2F)
+// Intern sichtbar fuer Snapshot-Tests (ThemeColorSnapshotTest).
+internal val BrandBlack = Color(0xFF0D0D0D)
+internal val BrandWhite = Color(0xFFFFFFFF)
+internal val BrandLime = Color(0xFFDFFF2F)
 private val SoftGray = Color(0xFFF5F5F5)
 private val BorderGray = Color(0xFFEAEAEA)
 private val TextGray = Color(0xFF6B6B6B)
@@ -45,7 +46,7 @@ private val DarkSurfaceVariant = Color(0xFF2E2E2E)
 private val DarkOutline = Color(0xFF3C3C3C)
 private val DarkTextGray = Color(0xFFB3B3B3)
 
-private val LightColors =
+internal val LightColors =
     lightColorScheme(
         primary = BrandLime,
         onPrimary = BrandBlack,
@@ -66,7 +67,7 @@ private val LightColors =
         outlineVariant = BorderGray,
     )
 
-private val DarkColors =
+internal val DarkColors =
     darkColorScheme(
         primary = BrandLime,
         onPrimary = BrandBlack,
@@ -97,15 +98,15 @@ private val BrandShapes =
     )
 
 /**
- * Material-3-Theme mit System-Dark-/Light-Mode (Bauplan 2.6, Schritt 12.1).
- * Die Markenidentitaet (Design.txt) verlangt eine feste Schwarz/Weiss/
- * Lime-Palette; Dynamic Color ist deshalb standardmaessig aus und kann
- * bewusst aktiviert werden. Die [accent]-Farbe ersetzt die primaere
- * Aktionsfarbe (Buttons, aktive Zustaende, Waveform, Now-Playing-Titel)
- * in Hell wie Dunkel; Default ist die Marken-Lime.
+ * FlowRep-Designsystem (Bauplan 2.6, Phase 1 A).
+ *
+ * Markenidentitaet: feste Schwarz/Weiss/Lime-Palette, Lime nur fuer primaere
+ * Aktionen. Dark/Light-Mode aus System; Dynamic Color standardmaessig aus.
+ * Die [accent]-Farbe ersetzt die primaere Aktionsfarbe (Buttons, aktive
+ * Zustaende, Waveform, Now-Playing-Titel); Default ist die Marken-Lime.
  */
 @Composable
-fun DropSyncTheme(
+fun FlowRepTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     accent: AccentColor = AccentColor.LIME,
     content: @Composable () -> Unit,
