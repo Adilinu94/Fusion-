@@ -68,10 +68,22 @@ class MigrationTest {
         helper.runMigrationsAndValidate(dbPath, 4, true, *DROPSYNC_MIGRATIONS).close()
     }
 
+    @Test
+    fun `migration 4 auf 5 ergaenzt flat sets`() {
+        // Kette v1 -> v5 (neue Tabelle flat_sets, FlowRep-Design Phase 2);
+        // validiert gegen das exportierte Schema 5.json.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V5).absolutePath
+
+        helper.createDatabase(dbPath, 1).close()
+        helper.runMigrationsAndValidate(dbPath, 5, true, *DROPSYNC_MIGRATIONS).close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V2 = "migration-test-v2.db"
         const val TEST_DB_V3 = "migration-test-v3.db"
         const val TEST_DB_V4 = "migration-test-v4.db"
+        const val TEST_DB_V5 = "migration-test-v5.db"
     }
 }

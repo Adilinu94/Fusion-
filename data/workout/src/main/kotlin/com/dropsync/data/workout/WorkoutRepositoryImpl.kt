@@ -34,24 +34,16 @@ import com.dropsync.domain.workout.CustomExerciseInput
 import com.dropsync.domain.workout.ExerciseDetail
 import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.ExerciseLibraryItem
-import com.dropsync.domain.workout.ExerciseProgressPoint
 import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.PlaybackSnapshotInfo
 import com.dropsync.domain.workout.PlayedTrackInfo
 import com.dropsync.domain.workout.PrCalculator
 import com.dropsync.domain.workout.PrRecord
-import com.dropsync.domain.workout.ProgressSeriesBuilder
 import com.dropsync.domain.workout.QualifiedSegment
 import com.dropsync.domain.workout.RestPref
-import com.dropsync.domain.workout.RoutineDetail
-import com.dropsync.domain.workout.RoutineEntry
-import com.dropsync.domain.workout.RoutineExerciseDetail
-import com.dropsync.domain.workout.RoutineExpander
-import com.dropsync.domain.workout.RoutineInfo
 import com.dropsync.domain.workout.SegmentInput
 import com.dropsync.domain.workout.SessionExerciseInfo
 import com.dropsync.domain.workout.Slugs
-import com.dropsync.domain.workout.SupersetRules
 import com.dropsync.domain.workout.SwapStrategy
 import com.dropsync.domain.workout.WorkoutMath
 import com.dropsync.domain.workout.WorkoutRepository
@@ -137,27 +129,15 @@ class WorkoutRepositoryImpl(
                             ),
                         )
                     if (fromRoutineId != null) {
-                        // Routinen-Expansion (9.7): Reihenfolge und
-                        // Supersetgruppen, keine historischen Gewichte.
-                        val entries =
-                            routineDao.getExercisesForRoutine(fromRoutineId).map {
-                                RoutineEntry(
-                                    exerciseId = it.exerciseId,
-                                    orderIndex = it.orderIndex,
-                                    supersetGroupId = it.supersetGroupId,
-                                    targetSets = it.targetSets,
-                                    targetRepsMin = it.targetRepsMin,
-                                    targetRepsMax = it.targetRepsMax,
-                                    restSeconds = it.restSeconds,
-                                )
-                            }
-                        for (planned in RoutineExpander.expand(entries)) {
+                        // Routine expansion (9.7): order and superset groups only,
+                        // no historical weights. RoutineExpander removed in Phase 2.
+                        routineDao.getExercisesForRoutine(fromRoutineId).forEach { entry ->
                             workoutDao.insertSessionExercise(
                                 SessionExerciseEntity(
                                     sessionId = sessionId,
-                                    exerciseId = planned.exerciseId,
-                                    orderIndex = planned.orderIndex,
-                                    supersetGroupId = planned.supersetGroupId,
+                                    exerciseId = entry.exerciseId,
+                                    orderIndex = entry.orderIndex,
+                                    supersetGroupId = entry.supersetGroupId,
                                 ),
                             )
                         }
@@ -598,114 +578,6 @@ class WorkoutRepositoryImpl(
             }
         }
 
-    override fun observeRoutines(): Flow<List<RoutineInfo>> =
-        routineDao.observeActive().map { rows -> rows.map { RoutineInfo(it.id, it.name) } }
-
-    override suspend fun getRoutineDetail(
-        routineId: Long,
-        locale: String,
-    ): AppResult<RoutineDetail> =
-        withContext(dispatchers.io) {
-            try {
-                val routine =
-                    routineDao.getRoutine(routineId)
-                        ?: return@withContext AppResult.failure(AppError.DatabaseFailure("Routine fehlt"))
-                val entries =
-                    routineDao.getRoutineExercisesWithNames(routineId, locale).map { row ->
-                        RoutineExerciseDetail(
-                            exerciseId = row.exerciseId,
-                            orderIndex = row.orderIndex,
-                            supersetGroupId = row.supersetGroupId,
-                            targetSets = row.targetSets,
-                            targetRepsMin = row.targetRepsMin,
-                            targetRepsMax = row.targetRepsMax,
-                            restSeconds = row.restSeconds,
-                            displayName = row.displayName ?: row.slug,
-                        )
-                    }
-                AppResult.success(RoutineDetail(routine.id, routine.name, entries))
-            } catch (e: Exception) {
-                AppResult.failure(AppError.DatabaseFailure("getRoutineDetail"))
-            }
-        }
-
-    override suspend fun createRoutine(
-        name: String,
-        entries: List<RoutineEntry>,
-    ): AppResult<Long> =
-        withContext(dispatchers.io) {
-            if (name.isBlank()) {
-                return@withContext AppResult.failure(AppError.Unknown("Routinenname leer"))
-            }
-            if (!SupersetRules.validateGroups(entries.map { it.exerciseId to it.supersetGroupId })) {
-                return@withContext AppResult.failure(AppError.Unknown("Ungueltige Supersetgruppe"))
-            }
-            try {
-                transactionRunner {
-                    val now = clock.epochMillis()
-                    val routineId =
-                        routineDao.insertRoutine(
-                            RoutineEntity(
-                                name = name.trim(),
-                                isArchived = false,
-                                createdAtEpochMs = now,
-                                updatedAtEpochMs = now,
-                            ),
-                        )
-                    routineDao.insertRoutineExercises(
-                        entries.sortedBy { it.orderIndex }.mapIndexed { index, entry ->
-                            RoutineExerciseEntity(
-                                routineId = routineId,
-                                exerciseId = entry.exerciseId,
-                                orderIndex = index,
-                                supersetGroupId = entry.supersetGroupId,
-                                targetSets = entry.targetSets,
-                                targetRepsMin = entry.targetRepsMin,
-                                targetRepsMax = entry.targetRepsMax,
-                                restSeconds = entry.restSeconds,
-                            )
-                        },
-                    )
-                    AppResult.success(routineId)
-                }
-            } catch (e: Exception) {
-                AppResult.failure(AppError.DatabaseFailure("createRoutine"))
-            }
-        }
-
-    override suspend fun createRoutineFromSession(
-        sessionId: Long,
-        name: String,
-    ): AppResult<Long> =
-        withContext(dispatchers.io) {
-            if (name.isBlank()) {
-                return@withContext AppResult.failure(AppError.Unknown("Routinenname leer"))
-            }
-            try {
-                val sessionExercises = workoutDao.getSessionExercisesRaw(sessionId)
-                if (sessionExercises.isEmpty()) {
-                    return@withContext AppResult.failure(AppError.Unknown("Session ohne Uebungen"))
-                }
-                val entries =
-                    sessionExercises.map { se ->
-                        val sets = workoutDao.countCompletedWorkingClusters(se.id)
-                        val restSeconds = workoutDao.getRestPref(se.exerciseId)?.restSeconds
-                        RoutineEntry(
-                            exerciseId = se.exerciseId,
-                            orderIndex = se.orderIndex,
-                            supersetGroupId = se.supersetGroupId,
-                            targetSets = if (sets > 0) sets else null,
-                            targetRepsMin = null,
-                            targetRepsMax = null,
-                            restSeconds = restSeconds,
-                        )
-                    }
-                createRoutine(name, entries)
-            } catch (e: Exception) {
-                AppResult.failure(AppError.DatabaseFailure("createRoutineFromSession"))
-            }
-        }
-
     override fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>> =
         workoutDao.observePersonalRecordsForExercise(exerciseId).map { rows ->
             rows.map { e ->
@@ -718,27 +590,6 @@ class WorkoutRepositoryImpl(
                     comparableLoadMilliKg = e.comparableLoadMilliKg,
                     achievedAtEpochMs = e.achievedAtEpochMs,
                 )
-            }
-        }
-
-    override suspend fun getExerciseProgress(exerciseId: Long): AppResult<List<ExerciseProgressPoint>> =
-        withContext(dispatchers.io) {
-            try {
-                val history =
-                    workoutDao.getQualifiedSegments(exerciseId).map {
-                        QualifiedSegment(
-                            sessionId = it.sessionId,
-                            sessionStartedAtEpochMs = it.sessionStartedAtEpochMs,
-                            clusterId = it.clusterId,
-                            completedAtEpochMs = it.completedAtEpochMs,
-                            loadMilliKg = it.loadMilliKg,
-                            loadMultiplier = it.loadMultiplier,
-                            reps = it.reps,
-                        )
-                    }
-                AppResult.success(ProgressSeriesBuilder.build(history))
-            } catch (e: Exception) {
-                AppResult.failure(AppError.DatabaseFailure("getExerciseProgress"))
             }
         }
 

@@ -6,6 +6,7 @@ import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.EqPresetDao
 import com.dropsync.core.database.dao.ExerciseDao
 import com.dropsync.core.database.dao.FavoriteDao
+import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.LibraryBrowseDao
 import com.dropsync.core.database.dao.MarkerDao
 import com.dropsync.core.database.dao.PlayStatDao
@@ -24,6 +25,7 @@ import com.dropsync.core.database.entity.ExerciseMuscleEntity
 import com.dropsync.core.database.entity.ExerciseNameEntity
 import com.dropsync.core.database.entity.ExerciseRestPrefEntity
 import com.dropsync.core.database.entity.FavoriteEntity
+import com.dropsync.core.database.entity.FlatSetEntity
 import com.dropsync.core.database.entity.MarkerSongLinkEntity
 import com.dropsync.core.database.entity.MuscleGroupEntity
 import com.dropsync.core.database.entity.PersonalRecordEntity
@@ -86,8 +88,9 @@ import com.dropsync.core.database.entity.WorkoutSessionEntity
         PlaylistItemEntity::class,
         SongFtsEntity::class,
         TrackAnalysisEntity::class,
+        FlatSetEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = true,
 )
 abstract class DropSyncDatabase : RoomDatabase() {
@@ -118,6 +121,8 @@ abstract class DropSyncDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
 
     abstract fun trackAnalysisDao(): TrackAnalysisDao
+
+    abstract fun flatSetDao(): FlatSetDao
 
     companion object {
         const val NAME = "dropsync.db"

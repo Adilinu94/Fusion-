@@ -61,5 +61,33 @@ val MIGRATION_3_4 =
         }
     }
 
+/**
+ * v4 -> v5: fuegt die Tabelle `flat_sets` hinzu (flaches Satz-Log gemaess
+ * FlowRep-Design Phase 2). Rein additiv; bestehende Daten bleiben
+ * unveraendert. Das CREATE TABLE entspricht exakt dem von Room erzeugten
+ * Schema, damit der Migrationstest validiert.
+ */
+val MIGRATION_4_5 =
+    object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `flat_sets` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`exercise_id` INTEGER NOT NULL, " +
+                    "`weight_milli_kg` INTEGER NOT NULL, " +
+                    "`reps` INTEGER NOT NULL, " +
+                    "`logged_at_epoch_ms` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`exercise_id`) REFERENCES `exercises`(`id`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_flat_sets_exercise_id` ON `flat_sets`(`exercise_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_flat_sets_logged_at_epoch_ms` ON `flat_sets`(`logged_at_epoch_ms`)",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
-val DROPSYNC_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+val DROPSYNC_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)

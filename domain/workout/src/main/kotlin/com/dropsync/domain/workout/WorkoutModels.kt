@@ -124,31 +124,6 @@ data class ExerciseDetail(
     val muscles: List<MuscleContribution>,
 )
 
-/** Routine als Listeneintrag (Schritt 9.7). */
-data class RoutineInfo(
-    val id: Long,
-    val name: String,
-)
-
-/** Uebung innerhalb einer Routine mit Anzeigename (Detailansicht). */
-data class RoutineExerciseDetail(
-    val exerciseId: Long,
-    val orderIndex: Int,
-    val supersetGroupId: Long?,
-    val targetSets: Int?,
-    val targetRepsMin: Int?,
-    val targetRepsMax: Int?,
-    val restSeconds: Int?,
-    val displayName: String,
-)
-
-/** Routine mit ihren Uebungen (Detailansicht/Bearbeiten). */
-data class RoutineDetail(
-    val id: Long,
-    val name: String,
-    val exercises: List<RoutineExerciseDetail>,
-)
-
 /**
  * Waehrend einer Session gespielter Track (Schritt 11.1): Grundlage der
  * Auswertung "zu diesem PR lief dieser Track".

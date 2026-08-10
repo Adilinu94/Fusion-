@@ -10,6 +10,7 @@ import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.EqPresetDao
 import com.dropsync.core.database.dao.ExerciseDao
 import com.dropsync.core.database.dao.FavoriteDao
+import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.LibraryBrowseDao
 import com.dropsync.core.database.dao.MarkerDao
 import com.dropsync.core.database.dao.PlayStatDao
@@ -95,4 +96,7 @@ object DatabaseModule {
 
     @Provides
     fun provideTrackAnalysisDao(database: DropSyncDatabase): TrackAnalysisDao = database.trackAnalysisDao()
+
+    @Provides
+    fun provideFlatSetDao(database: DropSyncDatabase): FlatSetDao = database.flatSetDao()
 }

@@ -4,10 +4,13 @@ import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.ExerciseDao
+import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.RoutineDao
 import com.dropsync.core.database.dao.WorkoutDao
+import com.dropsync.data.workout.FlatSetRepositoryImpl
 import com.dropsync.data.workout.WorkoutRepositoryImpl
 import com.dropsync.domain.playback.PlaybackRepository
+import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.Module
 import dagger.Provides
@@ -39,4 +42,13 @@ object WorkoutDataModule {
             clock,
             dispatchers,
         )
+
+    /** Flaches Satz-Log (FlowRep Phase 2). */
+    @Provides
+    @Singleton
+    fun provideFlatSetRepository(
+        flatSetDao: FlatSetDao,
+        clock: Clock,
+        dispatchers: DispatcherProvider,
+    ): FlatSetRepository = FlatSetRepositoryImpl(flatSetDao, clock, dispatchers)
 }

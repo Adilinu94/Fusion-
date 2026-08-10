@@ -32,12 +32,10 @@ import androidx.navigation.compose.rememberNavController
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
-import com.dropsync.feature.player.DropRestCard
 import com.dropsync.feature.player.MiniPlayer
 import com.dropsync.feature.player.NowPlayingScreen
 import com.dropsync.feature.settings.SettingsScreen
-import com.dropsync.feature.timer.TimerSection
-import com.dropsync.feature.workout.WorkoutFeature
+import com.dropsync.feature.workout.TrainScreen
 
 /**
  * Hauptnavigation mit vier Zielen (Fusion-Design 2026-08-07):
@@ -115,26 +113,10 @@ private fun DropSyncNavHost(
         startDestination = TopLevelDestination.TRAIN.route,
     ) {
         composable(TopLevelDestination.TRAIN.route) {
-            // Timer und Trainingslog teilen sich den Trainingskontext; nur
-            // :app kennt beide Features (Modulregel 3.2).
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(top = contentPadding.calculateTopPadding()),
-            ) {
-                TimerSection()
-                // Drop-Rest gehoert fachlich zum Satzende im Training (11.2);
-                // die Karte lebt in :feature:player, weil sie Playback braucht.
-                DropRestCard(modifier = Modifier.padding(horizontal = 16.dp))
-                // Interner NavHost des Trainings-Tabs (Session, Bibliothek,
-                // Routinen, Fortschritt); Timer/DropRest bleiben sichtbar.
-                WorkoutFeature(
-                    contentPadding =
-                        PaddingValues(bottom = contentPadding.calculateBottomPadding()),
-                    modifier = Modifier.weight(1f),
-                )
-            }
+            // FlowRep Train-Tab: flaches Satz-Log (Phase 2).
+            TrainScreen(
+                contentPadding = contentPadding,
+            )
         }
         composable(TopLevelDestination.MUSIC.route) {
             LibraryScreen(

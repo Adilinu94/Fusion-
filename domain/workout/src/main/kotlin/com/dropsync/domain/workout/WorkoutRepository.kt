@@ -153,31 +153,9 @@ interface WorkoutRepository {
     /** Startet eine neue Session aus der zuletzt abgeschlossenen Session. */
     suspend fun repeatLastSession(): AppResult<Long>
 
-    // --- Routinen / Templates (Schritt 9.7) ---
-
-    fun observeRoutines(): Flow<List<RoutineInfo>>
-
-    suspend fun getRoutineDetail(
-        routineId: Long,
-        locale: String,
-    ): AppResult<RoutineDetail>
-
-    suspend fun createRoutine(
-        name: String,
-        entries: List<RoutineEntry>,
-    ): AppResult<Long>
-
-    /** Speichert die gegebene Session als wiederverwendbare Routine. */
-    suspend fun createRoutineFromSession(
-        sessionId: Long,
-        name: String,
-    ): AppResult<Long>
-
     // --- Fortschritt & Analyse (Abschnitt 3) ---
 
     fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>>
-
-    suspend fun getExerciseProgress(exerciseId: Long): AppResult<List<ExerciseProgressPoint>>
 
     /** Waehrend der Session gespielte Tracks (Auswertung, Schritt 11.1). */
     suspend fun getSessionMusic(sessionId: Long): AppResult<List<PlayedTrackInfo>>

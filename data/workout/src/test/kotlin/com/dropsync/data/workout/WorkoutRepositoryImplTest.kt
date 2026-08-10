@@ -635,43 +635,4 @@ class WorkoutRepositoryImplTest {
             // Nur die Struktur wird kopiert, keine Saetze (9.6).
             assertTrue(db.workoutDao().getClustersForSessionExercise(rows.single().id).isEmpty())
         }
-
-    @Test
-    fun `routine aus session uebernimmt saetze und restpref`() =
-        runTest {
-            val (sessionId, sessionExerciseId) = startSessionWithExercise()
-            repository.completeCluster(
-                sessionExerciseId,
-                SetRole.WORKING,
-                listOf(SegmentInput(100_000, 1, 5)),
-                null,
-            )
-            clock.advanceBy(60_000)
-            repository.completeCluster(
-                sessionExerciseId,
-                SetRole.WORKING,
-                listOf(SegmentInput(100_000, 1, 5)),
-                null,
-            )
-            repository.setRestPref(exerciseId, 120, RestMode.NORMAL)
-            repository.completeSession(sessionId)
-
-            val routineId =
-                (
-                    repository.createRoutineFromSession(sessionId, "Push Day")
-                        as com.dropsync.core.common.AppResult.Success
-                ).value
-            val detail =
-                (
-                    repository.getRoutineDetail(routineId, "en")
-                        as com.dropsync.core.common.AppResult.Success
-                ).value
-
-            assertEquals("Push Day", detail.name)
-            val entry = detail.exercises.single()
-            assertEquals(exerciseId, entry.exerciseId)
-            // targetSets = Anzahl abgeschlossener Arbeitscluster (9.7).
-            assertEquals(2, entry.targetSets)
-            assertEquals(120, entry.restSeconds)
-        }
 }
