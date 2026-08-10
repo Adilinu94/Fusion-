@@ -14,11 +14,13 @@ import com.dropsync.data.timer.HapticsAdapter
 import com.dropsync.data.timer.MonotonicStateStore
 import com.dropsync.data.timer.RestTimerPreferencesStore
 import com.dropsync.data.timer.SpeechTextFormatter
+import com.dropsync.data.timer.TimerService
 import com.dropsync.data.timer.TtsSpeaker
 import com.dropsync.domain.playback.PlayerVolumeGate
 import com.dropsync.domain.timer.CueOutput
 import com.dropsync.domain.timer.DropRestRequestBus
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
+import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import dagger.Module
 import dagger.Provides
@@ -73,6 +75,13 @@ object TimerDataModule {
         clock: Clock,
         cueOutput: CueOutput,
     ): TimerEngine = TimerEngine(clock, cueOutput)
+
+    /** Phase 3: features start the foreground service via the domain port. */
+    @Provides
+    @Singleton
+    fun provideRestTimerServiceStarter(
+        @ApplicationContext context: Context,
+    ): RestTimerServiceStarter = RestTimerServiceStarter { TimerService.start(context) }
 
     /** Schmale Workout-zu-Player-Kopplung fuer Drop-Rest (Schritt 11). */
     @Provides

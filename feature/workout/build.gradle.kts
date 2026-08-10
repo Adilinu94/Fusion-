@@ -40,8 +40,6 @@ dependencies {
     // Rest-Timer der Uebung nutzt die eine TimerEngine (Praezedenz
     // :feature:timer/:feature:player); DropSync-Rest via DropRestRequestBus.
     implementation(project(":domain:timer"))
-    // Phase 3: Satz fertig -> TimerService (Foreground) starten.
-    implementation(project(":data:timer"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

@@ -38,6 +38,7 @@ include(":data:audio") // ADR-0005
 include(":data:health") // Herzfrequenz-Plan Phase 1
 include(":data:library")
 include(":data:playback")
+include(":data:sensor") // Fusion Phase 4 (BLE-Zaehlung)
 include(":data:settings")
 include(":data:timer")
 include(":data:workout")
@@ -47,6 +48,7 @@ include(":domain:audio") // ADR-0005
 include(":domain:health") // Herzfrequenz-Plan Phase 1
 include(":domain:library") // ADR-0003
 include(":domain:playback") // ADR-0004
+include(":domain:sensor") // Fusion Phase 4 (BLE-Zaehlung)
 include(":domain:settings")
 include(":domain:timer")
 include(":domain:workout")

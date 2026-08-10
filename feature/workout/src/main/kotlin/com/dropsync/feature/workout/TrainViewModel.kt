@@ -1,15 +1,14 @@
 package com.dropsync.feature.workout
 
-import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
-import com.dropsync.data.timer.TimerService
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
+import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.timer.TimerMode
 import com.dropsync.domain.timer.TimerState
@@ -22,7 +21,6 @@ import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -46,8 +44,8 @@ class TrainViewModel
         private val workoutRepository: WorkoutRepository,
         private val flatSetRepository: FlatSetRepository,
         private val timerEngine: TimerEngine,
+        private val restTimerServiceStarter: RestTimerServiceStarter,
         restTimerPreferences: RestTimerPreferencesRepository,
-        @ApplicationContext private val appContext: Context,
     ) : ViewModel() {
         val exercises: StateFlow<List<ExerciseInfo>> =
             workoutRepository
@@ -139,7 +137,7 @@ class TrainViewModel
                 )
             if (result is AppResult.Success) {
                 // Keep the timer alive in the pocket (foreground service).
-                TimerService.start(appContext)
+                restTimerServiceStarter.startForegroundTimerService()
             }
         }
 
