@@ -15,6 +15,7 @@ class LibraryRepositoryImplTest {
     private val songDao = FakeSongDao()
     private val scanState = FakeScanStateStore()
     private val folderFilter = FakeMusicFolderFilterRepository()
+    private val trackAnalysis = FakeTrackAnalysisRepository()
 
     private val repository =
         LibraryRepositoryImpl(
@@ -27,6 +28,7 @@ class LibraryRepositoryImplTest {
             safFileDao = FakeSafFileDao(),
             safGateway = FakeSafFolderGateway(),
             folderFilter = folderFilter,
+            trackAnalysisRepository = trackAnalysis,
         )
 
     private fun song(
@@ -140,5 +142,45 @@ class LibraryRepositoryImplTest {
                 AppError.MediaUnavailable(99),
                 (result as AppResult.Failure).error,
             )
+        }
+
+    @Test
+    fun `neue songs stossen automatisch die analyse an`() =
+        runTest {
+            // Phase 5 Import-Pipeline: neue Songs werden direkt nach dem
+            // Scan analysiert, ohne dass der Now-Playing-Screen sie oeffnet.
+            gateway.audio = listOf(song(1), song(2))
+            repository.refreshLibrary(force = false)
+
+            assertEquals(listOf(1L, 2L), trackAnalysis.requestedSongs.map { it.mediaStoreId })
+        }
+
+    @Test
+    fun `rescan stösst analyse nur fuer neue songs an`() =
+        runTest {
+            gateway.audio = listOf(song(1))
+            repository.refreshLibrary(force = false)
+            assertEquals(listOf(1L), trackAnalysis.requestedSongs.map { it.mediaStoreId })
+
+            gateway.audio = listOf(song(1), song(2))
+            gateway.generation = "v1:2"
+            repository.refreshLibrary(force = false)
+            assertEquals(listOf(1L, 2L), trackAnalysis.requestedSongs.map { it.mediaStoreId })
+        }
+
+    @Test
+    fun `nicht verfuegbare neue songs werden nicht analysiert`() =
+        runTest {
+            // Abgewaehlte Ordner (isAvailable=false) fallen aus der Analyse:
+            // ihr Waveform wird nie gebraucht.
+            folderFilter.setExcludedFolders(setOf("Music/Podcasts"))
+            gateway.audio =
+                listOf(
+                    song(1).copy(relativePath = "Music/Podcasts"),
+                    song(2),
+                )
+            repository.refreshLibrary(force = true)
+
+            assertEquals(listOf(2L), trackAnalysis.requestedSongs.map { it.mediaStoreId })
         }
 }

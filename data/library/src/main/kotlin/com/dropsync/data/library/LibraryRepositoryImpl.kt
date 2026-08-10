@@ -8,6 +8,7 @@ import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.SafFileDao
 import com.dropsync.core.database.dao.SongDao
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.library.AudioFileFormat
 import com.dropsync.domain.library.CueSheetParser
 import com.dropsync.domain.library.CueVirtualTrack
@@ -42,6 +43,7 @@ class LibraryRepositoryImpl(
     private val safFileDao: SafFileDao,
     private val safGateway: SafFolderGateway,
     private val folderFilter: MusicFolderFilterRepository,
+    private val trackAnalysisRepository: TrackAnalysisRepository,
 ) : LibraryRepository {
     override val songs: Flow<List<Song>> =
         songDao.observeAll().map { entities -> entities.map { it.toDomain() } }
@@ -97,6 +99,19 @@ class LibraryRepositoryImpl(
                     songDao.markMissingAsUnavailable(presentIds)
                 }
                 scanStateStore.setLastGeneration(generation)
+
+                // Import-Pipeline (Phase 5): neue, verfuegbare Songs stossen
+                // ihre Waveform-Analyse direkt nach dem Scan automatisch an,
+                // statt erst beim Oeffnen des Now-Playing-Screens. Der Worker
+                // dedupliziert ueber track_analysis_<songId>, doppelte Aufrufe
+                // sind also kostenlos; die UI zeigt den pulsierenden Placeholder.
+                val newSongs =
+                    entities
+                        .filter { it.mediaStoreId !in existing && it.isAvailable }
+                        .map { it.toDomain() }
+                for (song in newSongs) {
+                    trackAnalysisRepository.requestAnalysis(song)
+                }
 
                 AppResult.success(
                     LibraryScanResult(

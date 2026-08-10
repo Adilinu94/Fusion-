@@ -33,6 +33,7 @@ class FolderScanAndCueTest {
             safFileDao = safFileDao,
             safGateway = safGateway,
             folderFilter = FakeMusicFolderFilterRepository(),
+            trackAnalysisRepository = FakeTrackAnalysisRepository(),
         )
 
     private fun song(

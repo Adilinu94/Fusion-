@@ -12,9 +12,12 @@ import com.dropsync.core.database.entity.SafFileEntity
 import com.dropsync.core.database.entity.SongEntity
 import com.dropsync.core.database.entity.SongMarkerEntity
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.TrackAnalysis
+import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.library.MusicFolderFilterRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 
 // In-Memory-Fakes fuer JVM-Repositorytests: gleiche Vertraege wie die
@@ -275,5 +278,19 @@ class FakeMusicFolderFilterRepository(
 
     override suspend fun setExcludedFolders(paths: Set<String>) {
         state.value = paths
+    }
+}
+
+class FakeTrackAnalysisRepository : TrackAnalysisRepository {
+    val requestedSongs = mutableListOf<Song>()
+
+    override fun observeAnalysis(songId: Long): Flow<TrackAnalysis?> = flowOf(null)
+
+    override suspend fun requestAnalysis(song: Song) {
+        requestedSongs += song
+    }
+
+    override suspend fun requestOnsetDetection(song: Song) {
+        // Nicht in dieser Phase relevant.
     }
 }

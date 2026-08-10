@@ -25,6 +25,7 @@ import com.dropsync.data.library.MusicFolderFilterStore
 import com.dropsync.data.library.SafFolderGateway
 import com.dropsync.data.library.SafFolderGatewayImpl
 import com.dropsync.data.library.ScanStateStore
+import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.library.ImportValidator
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
@@ -103,6 +104,7 @@ object LibraryDataModule {
         safFileDao: SafFileDao,
         safGateway: SafFolderGateway,
         folderFilter: MusicFolderFilterRepository,
+        trackAnalysisRepository: TrackAnalysisRepository,
     ): LibraryRepository =
         LibraryRepositoryImpl(
             gateway = gateway,
@@ -114,6 +116,7 @@ object LibraryDataModule {
             safFileDao = safFileDao,
             safGateway = safGateway,
             folderFilter = folderFilter,
+            trackAnalysisRepository = trackAnalysisRepository,
         )
 
     @Provides

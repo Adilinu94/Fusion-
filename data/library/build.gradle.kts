@@ -39,6 +39,9 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:database"))
     implementation(project(":domain:library"))
+    // Auto-Analyse beim Import (Phase 5): neue Songs stossen ihre
+    // Waveform-Analyse direkt nach dem Scan an (TrackAnalysisRepository).
+    implementation(project(":domain:audio"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)
