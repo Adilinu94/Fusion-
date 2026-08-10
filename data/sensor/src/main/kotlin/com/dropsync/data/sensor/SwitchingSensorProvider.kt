@@ -21,8 +21,8 @@ import kotlinx.coroutines.flow.flatMapLatest
  */
 @OptIn(ExperimentalCoroutinesApi::class)
 internal class SwitchingSensorProvider(
-    private val ble: BleSensorProvider,
-    private val fake: FakeSensorProvider,
+    private val ble: SensorProvider,
+    private val fake: SensorProvider,
 ) : SensorProvider {
     /** True while the real chip is (or is about to be) connected. */
     private val useBle: Flow<Boolean> =

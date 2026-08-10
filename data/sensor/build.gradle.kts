@@ -25,6 +25,13 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric for DataStore/Context tests on the JVM.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -41,6 +48,8 @@ dependencies {
 
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
