@@ -255,6 +255,32 @@ class TrainViewModel
         /** Connection state of the FlowRep chip (drives waveform visibility). */
         val sensorConnection: StateFlow<SensorConnectionState> = sensorProvider.connectionState
 
+        /** BLE address of the connected chip (drives the calibration entry). */
+        val connectedDeviceId: StateFlow<String?> = sensorProvider.connectedDeviceId
+
+        /** One-shot connection error text (German, via BleErrorMapper). */
+        private val _sensorError = MutableStateFlow<String?>(null)
+        val sensorError: StateFlow<String?> = _sensorError.asStateFlow()
+
+        /**
+         * Connects to a FlowRep chip by advertise-name scan (deviceId null).
+         * The firmware auto-starts streaming after connect (Phase 4 quirk).
+         */
+        fun connectSensor() {
+            viewModelScope.launch {
+                _sensorError.value = null
+                when (val result = sensorProvider.connect(null)) {
+                    is AppResult.Success -> Unit
+                    is AppResult.Failure -> _sensorError.value = sensorErrorText(result.error)
+                }
+            }
+        }
+
+        /** Disconnects the chip; the provider falls back to the fake. */
+        fun disconnectSensor() {
+            viewModelScope.launch { sensorProvider.disconnect() }
+        }
+
         /**
          * Rolling window of the last [WAVEFORM_WINDOW] acceleration magnitudes
          * (in g), normalized for the waveform. Empty while no chip streams.
@@ -307,5 +333,21 @@ class TrainViewModel
 
             /** Minimum magnitude in g for a peak (ignores rest jitter). */
             const val PEAK_MIN_G = 1.3
+        }
+    }
+
+/** German user text for a sensor connection failure (BleErrorMapper text). */
+private fun sensorErrorText(error: com.dropsync.core.common.AppError): String =
+    when (error) {
+        is com.dropsync.core.common.AppError.PermissionDenied -> {
+            "Bluetooth-Berechtigung fehlt. Bitte in den Einstellungen erlauben."
+        }
+
+        is com.dropsync.core.common.AppError.Unknown -> {
+            error.debugMessage ?: "Verbindung fehlgeschlagen."
+        }
+
+        else -> {
+            "Verbindung fehlgeschlagen."
         }
     }

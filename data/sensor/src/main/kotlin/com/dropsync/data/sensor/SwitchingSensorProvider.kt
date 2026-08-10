@@ -33,6 +33,9 @@ internal class SwitchingSensorProvider(
     override val connectionState: StateFlow<SensorConnectionState>
         get() = ble.connectionState
 
+    override val connectedDeviceId: StateFlow<String?>
+        get() = ble.connectedDeviceId
+
     override val samples: Flow<SensorSample> =
         useBle.flatMapLatest { on -> if (on) ble.samples else fake.samples }
 

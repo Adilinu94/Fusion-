@@ -17,6 +17,9 @@ interface SensorProvider {
     /** Device button events (fee4); empty flow on the fake provider. */
     val deviceEvents: Flow<DeviceEvent>
 
+    /** BLE address of the connected chip; null until connected. */
+    val connectedDeviceId: StateFlow<String?>
+
     /**
      * Connects to a FlowRep chip. [deviceId] null = scan by advertise name.
      * Returns an [AppResult] so BLE failures surface as German user text

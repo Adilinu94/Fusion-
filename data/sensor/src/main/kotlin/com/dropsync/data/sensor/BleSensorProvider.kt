@@ -86,6 +86,9 @@ class BleSensorProvider
         private val _deviceEvents = MutableSharedFlow<DeviceEvent>(extraBufferCapacity = 8)
         override val deviceEvents: SharedFlow<DeviceEvent> = _deviceEvents.asSharedFlow()
 
+        private val _connectedDeviceId = MutableStateFlow<String?>(null)
+        override val connectedDeviceId: StateFlow<String?> = _connectedDeviceId.asStateFlow()
+
         private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { _samples.tryEmit(it) })
         private val dedupTracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
         private val gattClient = BleGattClient()
@@ -162,6 +165,7 @@ class BleSensorProvider
             runCatching { sendControlCommand(CONTROL_STOP_STREAM) }
             gattClient.close()
             remoteId = null
+            _connectedDeviceId.value = null
             _connectionState.value = SensorConnectionState.DISCONNECTED
         }
 
@@ -221,6 +225,7 @@ class BleSensorProvider
                     when (event) {
                         is GattEvent.Connected -> {
                             remoteId = device.address
+                            _connectedDeviceId.value = device.address
                             // MTU before the CCCD sequence (HyperOS quirk).
                             gattClient.requestMtu(REQUIRED_MTU)
                         }
@@ -238,6 +243,7 @@ class BleSensorProvider
                             if (cont.isActive) {
                                 cont.resume(AppResult.failure(AppError.Unknown("Verbindung getrennt")))
                             }
+                            _connectedDeviceId.value = null
                             if (_connectionState.value != SensorConnectionState.DISCONNECTED) {
                                 _connectionState.value = SensorConnectionState.DISCONNECTED
                             }

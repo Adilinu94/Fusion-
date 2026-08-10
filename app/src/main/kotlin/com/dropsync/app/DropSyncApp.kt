@@ -25,16 +25,19 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
 import com.dropsync.feature.player.MiniPlayer
 import com.dropsync.feature.player.NowPlayingScreen
 import com.dropsync.feature.settings.SettingsScreen
+import com.dropsync.feature.workout.CalibrationWizardScreen
 import com.dropsync.feature.workout.TrainScreen
 
 /**
@@ -64,6 +67,11 @@ private const val ROUTE_AUDIO_SETTINGS = "audio_settings"
  * auf den Mini-Player; kein viertes Hauptziel.
  */
 private const val ROUTE_NOW_PLAYING = "now_playing"
+
+/** Guided-Calibration-Wizard (Phase 4 Schritt 3), aus dem Train-Tab. */
+private const val ROUTE_CALIBRATION = "calibration/{exerciseId}/{deviceId}"
+private const val ARG_EXERCISE_ID = "exerciseId"
+private const val ARG_DEVICE_ID = "deviceId"
 
 @Composable
 fun DropSyncApp(windowSizeClass: WindowSizeClass) {
@@ -116,6 +124,9 @@ private fun DropSyncNavHost(
             // FlowRep Train-Tab: flaches Satz-Log (Phase 2).
             TrainScreen(
                 contentPadding = contentPadding,
+                onOpenCalibration = { exerciseId, deviceId ->
+                    navController.navigate("calibration/$exerciseId/$deviceId")
+                },
             )
         }
         composable(TopLevelDestination.MUSIC.route) {
@@ -164,6 +175,21 @@ private fun DropSyncNavHost(
             NowPlayingScreen(
                 contentPadding = contentPadding,
                 onBack = { navController.popBackStack() },
+            )
+        }
+        composable(
+            route = ROUTE_CALIBRATION,
+            arguments =
+                listOf(
+                    navArgument(ARG_EXERCISE_ID) { type = NavType.LongType },
+                    navArgument(ARG_DEVICE_ID) { type = NavType.StringType },
+                ),
+        ) { backStackEntry ->
+            CalibrationWizardScreen(
+                exerciseId = backStackEntry.arguments?.getLong(ARG_EXERCISE_ID) ?: return@composable,
+                deviceId = backStackEntry.arguments?.getString(ARG_DEVICE_ID) ?: return@composable,
+                contentPadding = contentPadding,
+                onFinished = { navController.popBackStack() },
             )
         }
     }

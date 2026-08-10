@@ -56,6 +56,7 @@ import java.util.Locale
 fun TrainScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
+    onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit = { _, _ -> },
     viewModel: TrainViewModel = hiltViewModel(),
 ) {
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
@@ -68,6 +69,8 @@ fun TrainScreen(
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
     val dropAutoEnabled by viewModel.dropAutoEnabled.collectAsStateWithLifecycle()
     val sensorConnection by viewModel.sensorConnection.collectAsStateWithLifecycle()
+    val connectedDeviceId by viewModel.connectedDeviceId.collectAsStateWithLifecycle()
+    val sensorError by viewModel.sensorError.collectAsStateWithLifecycle()
     val waveform by viewModel.waveform.collectAsStateWithLifecycle()
     val lastPeakMs by viewModel.lastPeakMs.collectAsStateWithLifecycle()
 
@@ -106,6 +109,18 @@ fun TrainScreen(
             selectedId = selectedExercise?.id,
             onSelect = { viewModel.selectExercise(it) },
             onCreateNew = { showCreateDialog = true },
+        )
+
+        // FlowRep-Chip: Verbinden / Status / Kalibrieren (Phase 4).
+        SensorStatusCard(
+            connection = sensorConnection,
+            deviceId = connectedDeviceId,
+            sensorError = sensorError,
+            selectedExerciseId = selectedExercise?.id,
+            onConnect = { viewModel.connectSensor() },
+            onDisconnect = { viewModel.disconnectSensor() },
+            onOpenCalibration = onOpenCalibration,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
 
         // Gewicht und Reps
@@ -367,6 +382,72 @@ private fun CreateExerciseDialog(
             }
         },
     )
+}
+
+/**
+ * FlowRep chip status card (Phase 4): connect/disconnect plus the entry into
+ * the calibration wizard once a chip streams and an exercise is selected.
+ */
+@Composable
+private fun SensorStatusCard(
+    connection: SensorConnectionState,
+    deviceId: String?,
+    sensorError: String?,
+    selectedExerciseId: Long?,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            val statusText =
+                when (connection) {
+                    SensorConnectionState.DISCONNECTED -> "Kein Chip verbunden"
+                    SensorConnectionState.CONNECTING -> "Verbinde..."
+                    SensorConnectionState.CONNECTED -> "Chip verbunden"
+                    SensorConnectionState.STREAMING -> "Chip streamt"
+                }
+            Text(text = statusText, style = MaterialTheme.typography.titleSmall)
+
+            sensorError?.let {
+                Text(
+                    text = it,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                when (connection) {
+                    SensorConnectionState.DISCONNECTED -> {
+                        AssistChip(onClick = onConnect, label = { Text("Chip verbinden") })
+                    }
+
+                    SensorConnectionState.CONNECTING -> {
+                        Unit
+                    }
+
+                    SensorConnectionState.CONNECTED,
+                    SensorConnectionState.STREAMING,
+                    -> {
+                        AssistChip(onClick = onDisconnect, label = { Text("Trennen") })
+                        val exId = selectedExerciseId
+                        val devId = deviceId
+                        if (exId != null && devId != null) {
+                            AssistChip(
+                                onClick = { onOpenCalibration(exId, devId) },
+                                label = { Text("Kalibrieren") },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /**
