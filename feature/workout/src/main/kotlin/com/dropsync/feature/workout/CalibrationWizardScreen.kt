@@ -46,6 +46,7 @@ fun CalibrationWizardScreen(
     val buffered by viewModel.bufferedSamples.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val saved by viewModel.saved.collectAsStateWithLifecycle()
+    val qualityScore by viewModel.qualityScore.collectAsStateWithLifecycle()
     val connection by viewModel.connectionState.collectAsStateWithLifecycle()
 
     LaunchedEffect(exerciseId, deviceId) {
@@ -93,6 +94,19 @@ fun CalibrationWizardScreen(
                         "Ruhe: ${"%.1f".format(gate.seconds)} s — " +
                             (if (gate.ready) "bereit" else "Arm still halten…"),
                         style = MaterialTheme.typography.bodySmall,
+                    )
+                } else if (stage == CalibrationController.Stage.REVIEW && qualityScore != null) {
+                    val q = qualityScore!!
+                    val label =
+                        when {
+                            q >= 0.7 -> "gut"
+                            q >= 0.4 -> "mittel — ggf. wiederholen"
+                            else -> "schwach — bitte wiederholen"
+                        }
+                    Text(
+                        "Qualität: $label (${"%.0f".format(q * 100)} %)",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 } else if (stage != CalibrationController.Stage.REVIEW &&
                     stage != CalibrationController.Stage.DONE

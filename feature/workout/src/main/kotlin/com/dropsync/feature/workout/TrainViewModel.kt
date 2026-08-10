@@ -7,12 +7,15 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
+import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
 import com.dropsync.domain.sensor.ExerciseEngineConfig
 import com.dropsync.domain.sensor.ExerciseEnginePipeline
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorProvider
+import com.dropsync.domain.sensor.SensorSample
 import com.dropsync.domain.sensor.accelMagnitude
+import com.dropsync.domain.sensor.calibration.CalibrationRefiner
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.timer.RestTimerServiceStarter
@@ -161,6 +164,7 @@ class TrainViewModel
             loadMaxVolume(exercise.id)
             loadRestPref(exercise.id)
             resetShadowEngine()
+            loadActiveProfile()
         }
 
         private fun loadRestPref(exerciseId: Long) {
@@ -324,6 +328,42 @@ class TrainViewModel
         /** Confirmed reps of the selected exercise in this session (live). */
         private var liveRepCount = 0
 
+        // --- Phase 4 live counting (start -> countdown -> count -> stop) ----
+        //
+        // The LIVE pipeline uses the stored calibration profile (rotation
+        // axis, gyro bias, template). It only runs during an active set. At
+        // set end the counted reps are offered for the log; a user correction
+        // re-analyses the buffered set and improves the profile (learn loop).
+
+        /** Live-count set state (drives the start/stop UI + countdown). */
+        enum class SetPhase { IDLE, COUNTDOWN, COUNTING }
+
+        private val _setPhase = MutableStateFlow(SetPhase.IDLE)
+        val setPhase: StateFlow<SetPhase> = _setPhase.asStateFlow()
+
+        /** Countdown seconds left before counting starts (0 while counting). */
+        private val _countdownSeconds = MutableStateFlow(0)
+        val countdownSeconds: StateFlow<Int> = _countdownSeconds.asStateFlow()
+
+        /** Reps counted live in the active set (0 unless COUNTING/finished). */
+        private val _liveCountedReps = MutableStateFlow(0)
+        val liveCountedReps: StateFlow<Int> = _liveCountedReps.asStateFlow()
+
+        /** True once a calibration profile exists for the selected exercise. */
+        private val _hasCalibration = MutableStateFlow(false)
+        val hasCalibration: StateFlow<Boolean> = _hasCalibration.asStateFlow()
+
+        /** Live pipeline for the active set (null until a set starts). */
+        private var liveEngine: ExerciseEnginePipeline? = null
+
+        /** Active calibration profile for the selected exercise+device. */
+        private var activeProfile: CalibrationProfile? = null
+
+        /** Raw samples of the active set (buffered for the learn loop). */
+        private val setSamples = mutableListOf<SensorSample>()
+
+        private var countdownJob: kotlinx.coroutines.Job? = null
+
         init {
             loadRecentSets()
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
@@ -350,6 +390,15 @@ class TrainViewModel
                         _lastPeakMs.value = sample.timestampMs
                     }
                     prevMag = mag.toDouble()
+                    // Live counting: only during an active set (after the
+                    // countdown); raw samples are buffered for the learn loop.
+                    if (_setPhase.value == SetPhase.COUNTING) {
+                        setSamples.add(sample)
+                        liveEngine?.let { engine ->
+                            engine.processSample(sample.timestampMs, sample.gx, sample.gy, sample.gz)
+                            _liveCountedReps.value = engine.repCount.value
+                        }
+                    }
                     // Shadow DoD 11b: feed the new pipeline; its repCount is
                     // tracked only for the diff against the live count.
                     shadowEngine?.let { engine ->
@@ -360,6 +409,106 @@ class TrainViewModel
                         }
                     }
                 }
+            }
+        }
+
+        // --- Live set control ------------------------------------------------
+
+        /**
+         * Starts a live-counted set: needs a calibration profile and a
+         * streaming chip. A short countdown lets the user get into the start
+         * position before the pipeline begins counting.
+         */
+        fun startCountedSet() {
+            if (_setPhase.value != SetPhase.IDLE) return
+            val profile = activeProfile ?: return
+            if (sensorConnection.value != SensorConnectionState.STREAMING) return
+            _setPhase.value = SetPhase.COUNTDOWN
+            _countdownSeconds.value = COUNTDOWN_SECONDS
+            _liveCountedReps.value = 0
+            setSamples.clear()
+            liveEngine =
+                ExerciseEnginePipeline(
+                    ExerciseEngineConfig(
+                        rotationAxis = profile.rotationAxis,
+                        gyroBias = profile.gyroBias,
+                        expectedProminence = profile.expectedProminence,
+                        expectedDurationSamples = profile.expectedDurationSamples,
+                        hasValidCalibration = true,
+                    ),
+                ).also { it.setTemplate(profile.repTemplate) }
+            countdownJob?.cancel()
+            countdownJob =
+                viewModelScope.launch {
+                    var remaining = COUNTDOWN_SECONDS
+                    while (remaining > 0 && isActive) {
+                        _countdownSeconds.value = remaining
+                        delay(1_000)
+                        remaining--
+                    }
+                    _countdownSeconds.value = 0
+                    _setPhase.value = SetPhase.COUNTING
+                }
+        }
+
+        /**
+         * Ends the active set and copies the counted reps into the reps input
+         * (overwrites only if something was counted). The user can still
+         * correct the number before logging (learn loop via [applyCorrection]).
+         */
+        fun stopCountedSet() {
+            countdownJob?.cancel()
+            val counted = _liveCountedReps.value
+            _setPhase.value = SetPhase.IDLE
+            _countdownSeconds.value = 0
+            if (counted > 0) {
+                _repsInput.value = counted.toString()
+            }
+        }
+
+        /**
+         * Learn loop: the user corrected the counted reps to [correctedReps].
+         * The buffered set is re-analysed so the pipeline parameters would
+         * reproduce the true count, and the profile is improved silently.
+         */
+        fun applyCorrection(correctedReps: Int) {
+            val exercise = _selectedExercise.value ?: return
+            val deviceId = connectedDeviceId.value ?: return
+            val profile = activeProfile ?: return
+            if (setSamples.isEmpty() || correctedReps < 0) return
+            viewModelScope.launch {
+                val improved =
+                    CalibrationRefiner.refine(
+                        samples = setSamples,
+                        correctedReps = correctedReps,
+                        profile = profile,
+                    ) ?: return@launch
+                activeProfile = improved
+                calibrationProfileRepository.save(improved)
+                Log.d(SHADOW_TAG, "learn: corrected=$correctedReps profile updated")
+                // Pre-fill the log with the corrected count.
+                _repsInput.value = correctedReps.toString()
+            }
+        }
+
+        /** Loads the calibration profile for the selected exercise (if any). */
+        private fun loadActiveProfile() {
+            val exercise =
+                _selectedExercise.value ?: run {
+                    activeProfile = null
+                    _hasCalibration.value = false
+                    return
+                }
+            val deviceId =
+                connectedDeviceId.value ?: run {
+                    activeProfile = null
+                    _hasCalibration.value = false
+                    return
+                }
+            viewModelScope.launch {
+                val result = calibrationProfileRepository.load(exercise.id, deviceId)
+                activeProfile = (result as? AppResult.Success)?.value
+                _hasCalibration.value = activeProfile != null
             }
         }
 
@@ -425,6 +574,9 @@ class TrainViewModel
 
             /** Zero gyro bias without calibration. */
             val NEUTRAL_BIAS = listOf(0.0, 0.0, 0.0)
+
+            /** Get-ready countdown before a live-counted set starts. */
+            const val COUNTDOWN_SECONDS = 3
         }
     }
 

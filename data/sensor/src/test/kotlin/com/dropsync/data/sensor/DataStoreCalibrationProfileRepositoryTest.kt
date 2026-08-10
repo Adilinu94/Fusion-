@@ -26,11 +26,14 @@ class DataStoreCalibrationProfileRepositoryTest {
     ) = CalibrationProfile(
         exerciseId = exerciseId,
         deviceId = deviceId,
+        rotationAxis = listOf(0.0, 0.0, 1.0),
+        gyroBias = listOf(0.01, -0.02, 0.03),
         repTemplate = listOf(0.1, 0.5, 1.0, 0.5, 0.1),
         signalPeakLevel = 1.5,
         noisePeakLevel = 0.2,
         expectedProminence = 0.4,
         expectedDurationSamples = 25.0,
+        qualityScore = 0.85,
     )
 
     @Before
@@ -60,11 +63,23 @@ class DataStoreCalibrationProfileRepositoryTest {
             val restored = (loaded as AppResult.Success).value
             assertEquals(original.exerciseId, restored?.exerciseId)
             assertEquals(original.deviceId, restored?.deviceId)
+            assertEquals(original.rotationAxis, restored?.rotationAxis)
+            assertEquals(original.gyroBias, restored?.gyroBias)
             assertEquals(original.repTemplate, restored?.repTemplate)
             assertEquals(original.signalPeakLevel, restored?.signalPeakLevel ?: 0.0, 1e-9)
             assertEquals(original.noisePeakLevel, restored?.noisePeakLevel ?: 0.0, 1e-9)
             assertEquals(original.expectedProminence, restored?.expectedProminence ?: 0.0, 1e-9)
             assertEquals(original.expectedDurationSamples, restored?.expectedDurationSamples ?: 0.0, 1e-9)
+            assertEquals(original.qualityScore, restored?.qualityScore ?: 0.0, 1e-9)
+        }
+
+    @Test
+    fun `profile with empty template is not returned`() =
+        runTest {
+            // An axis/template-less profile cannot drive the pipeline; the
+            // codec drops it (decode returns null) -> load reports "absent".
+            repo.save(profile(5L, "LEGACY").copy(repTemplate = emptyList()))
+            assertNull((repo.load(5L, "LEGACY") as AppResult.Success).value)
         }
 
     @Test

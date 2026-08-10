@@ -69,8 +69,15 @@ class DataStoreCalibrationProfileRepository
             deviceId: String,
         ) = stringPreferencesKey("cal_${exerciseId}_$deviceId")
 
+        // Compact semicolon-separated Double lists (no JSON lib needed).
+        // v1 had 5 parts (no axis/bias); v2 has 8 parts. A v1 blob lacks the
+        // rotation axis, so it cannot drive the pipeline -> treated as absent.
         private fun encode(profile: CalibrationProfile): String =
             buildString {
+                append(profile.rotationAxis.joinToString(","))
+                append(';')
+                append(profile.gyroBias.joinToString(","))
+                append(';')
                 append(profile.repTemplate.joinToString(","))
                 append(';')
                 append(profile.signalPeakLevel)
@@ -80,6 +87,8 @@ class DataStoreCalibrationProfileRepository
                 append(profile.expectedProminence)
                 append(';')
                 append(profile.expectedDurationSamples)
+                append(';')
+                append(profile.qualityScore)
             }
 
         private fun decode(
@@ -88,21 +97,28 @@ class DataStoreCalibrationProfileRepository
             deviceId: String,
         ): CalibrationProfile? {
             val parts = raw.split(';')
-            if (parts.size != 5) return null
-            val template = parts[0].split(',').mapNotNull { it.toDoubleOrNull() }
-            val signalPeak = parts[1].toDoubleOrNull() ?: return null
-            val noisePeak = parts[2].toDoubleOrNull() ?: return null
-            val prominence = parts[3].toDoubleOrNull() ?: return null
-            val durationSamples = parts[4].toDoubleOrNull() ?: return null
-            if (template.isEmpty()) return null
+            // v1 blobs (5 parts) have no rotation axis -> cannot calibrate.
+            if (parts.size != 8) return null
+            val axis = parts[0].split(',').mapNotNull { it.toDoubleOrNull() }
+            val bias = parts[1].split(',').mapNotNull { it.toDoubleOrNull() }
+            val template = parts[2].split(',').mapNotNull { it.toDoubleOrNull() }
+            val signalPeak = parts[3].toDoubleOrNull() ?: return null
+            val noisePeak = parts[4].toDoubleOrNull() ?: return null
+            val prominence = parts[5].toDoubleOrNull() ?: return null
+            val durationSamples = parts[6].toDoubleOrNull() ?: return null
+            val quality = parts[7].toDoubleOrNull() ?: 1.0
+            if (axis.size != 3 || bias.size != 3 || template.isEmpty()) return null
             return CalibrationProfile(
                 exerciseId = exerciseId,
                 deviceId = deviceId,
+                rotationAxis = axis,
+                gyroBias = bias,
                 repTemplate = template,
                 signalPeakLevel = signalPeak,
                 noisePeakLevel = noisePeak,
                 expectedProminence = prominence,
                 expectedDurationSamples = durationSamples,
+                qualityScore = quality,
             )
         }
     }

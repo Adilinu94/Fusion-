@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
@@ -46,6 +47,7 @@ import com.dropsync.core.designsystem.component.BrandButtonPrimary
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.ExerciseInfo
+import com.dropsync.feature.workout.TrainViewModel.SetPhase
 import java.util.Locale
 
 /**
@@ -73,6 +75,10 @@ fun TrainScreen(
     val sensorError by viewModel.sensorError.collectAsStateWithLifecycle()
     val waveform by viewModel.waveform.collectAsStateWithLifecycle()
     val lastPeakMs by viewModel.lastPeakMs.collectAsStateWithLifecycle()
+    val setPhase by viewModel.setPhase.collectAsStateWithLifecycle()
+    val countdownSeconds by viewModel.countdownSeconds.collectAsStateWithLifecycle()
+    val liveCountedReps by viewModel.liveCountedReps.collectAsStateWithLifecycle()
+    val hasCalibration by viewModel.hasCalibration.collectAsStateWithLifecycle()
 
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -117,9 +123,15 @@ fun TrainScreen(
             deviceId = connectedDeviceId,
             sensorError = sensorError,
             selectedExerciseId = selectedExercise?.id,
+            setPhase = setPhase,
+            countdownSeconds = countdownSeconds,
+            liveCountedReps = liveCountedReps,
+            hasCalibration = hasCalibration,
             onConnect = { viewModel.connectSensor() },
             onDisconnect = { viewModel.disconnectSensor() },
             onOpenCalibration = onOpenCalibration,
+            onStartSet = { viewModel.startCountedSet() },
+            onStopSet = { viewModel.stopCountedSet() },
             modifier = Modifier.padding(horizontal = 16.dp),
         )
 
@@ -394,9 +406,15 @@ private fun SensorStatusCard(
     deviceId: String?,
     sensorError: String?,
     selectedExerciseId: Long?,
+    setPhase: SetPhase,
+    countdownSeconds: Int,
+    liveCountedReps: Int,
+    hasCalibration: Boolean,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit,
+    onStartSet: () -> Unit,
+    onStopSet: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Card(
@@ -444,6 +462,72 @@ private fun SensorStatusCard(
                             )
                         }
                     }
+                }
+            }
+
+            // Live rep counting (Phase 4): start -> countdown -> count -> stop.
+            // Visible while the chip streams; needs a calibration profile.
+            if (connection == SensorConnectionState.STREAMING) {
+                LiveCountPanel(
+                    setPhase = setPhase,
+                    countdownSeconds = countdownSeconds,
+                    liveCountedReps = liveCountedReps,
+                    hasCalibration = hasCalibration,
+                    onStartSet = onStartSet,
+                    onStopSet = onStopSet,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Live-count set control (Fusion Phase 4): a start button begins a short
+ * countdown, then the pipeline counts reps until the user stops. The counted
+ * number is copied into the reps input on stop and can be corrected before
+ * logging (learn loop in TrainViewModel.applyCorrection).
+ */
+@Composable
+private fun LiveCountPanel(
+    setPhase: SetPhase,
+    countdownSeconds: Int,
+    liveCountedReps: Int,
+    hasCalibration: Boolean,
+    onStartSet: () -> Unit,
+    onStopSet: () -> Unit,
+) {
+    when (setPhase) {
+        SetPhase.IDLE -> {
+            Button(
+                onClick = onStartSet,
+                enabled = hasCalibration,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(if (hasCalibration) "Satz starten (zählen)" else "Zuerst kalibrieren")
+            }
+        }
+
+        SetPhase.COUNTDOWN -> {
+            Text(
+                text = "Start in $countdownSeconds …",
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
+        }
+
+        SetPhase.COUNTING -> {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(
+                    text = "$liveCountedReps",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.weight(1f),
+                )
+                Button(onClick = onStopSet) {
+                    Text("Stopp")
                 }
             }
         }

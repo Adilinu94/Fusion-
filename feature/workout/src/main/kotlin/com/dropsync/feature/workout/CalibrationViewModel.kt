@@ -50,6 +50,10 @@ class CalibrationViewModel
         private val _saved = MutableStateFlow(false)
         val saved: StateFlow<Boolean> = _saved.asStateFlow()
 
+        /** Learned profile quality 0..1 (shown in the review stage). */
+        private val _qualityScore = MutableStateFlow<Double?>(null)
+        val qualityScore: StateFlow<Double?> = _qualityScore.asStateFlow()
+
         val connectionState: StateFlow<SensorConnectionState> = sensorProvider.connectionState
 
         private var collectJob: Job? = null
@@ -93,6 +97,10 @@ class CalibrationViewModel
             val failure = controller.finishStage()
             _error.value = failure
             _stage.value = controller.stage
+            // Preview the learned quality once the review stage is reached.
+            if (controller.stage == CalibrationController.Stage.REVIEW) {
+                _qualityScore.value = controller.finalize()?.qualityScore
+            }
         }
 
         /** Persists the learned profile once the review stage is confirmed. */
@@ -107,11 +115,14 @@ class CalibrationViewModel
                     CalibrationProfile(
                         exerciseId = exerciseId,
                         deviceId = deviceId,
+                        rotationAxis = result.rotationAxis,
+                        gyroBias = result.gyroBias,
                         repTemplate = result.repTemplate,
                         signalPeakLevel = result.theta,
                         noisePeakLevel = result.baseline,
                         expectedProminence = result.expectedProminence,
                         expectedDurationSamples = result.expectedDurationSamples,
+                        qualityScore = result.qualityScore,
                     )
                 when (calibrationProfileRepository.save(profile)) {
                     is AppResult.Success -> _saved.value = true
