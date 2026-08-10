@@ -17,7 +17,12 @@ interface SensorProvider {
     /** Device button events (fee4); empty flow on the fake provider. */
     val deviceEvents: Flow<DeviceEvent>
 
-    suspend fun connect(deviceId: String?)
+    /**
+     * Connects to a FlowRep chip. [deviceId] null = scan by advertise name.
+     * Returns an [AppResult] so BLE failures surface as German user text
+     * (BleErrorMapper), never as a thrown exception.
+     */
+    suspend fun connect(deviceId: String?): com.dropsync.core.common.AppResult<Unit>
 
     suspend fun disconnect()
 

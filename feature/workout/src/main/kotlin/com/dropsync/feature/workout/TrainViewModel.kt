@@ -6,6 +6,9 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
+import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorProvider
+import com.dropsync.domain.sensor.accelMagnitude
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.timer.RestTimerServiceStarter
@@ -45,6 +48,7 @@ class TrainViewModel
         private val flatSetRepository: FlatSetRepository,
         private val timerEngine: TimerEngine,
         private val restTimerServiceStarter: RestTimerServiceStarter,
+        private val sensorProvider: SensorProvider,
         restTimerPreferences: RestTimerPreferencesRepository,
     ) : ViewModel() {
         val exercises: StateFlow<List<ExerciseInfo>> =
@@ -246,6 +250,24 @@ class TrainViewModel
             }
         }
 
+        // --- Phase 4: live sensor waveform --------------------------------
+
+        /** Connection state of the FlowRep chip (drives waveform visibility). */
+        val sensorConnection: StateFlow<SensorConnectionState> = sensorProvider.connectionState
+
+        /**
+         * Rolling window of the last [WAVEFORM_WINDOW] acceleration magnitudes
+         * (in g), normalized for the waveform. Empty while no chip streams.
+         */
+        private val _waveform = MutableStateFlow<List<Float>>(emptyList())
+        val waveform: StateFlow<List<Float>> = _waveform.asStateFlow()
+
+        /** One-shot peak flash: timestamp of the last detected acceleration peak. */
+        private val _lastPeakMs = MutableStateFlow(0L)
+        val lastPeakMs: StateFlow<Long> = _lastPeakMs.asStateFlow()
+
+        private var waveformWindow = ArrayDeque<Float>()
+
         init {
             loadRecentSets()
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
@@ -256,9 +278,34 @@ class TrainViewModel
                     delay(TICK_MS)
                 }
             }
+            // Phase 4 step 5: collect live samples for the waveform; a peak
+            // (accel magnitude spike) triggers the flash overlay.
+            viewModelScope.launch {
+                var prevMag = 0.0
+                sensorProvider.samples.collect { sample ->
+                    val mag = sample.accelMagnitude.toFloat()
+                    waveformWindow.addLast(mag)
+                    if (waveformWindow.size > WAVEFORM_WINDOW) waveformWindow.removeFirst()
+                    _waveform.value = waveformWindow.toList()
+                    // Simple peak heuristic for the flash: sharp rising edge.
+                    if (mag - prevMag > PEAK_DELTA_G && mag > PEAK_MIN_G) {
+                        _lastPeakMs.value = sample.timestampMs
+                    }
+                    prevMag = mag.toDouble()
+                }
+            }
         }
 
         private companion object {
             const val TICK_MS = 250L
+
+            /** Samples shown in the live waveform (~4 s at 50 Hz). */
+            const val WAVEFORM_WINDOW = 200
+
+            /** Rising-edge delta in g that counts as a rep peak flash. */
+            const val PEAK_DELTA_G = 0.4
+
+            /** Minimum magnitude in g for a peak (ignores rest jitter). */
+            const val PEAK_MIN_G = 1.3
         }
     }

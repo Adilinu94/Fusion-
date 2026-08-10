@@ -27,7 +27,9 @@ class FakeSensorProvider
         override val samples: Flow<SensorSample> = emptyFlow()
         override val deviceEvents: Flow<DeviceEvent> = emptyFlow()
 
-        override suspend fun connect(deviceId: String?) = Unit
+        override suspend fun connect(deviceId: String?): com.dropsync.core.common.AppResult<Unit> =
+            com.dropsync.core.common.AppResult
+                .success(Unit)
 
         override suspend fun disconnect() = Unit
 

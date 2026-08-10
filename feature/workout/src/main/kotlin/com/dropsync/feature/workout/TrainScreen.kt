@@ -43,6 +43,7 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.BrandButtonPrimary
+import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.ExerciseInfo
 import java.util.Locale
@@ -66,6 +67,9 @@ fun TrainScreen(
     val repsInput by viewModel.repsInput.collectAsStateWithLifecycle()
     val timerState by viewModel.timerState.collectAsStateWithLifecycle()
     val dropAutoEnabled by viewModel.dropAutoEnabled.collectAsStateWithLifecycle()
+    val sensorConnection by viewModel.sensorConnection.collectAsStateWithLifecycle()
+    val waveform by viewModel.waveform.collectAsStateWithLifecycle()
+    val lastPeakMs by viewModel.lastPeakMs.collectAsStateWithLifecycle()
 
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -176,6 +180,16 @@ fun TrainScreen(
                     )
                 }
             }
+        }
+
+        // Live-Sensor-Waveform (Phase 4 step 5): sichtbar sobald der Chip
+        // streamt; Blitz-Overlay bei erkanntem Wiederholungs-Peak.
+        if (sensorConnection == SensorConnectionState.STREAMING && waveform.isNotEmpty()) {
+            SensorWaveform(
+                samples = waveform,
+                lastPeakMs = lastPeakMs,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
 
         // Mini-Verlauf (letzte 5 Saetze)
@@ -353,4 +367,72 @@ private fun CreateExerciseDialog(
             }
         },
     )
+}
+
+/**
+ * Live sensor waveform (Fusion Phase 4 step 5): rolling line plot of the
+ * acceleration magnitude stream plus a brief flash overlay when the
+ * TrainViewModel reports a rep peak. Purely visual — never counts live
+ * (shadow-pipeline rule, design doc section 11b).
+ */
+@Composable
+private fun SensorWaveform(
+    samples: List<Float>,
+    lastPeakMs: Long,
+    modifier: Modifier = Modifier,
+) {
+    val lineColor = MaterialTheme.colorScheme.primary
+    val flashColor = MaterialTheme.colorScheme.tertiary
+
+    // Peak flash: visible for ~400 ms after the last detected peak.
+    var flashVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(lastPeakMs) {
+        if (lastPeakMs > 0) {
+            flashVisible = true
+            kotlinx.coroutines.delay(400)
+            flashVisible = false
+        }
+    }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        androidx.compose.foundation.layout.Box(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp)
+                    .padding(8.dp),
+        ) {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                if (samples.size < 2) return@Canvas
+                val minV = samples.min()
+                val maxV = samples.max()
+                val range = (maxV - minV).coerceAtLeast(0.001f)
+                val stepX = size.width / (samples.size - 1)
+                val path =
+                    androidx.compose.ui.graphics
+                        .Path()
+                samples.forEachIndexed { i, v ->
+                    val x = i * stepX
+                    val y = size.height - ((v - minV) / range) * size.height
+                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                }
+                drawPath(
+                    path,
+                    color = lineColor,
+                    style =
+                        androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = 2.dp.toPx(),
+                        ),
+                )
+            }
+            if (flashVisible) {
+                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    drawRect(color = flashColor.copy(alpha = 0.25f))
+                }
+            }
+        }
+    }
 }

@@ -1,7 +1,16 @@
 package com.dropsync.data.sensor
 
+import com.dropsync.core.common.AppError
+
 /** Maps technical BLE errors to user-facing German messages (P2-4 port). */
 object BleErrorMapper {
+    /** Maps a Throwable to a typed [AppError] for the AppResult contract. */
+    fun map(error: Throwable): AppError =
+        when {
+            error is SecurityException -> AppError.PermissionDenied("BLUETOOTH")
+            else -> AppError.Unknown(toUserMessage(error))
+        }
+
     fun toUserMessage(error: Throwable): String {
         val msg = (error.message ?: error.toString()).lowercase()
         val bluetoothOff =

@@ -37,6 +37,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:designsystem"))
     implementation(project(":domain:workout"))
+    // Kalibrierungs-Wizard: Guided Calibration 2.0 (Stufen REST..REVIEW).
+    implementation(project(":domain:sensor"))
     // Rest-Timer der Uebung nutzt die eine TimerEngine (Praezedenz
     // :feature:timer/:feature:player); DropSync-Rest via DropRestRequestBus.
     implementation(project(":domain:timer"))

@@ -33,6 +33,7 @@ dependencies {
     implementation(project(":domain:sensor"))
 
     implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.datastore.preferences)
     implementation(libs.kotlinx.coroutines.android)
 
     implementation(libs.hilt.android)
