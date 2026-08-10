@@ -29,6 +29,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 
 // Waveform im Poweramp-Stil (Marker/Waveform-Plan Phase 3): eigene
 // Compose-Canvas-Zeichnung wie LineChart/BarChart, keine neue
@@ -95,6 +96,9 @@ private const val REFLECTION_ALPHA = 0.30f
 /** Glaettungsdauer des Fortschritts zwischen den 200ms-Ticks (weicher Lauf). */
 private const val PROGRESS_SMOOTH_MS = 240
 
+/** Maximaler Abstand (als Anteil der Breite) zum Start des Marker-Drags. */
+private const val MARKER_DRAG_SLOP = 0.03f
+
 /**
  * Interaktive Waveform. [buckets] sind Min/Max-Paare in [-1..1];
  * [progressFraction] ist der gespielte Anteil [0..1]. Tap springt sofort
@@ -103,6 +107,8 @@ private const val PROGRESS_SMOOTH_MS = 240
  * [markerFractions] zeichnet vorhandene Marker als duenne Ticks in
  * Akzentfarbe (Phase 4); Long-Press meldet die Position an [onLongPress]
  * (Marker setzen bzw. nahe eines Ticks loeschen — der Aufrufer entscheidet).
+ * [onMoveMarker] verschiebt einen Marker: beginnt die Geste an einem
+ * Marker-Tick, wird die Position laufend gemeldet statt zu scrubbenn.
  *
  * Poweramp-Optik: die Hauptwellenform blendet beim Erscheinen sanft ein, der
  * Fortschritt gleitet weich zwischen den Ticks, und unter der Grundlinie liegt
@@ -117,12 +123,16 @@ fun Waveform(
     modifier: Modifier = Modifier,
     markerFractions: List<Float> = emptyList(),
     onLongPress: ((Float) -> Unit)? = null,
+    onMoveMarker: ((Float) -> Unit)? = null,
     contentDescription: String? = null,
 ) {
     val playedColor = MaterialTheme.colorScheme.primary
     val restColor = MaterialTheme.colorScheme.outlineVariant
     val markerColor = MaterialTheme.colorScheme.tertiary
     var scrubFraction by remember { mutableFloatStateOf(-1f) }
+    // Drag-Modus: true, sobald die Geste an einem Marker-Tick startet.
+    // Dann wird der Marker gezogen statt gescrubbt (Phase 5 "verschiebbar").
+    var draggingMarker by remember { mutableStateOf(false) }
 
     // Sanfter Auftritt: die Wellenform blendet ein, sobald die Analyse vorliegt.
     var appeared by remember { mutableStateOf(false) }
@@ -165,21 +175,43 @@ fun Waveform(
                 }.pointerInput(Unit) {
                     detectHorizontalDragGestures(
                         onDragStart = { offset ->
-                            scrubFraction = WaveformMapping.fractionAt(offset.x, size.width.toFloat())
-                            onScrubPreview(scrubFraction)
+                            val fraction = WaveformMapping.fractionAt(offset.x, size.width.toFloat())
+                            // Geste an einem Marker-Tick -> Marker ziehen (nur
+                            // wenn der Aufrufer das Verschieben erlaubt).
+                            draggingMarker =
+                                onMoveMarker != null &&
+                                markerFractions.any {
+                                    abs(it - fraction) <= MARKER_DRAG_SLOP
+                                }
+                            if (draggingMarker) {
+                                onMoveMarker?.invoke(fraction)
+                            } else {
+                                scrubFraction = fraction
+                                onScrubPreview(scrubFraction)
+                            }
                         },
                         onDragEnd = {
-                            if (scrubFraction >= 0f) onSeek(scrubFraction)
+                            if (draggingMarker) {
+                                draggingMarker = false
+                            } else if (scrubFraction >= 0f) {
+                                onSeek(scrubFraction)
+                            }
                             scrubFraction = -1f
                             onScrubPreview(null)
                         },
                         onDragCancel = {
+                            draggingMarker = false
                             scrubFraction = -1f
                             onScrubPreview(null)
                         },
                     ) { change, _ ->
-                        scrubFraction = WaveformMapping.fractionAt(change.position.x, size.width.toFloat())
-                        onScrubPreview(scrubFraction)
+                        val fraction = WaveformMapping.fractionAt(change.position.x, size.width.toFloat())
+                        if (draggingMarker) {
+                            onMoveMarker?.invoke(fraction)
+                        } else {
+                            scrubFraction = fraction
+                            onScrubPreview(scrubFraction)
+                        }
                     }
                 },
     ) {

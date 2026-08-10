@@ -67,4 +67,14 @@ interface MarkerRepository {
 
     /** Bestaetigt einen Kandidaten: setzt isEnabled = true. */
     suspend fun confirmMarker(markerId: Long): AppResult<Unit>
+
+    /**
+     * Verschiebt einen Marker an eine neue Position (Marker/Waveform-Plan
+     * Phase 4, "Drag"): Label und isEnabled bleiben, nur die Position
+     * aendert sich; wirkt sofort auf die naechste Drop-Landung.
+     */
+    suspend fun moveMarker(
+        markerId: Long,
+        newPositionMs: Long,
+    ): AppResult<Unit>
 }

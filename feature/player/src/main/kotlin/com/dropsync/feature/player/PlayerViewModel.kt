@@ -289,6 +289,17 @@ class PlayerViewModel
             }
         }
 
+        /** Marker per Drag verschieben (Phase 5); wirkt sofort auf die Landung. */
+        fun moveMarker(
+            markerId: Long,
+            newPositionMs: Long,
+        ) {
+            viewModelScope.launch {
+                markerRepository.moveMarker(markerId, newPositionMs)
+                markersVersion.value++
+            }
+        }
+
         /** Beobachtbare Warteschlange fuer den Queue-Editor (Plan Phase 6). */
         val queue: StateFlow<QueueUiState> =
             playbackRepository.state

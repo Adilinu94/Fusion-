@@ -187,6 +187,15 @@ fun NowPlayingScreen(
                 onTogglePlayPause = viewModel::togglePlayPause,
                 onSeek = viewModel::seekTo,
                 onLongPressAt = { createMarkerAtMs = it },
+                onMoveMarker = { fraction ->
+                    val marker =
+                        markers.minByOrNull {
+                            kotlin.math.abs(it.positionMs - fraction * state.durationMs)
+                        }
+                    if (marker != null) {
+                        viewModel.moveMarker(marker.id, (fraction * state.durationMs).toLong())
+                    }
+                },
             )
         }
     }
@@ -352,6 +361,7 @@ private fun WaveformProgress(
     onTogglePlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
     onLongPressAt: (Long) -> Unit,
+    onMoveMarker: (Float) -> Unit,
 ) {
     var scrubPositionMs by remember { mutableStateOf<Long?>(null) }
     val shownPositionMs = scrubPositionMs ?: positionMs
@@ -379,6 +389,7 @@ private fun WaveformProgress(
                         onLongPress = { fraction ->
                             onLongPressAt((fraction * safeDuration).toLong())
                         },
+                        onMoveMarker = onMoveMarker,
                         contentDescription = stringResource(R.string.now_playing_waveform),
                         modifier = Modifier.fillMaxSize(),
                     )

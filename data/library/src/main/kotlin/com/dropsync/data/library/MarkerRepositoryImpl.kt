@@ -68,6 +68,22 @@ class MarkerRepositoryImpl(
             }
         }
 
+    override suspend fun moveMarker(
+        markerId: Long,
+        newPositionMs: Long,
+    ): AppResult<Unit> =
+        withContext(dispatchers.io) {
+            val marker =
+                markerDao.getById(markerId)
+                    ?: return@withContext AppResult.failure(AppError.MarkerUnmatched(null))
+            try {
+                markerDao.update(markerId, marker.label, newPositionMs, marker.isEnabled)
+                AppResult.success(Unit)
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("moveMarker"))
+            }
+        }
+
     override suspend fun importDocument(
         schemaVersion: Int,
         tracks: List<ImportedTrack>,

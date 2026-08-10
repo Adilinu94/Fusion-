@@ -376,4 +376,9 @@ private class CoordinatorMarkerRepository : MarkerRepository {
     override suspend fun deleteMarker(markerId: Long): AppResult<Unit> = AppResult.success(Unit)
 
     override suspend fun confirmMarker(markerId: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun moveMarker(
+        markerId: Long,
+        newPositionMs: Long,
+    ): AppResult<Unit> = AppResult.success(Unit)
 }

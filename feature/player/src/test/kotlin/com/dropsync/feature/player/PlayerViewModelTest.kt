@@ -409,6 +409,11 @@ private class FakeMarkerRepository : MarkerRepository {
     override val pendingAutoDetectedMarkers: Flow<List<SongMarker>> = emptyFlow()
 
     override suspend fun confirmMarker(markerId: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun moveMarker(
+        markerId: Long,
+        newPositionMs: Long,
+    ): AppResult<Unit> = AppResult.success(Unit)
 }
 
 private class FakeLibraryRepository : LibraryRepository {
