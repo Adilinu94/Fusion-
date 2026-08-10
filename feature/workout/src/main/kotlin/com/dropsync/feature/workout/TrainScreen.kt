@@ -10,7 +10,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -18,11 +21,11 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -35,7 +38,7 @@ import com.dropsync.domain.workout.ExerciseInfo
 
 /**
  * Train-Tab (FlowRep-Design Phase 2): flaches Satz-Log ohne Session.
- * Uebungs-Chip, Gewicht +/-2.5, Rep-Eingabe, Satz speichern.
+ * Uebungs-Chip, Gewicht +/-2.5, Rep-Eingabe, Satz speichern, PR-Volumen.
  */
 @Composable
 fun TrainScreen(
@@ -46,9 +49,12 @@ fun TrainScreen(
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
     val selectedExercise by viewModel.selectedExercise.collectAsStateWithLifecycle()
     val lastSet by viewModel.lastSet.collectAsStateWithLifecycle()
+    val maxVolumeKg by viewModel.maxVolumeKg.collectAsStateWithLifecycle()
     val recentSets by viewModel.recentSets.collectAsStateWithLifecycle()
     val weightInput by viewModel.weightInput.collectAsStateWithLifecycle()
     val repsInput by viewModel.repsInput.collectAsStateWithLifecycle()
+
+    var showCreateDialog by remember { mutableStateOf(false) }
 
     Column(
         modifier =
@@ -57,11 +63,12 @@ fun TrainScreen(
                 .padding(top = contentPadding.calculateTopPadding()),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Uebungs-Chip
+        // Uebungs-Chips + "Neue Uebung"
         ExerciseChipRow(
             exercises = exercises,
             selectedId = selectedExercise?.id,
             onSelect = { viewModel.selectExercise(it) },
+            onCreateNew = { showCreateDialog = true },
         )
 
         // Gewicht und Reps
@@ -73,7 +80,7 @@ fun TrainScreen(
                 // Gewicht mit +/- 2.5
                 WeightInput(
                     weightKg = weightInput,
-                    lastWeightKg = lastSet?.let { it.weightMilliKg / 1000.0 },
+                    lastWeightKg = lastSet?.let { it.weightMilliKg / 1_000_000.0 },
                     onWeightChange = { viewModel.setWeight(it) },
                     onIncrement = { viewModel.adjustWeight(2.5) },
                     onDecrement = { viewModel.adjustWeight(-2.5) },
@@ -95,6 +102,16 @@ fun TrainScreen(
                     onClick = { viewModel.logSet() },
                     enabled = selectedExercise != null && viewModel.canLog,
                 )
+
+                // PR-Volumen der gewaehlten Uebung
+                maxVolumeKg?.let { volume ->
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        text = "PR-Volumen: ${"%.1f".format(volume)} kg",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
+                }
             }
         }
 
@@ -107,12 +124,22 @@ fun TrainScreen(
             )
             recentSets.take(5).forEach { set ->
                 Text(
-                    text = "${set.reps} x ${set.weightMilliKg / 1000.0} kg",
+                    text = "${set.reps} x ${set.weightMilliKg / 1_000_000.0} kg",
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
         }
+    }
+
+    if (showCreateDialog) {
+        CreateExerciseDialog(
+            onDismiss = { showCreateDialog = false },
+            onCreate = { name ->
+                viewModel.createExercise(name)
+                showCreateDialog = false
+            },
+        )
     }
 }
 
@@ -121,16 +148,23 @@ private fun ExerciseChipRow(
     exercises: List<ExerciseInfo>,
     selectedId: Long?,
     onSelect: (ExerciseInfo) -> Unit,
+    onCreateNew: () -> Unit,
 ) {
-    Row(
+    LazyRow(
         modifier = Modifier.padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        exercises.take(5).forEach { exercise ->
+        items(exercises, key = { it.id }) { exercise ->
             FilterChip(
                 selected = selectedId == exercise.id,
                 onClick = { onSelect(exercise) },
                 label = { Text(exercise.displayName) },
+            )
+        }
+        item(key = "create_new") {
+            AssistChip(
+                onClick = onCreateNew,
+                label = { Text("+ Neue Uebung") },
             )
         }
     }
@@ -182,5 +216,40 @@ private fun RepInput(
         label = { Text("Wiederholungen") },
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun CreateExerciseDialog(
+    onDismiss: () -> Unit,
+    onCreate: (String) -> Unit,
+) {
+    var name by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Neue Uebung") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onCreate(name) },
+                enabled = name.isNotBlank(),
+            ) {
+                Text("Anlegen")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Abbrechen")
+            }
+        },
     )
 }

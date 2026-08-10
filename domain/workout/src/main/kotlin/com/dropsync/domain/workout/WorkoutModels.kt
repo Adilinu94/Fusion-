@@ -88,7 +88,12 @@ enum class SwapStrategy { KEEP, MOVE, DISCARD }
 data class RestPref(
     val restSeconds: Int,
     val restMode: RestMode,
-)
+) {
+    companion object {
+        /** Default rest per exercise when no preference exists (Fusion Phase 2 step 3). */
+        const val DEFAULT_REST_SECONDS = 90
+    }
+}
 
 /** Muskelbeteiligung in Prozent (1..100) einer Uebung (Schritt 9.2). */
 data class MuscleContribution(
