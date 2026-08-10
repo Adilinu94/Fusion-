@@ -20,6 +20,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,7 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.BrandButtonPrimary
+import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.ExerciseInfo
+import java.util.Locale
 
 /**
  * Train-Tab (FlowRep-Design Phase 2): flaches Satz-Log ohne Session.
@@ -53,6 +56,8 @@ fun TrainScreen(
     val recentSets by viewModel.recentSets.collectAsStateWithLifecycle()
     val weightInput by viewModel.weightInput.collectAsStateWithLifecycle()
     val repsInput by viewModel.repsInput.collectAsStateWithLifecycle()
+    val timerState by viewModel.timerState.collectAsStateWithLifecycle()
+    val dropAutoEnabled by viewModel.dropAutoEnabled.collectAsStateWithLifecycle()
 
     var showCreateDialog by remember { mutableStateOf(false) }
 
@@ -103,6 +108,22 @@ fun TrainScreen(
                     enabled = selectedExercise != null && viewModel.canLog,
                 )
 
+                // Drop-Auto-Schalter pro Pause (Phase 3 step 4)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(top = 8.dp),
+                ) {
+                    Text(
+                        text = "Drop-Auto",
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Switch(
+                        checked = dropAutoEnabled,
+                        onCheckedChange = { viewModel.setDropAutoEnabled(it) },
+                    )
+                }
+
                 // PR-Volumen der gewaehlten Uebung
                 maxVolumeKg?.let { volume ->
                     Spacer(Modifier.height(8.dp))
@@ -110,6 +131,20 @@ fun TrainScreen(
                         text = "PR-Volumen: ${"%.1f".format(volume)} kg",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
+                    )
+                }
+
+                // Train-Pille (Phase 3 step 4): Countdown + Chips
+                val status = timerState.status
+                if (status == TimerStatus.PREPARING ||
+                    status == TimerStatus.RUNNING ||
+                    status == TimerStatus.PAUSED
+                ) {
+                    Spacer(Modifier.height(12.dp))
+                    RestTimerPill(
+                        remainingMs = timerState.remainingMs,
+                        onSkip = { viewModel.skipRest() },
+                        onFinish = { viewModel.finishExercise() },
                     )
                 }
             }
@@ -217,6 +252,44 @@ private fun RepInput(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
         modifier = Modifier.fillMaxWidth(),
     )
+}
+
+/**
+ * Rest-timer pill inside the train card (Phase 3 step 4): countdown plus
+ * Skip / Finish-exercise chips. Finish cancels the timer immediately
+ * (design rule step 5).
+ */
+@Composable
+private fun RestTimerPill(
+    remainingMs: Long,
+    onSkip: () -> Unit,
+    onFinish: () -> Unit,
+) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Text(
+                text = formatRestRemaining(remainingMs),
+                style = MaterialTheme.typography.headlineMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer,
+            )
+            Row(
+                modifier = Modifier.padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                AssistChip(onClick = onSkip, label = { Text("Überspringen") })
+                AssistChip(onClick = onFinish, label = { Text("Übung abschließen") })
+            }
+        }
+    }
+}
+
+private fun formatRestRemaining(remainingMs: Long): String {
+    val totalSeconds = (remainingMs + 999) / 1000
+    val minutes = totalSeconds / 60
+    val seconds = totalSeconds % 60
+    return String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
 }
 
 @Composable

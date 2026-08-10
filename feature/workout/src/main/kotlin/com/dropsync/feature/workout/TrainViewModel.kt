@@ -1,28 +1,43 @@
 package com.dropsync.feature.workout
 
+import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
+import com.dropsync.data.timer.TimerService
+import com.dropsync.domain.timer.CancelReason
+import com.dropsync.domain.timer.RestTimerPreferencesRepository
+import com.dropsync.domain.timer.TimerEngine
+import com.dropsync.domain.timer.TimerMode
+import com.dropsync.domain.timer.TimerState
+import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.CustomExerciseInput
 import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.MuscleContribution
+import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * ViewModel for the Train tab (FlowRep Phase 2): flat set log.
+ * Phase 3: binds the shared TimerEngine — logging a set starts the rest
+ * timer (foreground TimerService), finishing the exercise cancels it.
  */
 @HiltViewModel
 class TrainViewModel
@@ -30,6 +45,9 @@ class TrainViewModel
     constructor(
         private val workoutRepository: WorkoutRepository,
         private val flatSetRepository: FlatSetRepository,
+        private val timerEngine: TimerEngine,
+        restTimerPreferences: RestTimerPreferencesRepository,
+        @ApplicationContext private val appContext: Context,
     ) : ViewModel() {
         val exercises: StateFlow<List<ExerciseInfo>> =
             workoutRepository
@@ -60,10 +78,86 @@ class TrainViewModel
         val canLog: Boolean
             get() = _weightInput.value.toDoubleOrNull() != null && _repsInput.value.toIntOrNull() != null
 
+        // --- Phase 3: rest timer binding -----------------------------------
+
+        /** Shared rest-timer state (drives the train pill countdown). */
+        val timerState: StateFlow<TimerState> = timerEngine.state
+
+        // Get-ready lead time (prepMs) mirrored from the timer preferences.
+        private val getReady: StateFlow<Pair<Boolean, Int>> =
+            combine(
+                restTimerPreferences.getReadyEnabled,
+                restTimerPreferences.getReadySeconds,
+            ) { enabled, seconds -> enabled to seconds }.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                false to RestTimerPreferencesRepository.DEFAULT_GET_READY_SECONDS,
+            )
+
+        // Rest seconds of the selected exercise (default 90 s, Phase 2 step 3).
+        private val _restSeconds = MutableStateFlow(RestPref.DEFAULT_REST_SECONDS)
+        val restSeconds: StateFlow<Int> = _restSeconds.asStateFlow()
+
+        // Drop auto-switch per rest (design doc Phase 3 step 4); wired to
+        // DropSync in a later phase, kept as view state for now.
+        private val _dropAutoEnabled = MutableStateFlow(false)
+        val dropAutoEnabled: StateFlow<Boolean> = _dropAutoEnabled.asStateFlow()
+
+        fun setDropAutoEnabled(enabled: Boolean) {
+            _dropAutoEnabled.value = enabled
+        }
+
+        /** Skip the running rest timer (train pill action). */
+        fun skipRest() {
+            timerEngine.cancel(CancelReason.USER)
+            timerEngine.reset()
+        }
+
+        /** Rule (design step 5): finish exercise cancels the timer at once. */
+        fun finishExercise() {
+            timerEngine.cancel(CancelReason.USER)
+            timerEngine.reset()
+            _selectedExercise.value = null
+            _lastSet.value = null
+            _maxVolumeKg.value = null
+            _weightInput.value = ""
+            _repsInput.value = ""
+        }
+
+        private fun startRestTimer() {
+            // A finished rest must be reset before a new start (engine rule).
+            if (timerEngine.state.value.status != TimerStatus.IDLE) {
+                timerEngine.reset()
+            }
+            val (enabled, seconds) = getReady.value
+            val prepMs = if (enabled) seconds * 1_000L else 0L
+            val result =
+                timerEngine.start(
+                    TimerMode.REST,
+                    _restSeconds.value * 1_000L,
+                    prepMs,
+                )
+            if (result is AppResult.Success) {
+                // Keep the timer alive in the pocket (foreground service).
+                TimerService.start(appContext)
+            }
+        }
+
         fun selectExercise(exercise: ExerciseInfo) {
             _selectedExercise.value = exercise
             loadLastSet(exercise.id)
             loadMaxVolume(exercise.id)
+            loadRestPref(exercise.id)
+        }
+
+        private fun loadRestPref(exerciseId: Long) {
+            viewModelScope.launch {
+                _restSeconds.value =
+                    when (val result = workoutRepository.getRestPref(exerciseId)) {
+                        is AppResult.Success -> result.value?.restSeconds ?: RestPref.DEFAULT_REST_SECONDS
+                        is AppResult.Failure -> RestPref.DEFAULT_REST_SECONDS
+                    }
+            }
         }
 
         private fun loadLastSet(exerciseId: Long) {
@@ -111,6 +205,8 @@ class TrainViewModel
                         loadRecentSets()
                         // Keep weight, reset reps for the next set.
                         _repsInput.value = ""
+                        // Rule (design step 5): set done -> rest timer starts.
+                        startRestTimer()
                     }
 
                     is AppResult.Failure -> {
@@ -154,5 +250,17 @@ class TrainViewModel
 
         init {
             loadRecentSets()
+            // Same engine tick as TimerViewModel: evaluate() is idempotent,
+            // the tick is never the completion source (design step 7.1).
+            viewModelScope.launch {
+                while (isActive) {
+                    timerEngine.evaluate()
+                    delay(TICK_MS)
+                }
+            }
+        }
+
+        private companion object {
+            const val TICK_MS = 250L
         }
     }

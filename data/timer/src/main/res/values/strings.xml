@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Rest timer foreground service (Fusion design doc Phase 3 step 3). -->
+    <string name="timer_channel_name">Pausen-Timer</string>
+    <string name="timer_channel_description">Läuft während der Satzpause im Hintergrund.</string>
+    <string name="timer_notification_title">Pausen-Timer</string>
+    <string name="timer_notification_completed">Pause vorbei — weiter geht\'s</string>
+    <string name="timer_action_skip">Überspringen</string>
+    <string name="timer_action_plus15">+15 s</string>
+    <string name="timer_action_finish">Übung abschließen</string>
+</resources>

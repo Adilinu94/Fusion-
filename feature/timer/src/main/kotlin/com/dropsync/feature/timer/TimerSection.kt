@@ -191,7 +191,7 @@ fun TimerSection(
 /** Feste Rest-Presets in Sekunden (TimerPreset nur NORMAL/REST). */
 private val REST_PRESETS_SECONDS = listOf(60, 90, 120, 180)
 
-private fun formatRemaining(remainingMs: Long): String {
+internal fun formatRemaining(remainingMs: Long): String {
     val totalSeconds = (remainingMs + 999) / 1000
     val minutes = totalSeconds / 60
     val seconds = totalSeconds % 60
