@@ -222,6 +222,16 @@ class TrainViewModel
                         loadRecentSets()
                         // Live (confirmed) count for the shadow diff (11b).
                         liveRepCount += reps
+                        // Learn loop: a logged count that differs from the
+                        // live-counted one re-analyses the buffered set and
+                        // improves the profile silently (design doc Phase 4).
+                        val counted = _liveCountedReps.value
+                        if (setSamples.isNotEmpty() && counted != reps) {
+                            applyCorrection(reps)
+                        }
+                        // Set consumed: clear the live-count state.
+                        setSamples.clear()
+                        _liveCountedReps.value = 0
                         // Keep weight, reset reps for the next set.
                         _repsInput.value = ""
                         // Rule (design step 5): set done -> rest timer starts.
