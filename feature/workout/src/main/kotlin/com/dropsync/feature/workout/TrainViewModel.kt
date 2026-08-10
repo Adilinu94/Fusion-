@@ -1,11 +1,15 @@
 package com.dropsync.feature.workout
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
+import com.dropsync.domain.sensor.CalibrationProfileRepository
+import com.dropsync.domain.sensor.ExerciseEngineConfig
+import com.dropsync.domain.sensor.ExerciseEnginePipeline
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.accelMagnitude
@@ -49,6 +53,7 @@ class TrainViewModel
         private val timerEngine: TimerEngine,
         private val restTimerServiceStarter: RestTimerServiceStarter,
         private val sensorProvider: SensorProvider,
+        private val calibrationProfileRepository: CalibrationProfileRepository,
         restTimerPreferences: RestTimerPreferencesRepository,
     ) : ViewModel() {
         val exercises: StateFlow<List<ExerciseInfo>> =
@@ -117,6 +122,7 @@ class TrainViewModel
 
         /** Rule (design step 5): finish exercise cancels the timer at once. */
         fun finishExercise() {
+            logShadowDiff("finishExercise")
             timerEngine.cancel(CancelReason.USER)
             timerEngine.reset()
             _selectedExercise.value = null
@@ -124,6 +130,9 @@ class TrainViewModel
             _maxVolumeKg.value = null
             _weightInput.value = ""
             _repsInput.value = ""
+            shadowEngine = null
+            shadowRepCount = 0
+            liveRepCount = 0
         }
 
         private fun startRestTimer() {
@@ -146,10 +155,12 @@ class TrainViewModel
         }
 
         fun selectExercise(exercise: ExerciseInfo) {
+            logShadowDiff("exerciseSwitch")
             _selectedExercise.value = exercise
             loadLastSet(exercise.id)
             loadMaxVolume(exercise.id)
             loadRestPref(exercise.id)
+            resetShadowEngine()
         }
 
         private fun loadRestPref(exerciseId: Long) {
@@ -205,6 +216,8 @@ class TrainViewModel
                         loadLastSet(exercise.id)
                         loadMaxVolume(exercise.id)
                         loadRecentSets()
+                        // Live (confirmed) count for the shadow diff (11b).
+                        liveRepCount += reps
                         // Keep weight, reset reps for the next set.
                         _repsInput.value = ""
                         // Rule (design step 5): set done -> rest timer starts.
@@ -278,6 +291,7 @@ class TrainViewModel
 
         /** Disconnects the chip; the provider falls back to the fake. */
         fun disconnectSensor() {
+            logShadowDiff("disconnect")
             viewModelScope.launch { sensorProvider.disconnect() }
         }
 
@@ -294,6 +308,22 @@ class TrainViewModel
 
         private var waveformWindow = ArrayDeque<Float>()
 
+        // --- Phase 4 step 6: shadow rep pipeline (design doc section 11b) ---
+        //
+        // The new ExerciseEnginePipeline runs ALONGSIDE the manual +/- path
+        // once a calibration profile exists, but NEVER counts live: its
+        // repCount is only compared against the confirmed (logged) count for
+        // the shadow DoD. No UI element reads the shadow count.
+
+        /** Shadow pipeline instance; recreated on exercise switch. */
+        private var shadowEngine: ExerciseEnginePipeline? = null
+
+        /** Reps the shadow pipeline confirmed this session (never shown). */
+        private var shadowRepCount = 0
+
+        /** Confirmed reps of the selected exercise in this session (live). */
+        private var liveRepCount = 0
+
         init {
             loadRecentSets()
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
@@ -305,7 +335,9 @@ class TrainViewModel
                 }
             }
             // Phase 4 step 5: collect live samples for the waveform; a peak
-            // (accel magnitude spike) triggers the flash overlay.
+            // (accel magnitude spike) triggers the flash overlay. The same
+            // stream also feeds the shadow pipeline (step 6): it observes and
+            // counts silently, never affecting the logged set.
             viewModelScope.launch {
                 var prevMag = 0.0
                 sensorProvider.samples.collect { sample ->
@@ -318,8 +350,59 @@ class TrainViewModel
                         _lastPeakMs.value = sample.timestampMs
                     }
                     prevMag = mag.toDouble()
+                    // Shadow DoD 11b: feed the new pipeline; its repCount is
+                    // tracked only for the diff against the live count.
+                    shadowEngine?.let { engine ->
+                        engine.processSample(sample.timestampMs, sample.gx, sample.gy, sample.gz)
+                        if (engine.repCount.value != shadowRepCount) {
+                            shadowRepCount = engine.repCount.value
+                            Log.d(SHADOW_TAG, "shadow rep=$shadowRepCount live=$liveRepCount")
+                        }
+                    }
                 }
             }
+        }
+
+        /**
+         * (Re)creates the shadow pipeline for the selected exercise (step 6).
+         * With a stored calibration profile the engine gets its template; the
+         * rotation axis/bias stay neutral (the stored profile does not carry
+         * them) - shadow accuracy is bounded by this until a full profile.
+         */
+        private fun resetShadowEngine() {
+            shadowRepCount = 0
+            liveRepCount = 0
+            val exercise =
+                _selectedExercise.value ?: run {
+                    shadowEngine = null
+                    return
+                }
+            val deviceId =
+                connectedDeviceId.value ?: run {
+                    shadowEngine = null
+                    return
+                }
+            shadowEngine =
+                ExerciseEnginePipeline(
+                    ExerciseEngineConfig(
+                        rotationAxis = NEUTRAL_AXIS,
+                        gyroBias = NEUTRAL_BIAS,
+                    ),
+                )
+            viewModelScope.launch {
+                val result = calibrationProfileRepository.load(exercise.id, deviceId)
+                val profile = (result as? AppResult.Success)?.value ?: return@launch
+                shadowEngine?.let { engine ->
+                    engine.setTemplate(profile.repTemplate)
+                    Log.d(SHADOW_TAG, "shadow template set (${profile.repTemplate.size} samples)")
+                }
+            }
+        }
+
+        /** Logs the shadow-vs-live diff at session end (shadow DoD metric). */
+        private fun logShadowDiff(reason: String) {
+            if (shadowEngine == null) return
+            Log.d(SHADOW_TAG, "diff($reason): shadow=$shadowRepCount live=$liveRepCount")
         }
 
         private companion object {
@@ -333,6 +416,15 @@ class TrainViewModel
 
             /** Minimum magnitude in g for a peak (ignores rest jitter). */
             const val PEAK_MIN_G = 1.3
+
+            /** Logcat tag for the shadow-vs-live diff (DoD 11b). */
+            const val SHADOW_TAG = "FlowRepShadow"
+
+            /** Neutral projection axis (identity magnitude) without calibration. */
+            val NEUTRAL_AXIS = listOf(0.0, 0.0, 1.0)
+
+            /** Zero gyro bias without calibration. */
+            val NEUTRAL_BIAS = listOf(0.0, 0.0, 0.0)
         }
     }
 
