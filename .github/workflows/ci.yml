@@ -6,7 +6,7 @@ name: CI
 
 on:
   push:
-    branches: [main, "fusion/**"]
+    branches: [master, "fusion/**"]
   pull_request:
 
 concurrency:

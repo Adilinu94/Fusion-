@@ -374,12 +374,18 @@ class TrainViewModel
 
         private var countdownJob: kotlinx.coroutines.Job? = null
 
+        /**
+         * Tests disable the infinite tick loop so runTest/advanceUntilIdle can
+         * finish. Production never touches this.
+         */
+        internal var tickLoopEnabled: Boolean = true
+
         init {
             loadRecentSets()
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
             // the tick is never the completion source (design step 7.1).
             viewModelScope.launch {
-                while (isActive) {
+                while (isActive && tickLoopEnabled) {
                     timerEngine.evaluate()
                     delay(TICK_MS)
                 }

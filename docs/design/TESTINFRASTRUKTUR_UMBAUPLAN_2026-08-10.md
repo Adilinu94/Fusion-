@@ -215,6 +215,23 @@ testen kann — ohne Verhalten zu ändern.
   statt Endlos-Warten. Ausgelagert in eine pure, testbare Funktion
   `negotiateMtu(expected: Int, onResult: (Int) -> Unit)` im JVM-Teil von
   `:data:sensor`. **Unit-Testbar ohne BLE-Hardware.**
+  Konkrete Anforderungen aus der Produktions-Praxis (Android BLE Stack,
+  OEM-Quirks):
+  - `requestMtu(512)` direkt nach Connect aufrufen; das Peripheral handelt
+    selbst auf das herunter, was es unterstützt (typisch 247).
+  - **Samsung-Quirk (Android 9/10):** `requestMtu()` unmittelbar nach Connect
+    schlägt silent fehl → 600 ms Initial-Delay vor dem ersten Request. Ab
+    Android 12 (API 31) zusätzlich auf `onConnectionStateChange` hören statt
+    nur auf den Timer.
+  - Der tatsächlich verhandelte Wert kommt aus `onMtuChanged` — Writes müssen
+    nach diesem Wert ge-chunkt werden, nicht nach dem angefragten.
+  - Retry max. 2, danach Fallback MTU 23. **Status 133** (`GATT_ERROR`,
+    Catch-all) wird als Retry-Trigger behandelt, nicht als Endzustand.
+  - **Voraussetzung:** GATT-Operationen laufen über eine serielle FIFO-Queue
+    (jede Operation wartet auf ihren Callback, bevor die nächste startet) —
+    ohne diese Queue schlagen parallel gelaufene GATT-Calls silent fehl, und
+    der MTU-Retry wird unzuverlässig. Falls die Queue noch nicht existiert,
+    gehört sie in denselben Schritt.
 - [ ] **Latenz (5c):** Ein `AudioTimestampReader`-Interface (liefert
   `systemTimeNs`/`framePosition`), damit die Extrapolation in einem reinen
   JVM-Unit-Test geprüft werden kann; die echte Implementierung nutzt
@@ -379,18 +396,20 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 | RestMusicCoordinator | `RestMusicCoordinatorTest` (Unit, grün) | 1 (bleibt) | — |
 | Route-Wechsel während Countdown | — | 1 (Generation Token) | `CountdownRouteSwitchTest` |
 | Golden Audio Fixtures | — | Fixtures + 1/4 | `audio_fixtures.py` + DSP-Tests |
+| Shadow-Isolation (`:feature:workout`) | — | 1 (pure JVM) | `ShadowEngineIsolationTest` — `shadowEngine.repCount` beeinflusst niemals `_repsInput`/`_liveCountedReps` (und umgekehrt); kein Übersprechen zwischen Live- und Shadow-Pfad |
 
 ---
 
 ## 6. Neue/geänderte Dateien (Übersicht)
 
 **Robolectric / Tests:**
-- `data/timer/build.gradle.kts` (+ `:data:audio`, `:feature:player` … je nach Schritt 1)
+- `data/timer/build.gradle.kts` (+ `:data:audio`, `:feature:player` ... je nach Schritt 1)
 - `data/timer/src/test/.../RobolectricTestCase.kt`
 - `data/timer/src/test/.../TimerServiceForegroundTest.kt`
 - `data/timer/src/test/.../AudioFocusDuckingTest.kt`
 - `feature/player/src/androidTest/.../WaveformScrubbingTest.kt`
 - `feature/player/src/androidTest/.../MarkerLongPressTest.kt`
+- `feature/workout/src/test/.../ShadowEngineIsolationTest.kt` (pure JVM, Target Layer 1)
 
 **Härtung (Punkt 5):**
 - `domain/timer/.../TimerEngine.kt` (+ `snapshot`/`restore`)

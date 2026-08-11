@@ -33,3 +33,23 @@ spotless {
         endWithNewline()
     }
 }
+
+// Windows-Workaround (Gradle #6164 + PATH/`java.library.path` mit Spaces):
+// Der Gradle-Test-Executor baut die JVM-Kommandozeile aus Classpath + Umgebung.
+// Unquotierte Leerzeichen in Pfaden (z. B. "C:\Program Files", Projektpfad mit
+// Leerzeichen) zerlegen die Zeile, Fragmente landen als Klassenname
+// ("ClassNotFoundException: Files"). AGP setzt PATH/java.library.path selbst;
+// projectsEvaluated stellt sicher, dass unser Wert als letztes Wort gilt.
+if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    gradle.projectsEvaluated {
+        subprojects {
+            tasks.withType<Test>().configureEach {
+                doFirst {
+                    val systemRoot = System.getenv("SystemRoot") ?: "C:\\Windows"
+                    environment("PATH", "$systemRoot\\System32;$systemRoot")
+                    systemProperty("java.library.path", "$systemRoot\\System32")
+                }
+            }
+        }
+    }
+}

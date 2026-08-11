@@ -45,11 +45,17 @@ der Legacy-Engine** über mehrere unabhängige Sessions gezeigt wird.
 Abschnitt 11b spricht vom Rep-Diff gegenüber der **Legacy-Engine**. In der
 Fusion existiert die Legacy-Engine **nicht mehr** — es gibt nur noch die neue
 Pipeline, die bereits live zählt (Live-Engine beim `startCountedSet`) und
-gleichzeitig als Shadow läuft. Der reale, aussagekräftige Diff ist daher der
-gegenüber den **vom Nutzer bestätigten Reps** (`liveRepCount += reps` in
-`logSet`). Diese bestätigten Reps sind die beste verfügbare Ground-Truth — exakt
-das Analogon zu `correctedReps` in FlowRep, das die dortige Harness bereits als
-Wahrheit nutzt.
+gleichzeitig als Shadow läuft. Der reale, aussagekräftige Diff ist daher der gegenüber den **vom Nutzer
+bestätigten Reps** (`liveRepCount += reps` in `logSet`). Diese bestätigten Reps
+sind die beste verfügbare Ground-Truth — exakt das Analogon zu `correctedReps`
+in FlowRep, das die dortige Harness bereits als Wahrheit nutzt.
+
+**Wichtige Präzisierung:** Eine bestätigte Rep-Zahl ist nur dann unabhängige
+Wahrheit, wenn der Nutzer den von der App vorbefüllten Wert **aktiv editiert**
+hat. Lässt er den vorbefüllten Wert unverändert stehen, ist er nicht
+unabhängig — er ist nur die Zahl, die die App selbst berechnet hat. Für die
+Freigabe-Szenarien (Abschnitt 9) ist daher eine aktive Nutzer-Korrektur
+Pflicht; unbestätigte `confirmedReps` dienen nur der Diagnose.
 
 **Konsequenz für das Design:** Der Diff ist `shadow ↔ bestätigte Reps`. Der
 Schatten-Vergleich `shadow ↔ liveEngine` wird zusätzlich aufgezeichnet, ist aber
@@ -123,7 +129,7 @@ Smoke-Test-Modus mit synthetischen Fixtures (ersetzt keine echte Validierung).
 |---|---|---|
 | D1 | Auswertung als **Python-Harness** im Fusion-Repo (`tools/`) | Bewährtes Muster (golden_csv_harness.py), deckt genau die 5 Szenarien ab, kein Android-Build nötig, CI-fähig. |
 | D2 | Recorder zeichnet **immer** Zähler/Events auf, **optional** rohe Sensor-Samples (Schalter) | Rohdaten erlauben später Offline-Replays und Pipeline-Verbesserungen ohne neue Hardware-Läufe; Volumen bleibt bei alltäglicher Nutzung klein. |
-| D3 | Ground-Truth = **bestätigte Reps aus `logSet`** | Das Analogon zu `correctedReps`; die einzige nutzer-validierte Wahrheit in der Fusion. |
+| D3 | Ground-Truth = **bestätigte Reps aus `logSet`**, aber nur wenn aktiv editiert | Das Analogon zu `correctedReps`; nur die tatsächliche Nutzer-Korrektur ist unabhängige Wahrheit, nicht der vorbefüllte App-Wert. |
 | D4 | Shadow-Diff-Zeilen im **JSONL**-Format nach FR-B12-Vorbild | Schlank, maschinenlesbar, pro Zeile auswertbar, erweiterbar um neue `source`-Knoten. |
 
 ---
@@ -233,11 +239,15 @@ JSON-Objekt mit einer `t`-Zeile vom Typ. Zwei Kategorien:
 
 ```json
 {"t":"set","ts":1723000060000,"setIndex":1,
- "confirmedReps":12,"liveCountedReps":12,"shadowReps":12,"delta":0,
+ "confirmedReps":12,"confirmedRepsEdited":true,
+ "liveCountedReps":12,"shadowReps":12,"delta":0,
  "exerciseId":7,"weightMilliKg":80500000}
 ```
 
-- `confirmedReps`: was der Nutzer im `logSet` abgelegt hat (**Ground-Truth**, D3).
+- `confirmedReps`: was der Nutzer im `logSet` abgelegt hat.
+- `confirmedRepsEdited`: `true`, wenn der Nutzer den vorbefüllten Wert aktiv
+  geändert hat (**Ground-Truth**, D3); `false`, wenn der App-Wert unverändert
+  übernommen wurde (dann nicht unabhängig, nur Diagnose).
 - `liveCountedReps`: was die Live-Engine zählte (diagnostisch, D4).
 - `shadowReps`: Shadow-Stand bei Satzende.
 - `delta`: `shadowReps - confirmedReps` (das Freigabe-Kriterium).
@@ -276,13 +286,18 @@ JSON-Objekt mit einer `t`-Zeile vom Typ. Zwei Kategorien:
 ```
 
 `scenario` ist eines der 5 Szenarien aus Abschnitt 11b (Schlüssel siehe
-Abschnitt 9). `known_active_reps` pro Satz in chronologischer Reihenfolge —
-dient als unabhängige Kontrollgröße, falls `confirmedReps` fehlt oder der
-Entwickler eine abweichende Erwartung dokumentieren will. Ist es vorhanden,
-wertet die Harness gegen `known_active_reps`; ist es leer, gegen
-`confirmedReps` aus der JSONL. Mindestens eine der beiden Wahrheiten muss pro
-Satz vorliegen, sonst wird der Satz als "keine Wahrheit" markiert und zählt
-nicht in den Report.
+Abschnitt 9 dieses Plans — die Szenario-Tabelle unten). `known_active_reps` pro Satz in chronologischer Reihenfolge —
+die unabhängige, von Hand gezählte Kontrollgröße (Kurations-Schritt 2).
+
+**Wahrheits-Priorität (pro Satz):**
+1. `known_active_reps` — wenn vorhanden, wertet die Harness ausschließlich
+   dagegen (unabhängig, manuell gezählt).
+2. `confirmedReps` aus der JSONL — **nur wenn `confirmedRepsEdited = true`**
+   (der Nutzer hat den vorbefüllten App-Wert aktiv editiert). Ein unveränderter
+   vorbefüllter Wert ist **keine** unabhängige Wahrheit, denn er ist nur die
+   Zahl, die die App selbst berechnet hat.
+3. Ist keine dieser Wahrheiten vorhanden, wird der Satz als „keine Wahrheit"
+   markiert und zählt nicht in den Report.
 
 ---
 
@@ -344,6 +359,18 @@ Szenario aus: Anzahl Sessions, Anzahl Sätze, davon `delta=0`, Exact-Match-Rate,
 MAE, Bias. PASS erfordert: mindestens `MIN_SESSIONS_PER_SCENARIO` Sessions UND
 alle Sätze `delta=0`.
 
+**Zusätzliche Diagnose-Spalten (aus der Validierungs-Literatur, z. B.
+Oberhofer et al. 2021, Sports 9(9):118 — Smartwatch-Rep-Counting-Validierung):**
+
+- **RMSE** zwischen Wahrheit und gezählten Reps. Bei Toleranz 0 ist RMSE=0
+  äquivalent zum Exact-Match, aber der Wert dokumentiert die Fehlergröße
+  einzelner Abweichungen und bleibt nützlich, falls das Gate später gelockert
+  wird.
+- **Aufschlüsselung pro `exercise_id` UND pro `scenario`.** Die Literatur
+  zeigt stark übungsabhängige Zählgenauigkeit (z. B. Bench Press deutlich
+  schlechter als Squat/Deadlift). Nur nach Szenario zu gruppieren würde
+  systematische Fehler pro Übung verstecken.
+
 ---
 
 ## 11. Teststrategie
@@ -372,6 +399,7 @@ alle Sätze `delta=0`.
 | 3 | Optionaler Sample-Listener + Schalter + Tests | Kotlin |
 | 4 | `tools/shadow_harness.py` + Manifest-Serde + Smoke-Fixtures | Python |
 | 5 | `tools/golden_shadow_corpus/README.md` + Kurations-Workflow | Markdown |
+| 5.5 | **Öffentlichen IMU-Datensatz als Corpus-Baseline:** Microsoft RecoFit-Datensatz (`microsoft/Exercise-Recognition-from-Wearable-Sensors`, 200+ Teilnehmer, Acc+Gyro, rep-gelabelt, Matlab-`.mat`) per Python-Script (`scipy.io.loadmat`) in unser JSONL-Schema konvertieren und als ersten Corpus-Inhalt ablegen. Damit ist die Harness vor dem ersten Hardware-Lauf gegen echte Kurven validierbar — struktureller Schutz gegen die „leerer Corpus"-Falle aus flowrep-clone. Optional ergänzend: IEEE DataPort „Gym Gesture Classification Using IMU" (wrist-worn, CSV, TinyML-nah am M5StickC-Formfaktor). | Python, `tools/` |
 | 6 | Erste echte Aufnahme (Szenario 1, eine Übung) als Pilot der Kette | Hardware-Lauf + Kuration |
 | 7 | CI-Schritt (sobald Corpus existiert) | `.github/workflows/ci.yml` |
 

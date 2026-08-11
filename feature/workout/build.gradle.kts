@@ -30,6 +30,15 @@ android {
     buildFeatures {
         compose = true
     }
+
+}
+
+tasks.withType<Test>().configureEach {
+    // Gradle 9.5 on Windows passes -Djava.library.path unquoted when the PATH
+    // contains spaces (e.g. "C:\Program Files\PowerShell\7"). The JVM launcher
+    // then splits the argument and fails with "main class Files". Configure the
+    // property AFTER AGP (configureEach runs last) with a space-free value.
+    systemProperty("java.library.path", "C:\\dev\\jbr17\\bin")
 }
 
 dependencies {
