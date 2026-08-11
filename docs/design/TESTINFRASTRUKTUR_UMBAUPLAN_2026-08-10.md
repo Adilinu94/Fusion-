@@ -235,7 +235,24 @@ testen kann — ohne Verhalten zu ändern.
 - [ ] **Latenz (5c):** Ein `AudioTimestampReader`-Interface (liefert
   `systemTimeNs`/`framePosition`), damit die Extrapolation in einem reinen
   JVM-Unit-Test geprüft werden kann; die echte Implementierung nutzt
-  `AudioTrack.getTimestamp()`.
+  `AudioTrack.getTimestamp()`. Zusätzlich `isTimestampValid(): Boolean`,
+  weil `getTimestamp()` in der Warm-up-Phase (erste Sekunden nach `play()`)
+  0 bzw. nicht-aktualisierte Werte liefert — der Extrapolator darf erst
+  rechnen, wenn der Timestamp valide ist, sonst greift der Fallback auf
+  `getPlaybackHeadPosition()`.
+  Praxis-Constraints für den Test (aus der AV-Sync-Literatur):
+  - **Warm-up-Gate:** `getTimestamp()` kann nach `play()` mehrere Sekunden
+    brauchen, bis es valide Werte liefert. Der instrumentierte Test wartet
+    auf `isTimestampValid() == true` vor der ersten Assertion.
+  - **Nur Delta, nie Absolutwert:** Die absolute Latenz ist geräteabhängig
+    (selbst bei identischer Playhead-Position kommt Audio auf zwei Geräten
+    zeitversetzt raus). Der JVM-Test prüft die Extrapolations-Genauigkeit
+    über zwei synthetische `(nanoTime, framePosition)`-Paare als **Delta**,
+    nicht gegen eine absolute Latenz.
+  - **Latenz-Zusammensetzung:** Der Timestamp enthält Mixer + Treiber +
+    AudioTrack-Buffer. Für die Latenz nur unter AudioTrack ist der
+    Buffer-Anteil (`bufferSizeUs`) abzuziehen — der Test nutzt eine
+    synthetische, bekannte Latenz statt 0.
 
 **Verifikation:** Bestehende Tests bleiben grün (kein Verhaltens-Change);
 neue pure Tests für `negotiateMtu`/`snapshot`/`restore`/`extrapolate` grün.

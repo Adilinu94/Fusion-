@@ -374,21 +374,15 @@ class TrainViewModel
 
         private var countdownJob: kotlinx.coroutines.Job? = null
 
-        /**
-         * Tests disable the infinite tick loop so runTest/advanceUntilIdle can
-         * finish. Production never touches this.
-         */
-        internal var tickLoopEnabled: Boolean = true
-
         init {
             loadRecentSets()
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
             // the tick is never the completion source (design step 7.1).
+            // The ticker is a separate flow so tests can drive it from
+            // TestScope.backgroundScope (auto-cancelled by runTest) instead of
+            // relying on an internal isActive flag in the viewModelScope.
             viewModelScope.launch {
-                while (isActive && tickLoopEnabled) {
-                    timerEngine.evaluate()
-                    delay(TICK_MS)
-                }
+                tickerFlow(TICK_MS).collect { timerEngine.evaluate() }
             }
             // Phase 4 step 5: collect live samples for the waveform; a peak
             // (accel magnitude spike) triggers the flash overlay. The same
@@ -593,6 +587,19 @@ class TrainViewModel
 
             /** Get-ready countdown before a live-counted set starts. */
             const val COUNTDOWN_SECONDS = 3
+        }
+    }
+
+/**
+ * Infinite ticker emitting every [periodMs]. Tests collect it from
+ * `TestScope.backgroundScope`, which `runTest` cancels automatically at the end
+ * of the test, so the scheduler can go idle without a production-code flag.
+ */
+private fun tickerFlow(periodMs: Long): kotlinx.coroutines.flow.Flow<Unit> =
+    kotlinx.coroutines.flow.flow {
+        while (true) {
+            emit(Unit)
+            kotlinx.coroutines.delay(periodMs)
         }
     }
 

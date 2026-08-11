@@ -82,23 +82,15 @@ class TrainViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(): TrainViewModel {
-        val vm = TrainViewModel(
-            workoutRepository = workoutRepository,
-            flatSetRepository = flatSetRepository,
-            timerEngine = timerEngine,
-            restTimerServiceStarter = RestTimerServiceStarter { },
-            sensorProvider = sensorProvider,
-            calibrationProfileRepository = calibrationProfileRepository,
-            restTimerPreferences = FakeRestTimerPreferencesRepository(),
-        )
-        // The infinite tick loop (while (isActive && tickLoopEnabled)) keeps
-        // the TestCoroutineScheduler busy forever, so runTest's internal
-        // advanceUntilIdle() never completes. These tests do not need the
-        // timer tick, so disable the loop immediately.
-        vm.tickLoopEnabled = false
-        return vm
-    }
+    private fun viewModel(): TrainViewModel = TrainViewModel(
+        workoutRepository = workoutRepository,
+        flatSetRepository = flatSetRepository,
+        timerEngine = timerEngine,
+        restTimerServiceStarter = RestTimerServiceStarter { },
+        sensorProvider = sensorProvider,
+        calibrationProfileRepository = calibrationProfileRepository,
+        restTimerPreferences = FakeRestTimerPreferencesRepository(),
+    )
 
     @Test
     fun `repsInput bleibt leer wenn kein Live-Set lief (Shadow zaehlt nicht vor)`() =
@@ -136,7 +128,7 @@ class TrainViewModelTest {
             // Ohne startCountedSet ist liveEngine null und _liveCountedReps=0;
             // stopCountedSet() darf die Nutzereingabe nicht mit "0" ersetzen.
             vm.stopCountedSet()
-            dispatcher.scheduler.advanceUntilIdle()
+            dispatcher.scheduler.runCurrent()
             assertEquals("7", vm.repsInput.value)
         }
 
@@ -147,9 +139,9 @@ class TrainViewModelTest {
             vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
             vm.setWeight("20")
             vm.setReps("12")
-            dispatcher.scheduler.advanceUntilIdle()
+            dispatcher.scheduler.runCurrent()
             vm.logSet()
-            dispatcher.scheduler.advanceUntilIdle()
+            dispatcher.scheduler.runCurrent()
             // logSet war erfolgreich, repsInput wurde fuer den naechsten Satz
             // geleert. Entscheidend: der geloggte Wert (12) kam aus dem Input,
             // nicht aus einer Engine.
