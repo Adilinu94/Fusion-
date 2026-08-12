@@ -347,6 +347,95 @@ class TimerEngine(
         }
     }
 
+    /**
+     * Kill-Fallback (Testinfrastruktur-Umbauplan Schritt 2, 5b): gibt den
+     * persistierbaren Zustand eines laufenden NORMAL/REST-Timers zurueck.
+     *
+     * Liefert `null`, wenn kein rehydrierbarer Timer laeuft — also bei IDLE,
+     * einem Endzustand (COMPLETED/CANCELLED/FAILED), PREPARING oder DROPSYNC.
+     * DROPSYNC ist bewusst ausgenommen: seine Ereignisquelle (Player-Session)
+     * existiert nach einem Kill nicht mehr und muss neu aufgebaut werden.
+     */
+    fun snapshot(): TimerSnapshot? {
+        val current = mutableState.value
+        val session = current.session ?: return null
+        if (session.mode == TimerMode.DROPSYNC) return null
+        return when (current.status) {
+            TimerStatus.RUNNING ->
+                TimerSnapshot(
+                    session = session,
+                    status = TimerStatus.RUNNING,
+                    endElapsedRealtimeMs = endElapsedRealtimeMs,
+                    pausedRemainingMs = null,
+                )
+
+            TimerStatus.PAUSED ->
+                TimerSnapshot(
+                    session = session,
+                    status = TimerStatus.PAUSED,
+                    endElapsedRealtimeMs = null,
+                    pausedRemainingMs = pausedRemainingMs,
+                )
+
+            else -> null
+        }
+    }
+
+    /**
+     * Rehydriert einen NORMAL/REST-Timer aus einem persistierten [TimerSnapshot]
+     * (Kill-Fallback 5b). Stellt die monotone Frist gegenueber der jetzigen
+     * monotonen Uhr wieder her, ohne dass ein Uhrzeit-Wechsel verfaelscht.
+     *
+     * Verhalten nach Status:
+     * - RUNNING: Frist = jetzt + verbliebene Restzeit; bereits abgelaufene
+     *   Timer werden sofort auf COMPLETED gesetzt (evaluate() schliesst ab).
+     * - PAUSED: bleibt PAUSED mit der eingefrorenen Restzeit.
+     *
+     * Liefert `false` (ohne Zustandsaenderung), wenn das Snapshot ungueltig
+     * ist (DROPSYNC, negative Restzeit) oder bereits eine aktive Sitzung
+     * laeuft. Der Aufrufer hat zuvor ueber [MonotonicStateStore] einen
+     * Reboot ausgeschlossen; bei Ruecksprung der monotonen Uhr ist das
+     * Snapshot zu verwerfen statt [restore] zu rufen.
+     */
+    fun restore(snapshot: TimerSnapshot): Boolean {
+        val session = snapshot.session
+        if (session.mode == TimerMode.DROPSYNC) return false
+        if (mutableState.value.status != TimerStatus.IDLE) return false
+
+        return when (snapshot.status) {
+            TimerStatus.RUNNING -> {
+                val end = snapshot.endElapsedRealtimeMs ?: return false
+                val now = clock.elapsedRealtimeMs()
+                val remaining = end - now
+                // Ablauf waehrend des Kill ist erlaubt: remaining <= 0 wird
+                // restauriert und das erste evaluate() schliesst ab (COMPLETED).
+                deliveredCueIds.clear()
+                pausedRemainingMs = null
+                prepEndElapsedRealtimeMs = null
+                prepCues = emptyList()
+                endElapsedRealtimeMs = end
+                mutableState.value =
+                    TimerState(TimerStatus.RUNNING, session, remainingMs = maxOf(0, remaining))
+                true
+            }
+
+            TimerStatus.PAUSED -> {
+                val paused = snapshot.pausedRemainingMs ?: return false
+                if (paused < 0) return false
+                deliveredCueIds.clear()
+                pausedRemainingMs = paused
+                endElapsedRealtimeMs = null
+                prepEndElapsedRealtimeMs = null
+                prepCues = emptyList()
+                mutableState.value =
+                    TimerState(TimerStatus.PAUSED, session, remainingMs = paused)
+                true
+            }
+
+            else -> false
+        }
+    }
+
     companion object {
         /** Untere Grenze der DropSync-Dauer (Bauplan 5.2/3). */
         const val MIN_DROPSYNC_DURATION_MS: Long = 5_000

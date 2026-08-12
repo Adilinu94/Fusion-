@@ -18,6 +18,12 @@ kotlin {
 
 dependencies {
     api(project(":core:common"))
+    // Fakes implementieren Domain-Schnittstellen (Sensor/Workout/Timer).
+    api(project(":core:model"))
+    api(project(":domain:sensor"))
+    api(project(":domain:workout"))
+    api(project(":domain:timer"))
+
     api(libs.kotlinx.coroutines.test)
     api(libs.junit4)
     api(libs.turbine)

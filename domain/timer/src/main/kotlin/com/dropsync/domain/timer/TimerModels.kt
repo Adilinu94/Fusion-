@@ -51,3 +51,27 @@ data class TimerState(
     val remainingMs: Long = 0,
     val cancelReason: CancelReason? = null,
 )
+
+/**
+ * Persistierbarer Zustand eines laufenden NORMAL/REST-Timers
+ * (Testinfrastruktur-Umbauplan Schritt 2, Kill-Fallback 5b).
+ *
+ * Wird im Service bei jeder relevanten Zustandsaenderung geschrieben und nach
+ * einem App-/Service-Kill (z. B. Xiaomi) bei App-Start wieder eingelesen, um
+ * den Timer zu rehydrieren. DROPSYNC wird bewusst nicht persistiert: er haengt
+ * an einer Player-Session, die nach einem Kill ohnehin neu aufgebaut wird.
+ *
+ * Alle Zeitangaben sind monoton (`elapsedRealtime`), damit ein Uhrzeit-Wechsel
+ * den Timer nicht verfaelscht. Ein Ruecksprung der monotonen Uhr (Reboot)
+ * erkennt der Aufrufer ueber [MonotonicStateStore] und verwirft das Snapshot.
+ */
+data class TimerSnapshot(
+    /** Laufende Sitzung (ID, Modus, Dauer, Cues, Start). */
+    val session: TimerSession,
+    /** Status zum Persistenz-Zeitpunkt (RUNNING oder PAUSED). */
+    val status: TimerStatus,
+    /** Monotones Fristende; null solange PAUSED (dann greift [pausedRemainingMs]). */
+    val endElapsedRealtimeMs: Long?,
+    /** Eingefrorene Restzeit waehrend PAUSED; null sonst. */
+    val pausedRemainingMs: Long?,
+)

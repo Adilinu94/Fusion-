@@ -2,42 +2,21 @@ package com.dropsync.feature.workout
 
 import app.cash.turbine.test
 import com.dropsync.core.common.AppResult
-import com.dropsync.core.common.Clock
+import com.dropsync.core.testing.FakeClock
+import com.dropsync.core.testing.FakeFlatSetRepository
+import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
+import com.dropsync.core.testing.FakeSensorProvider
+import com.dropsync.core.testing.FakeWorkoutRepository
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
-import com.dropsync.domain.sensor.DeviceEvent
-import com.dropsync.domain.sensor.SensorConnectionState
-import com.dropsync.domain.sensor.SensorProvider
-import com.dropsync.domain.sensor.SensorSample
 import com.dropsync.domain.timer.CueOutput
-import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
-import com.dropsync.domain.workout.CustomExerciseInput
-import com.dropsync.domain.workout.ExerciseDetail
 import com.dropsync.domain.workout.ExerciseInfo
-import com.dropsync.domain.workout.ExerciseLibraryItem
-import com.dropsync.domain.workout.FlatSet
-import com.dropsync.domain.workout.FlatSetRepository
-import com.dropsync.domain.workout.PlaybackSnapshotInfo
-import com.dropsync.domain.workout.PlayedTrackInfo
-import com.dropsync.domain.workout.PrRecord
-import com.dropsync.domain.workout.RestPref
-import com.dropsync.domain.workout.SegmentInput
-import com.dropsync.domain.workout.SessionExerciseInfo
-import com.dropsync.domain.workout.SwapStrategy
-import com.dropsync.domain.workout.WorkoutRepository
-import com.dropsync.domain.workout.WorkoutSessionInfo
 import com.dropsync.feature.workout.shadow.ShadowDiffEvent
 import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
-import com.dropsync.core.model.RestMode
-import com.dropsync.core.model.SetRole
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -228,23 +207,9 @@ class TrainViewModelTest {
     // behauptet.
 
     // --- Fakes ------------------------------------------------------------
-
-    private class FakeSensorProvider : SensorProvider {
-        private val _samples = kotlinx.coroutines.flow.MutableSharedFlow<SensorSample>(extraBufferCapacity = 64)
-        override val connectionState = MutableStateFlow(SensorConnectionState.DISCONNECTED)
-        override val samples: Flow<SensorSample> = _samples
-        override val deviceEvents: Flow<DeviceEvent> = emptyFlow()
-        override val connectedDeviceId = MutableStateFlow<String?>(null)
-
-        fun emitSample(gyro: Double) {
-            _samples.tryEmit(SensorSample(timestampMs = 0L, ax = 0.0, ay = 0.0, az = 9.8, gx = gyro, gy = 0.0, gz = 0.0))
-        }
-
-        override suspend fun connect(deviceId: String?): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun disconnect() = Unit
-        override suspend fun startStreaming() = Unit
-        override suspend fun stopStreaming() = Unit
-    }
+    // Sensor/FlatSet/Workout/RestTimerPrefs/Clock kommen aus :core:testing
+    // (Testinfra-Umbau Schritt 2); nur der hier spezifische Shadow-Recorder,
+    // das Kalibrierungs-Repo und die No-Op-Cues bleiben lokal.
 
     private class FakeCalibrationProfileRepository : CalibrationProfileRepository {
         override suspend fun load(exerciseId: Long, deviceId: String): AppResult<CalibrationProfile?> =
@@ -254,100 +219,12 @@ class TrainViewModelTest {
         override suspend fun delete(exerciseId: Long, deviceId: String): AppResult<Unit> = AppResult.Success(Unit)
     }
 
-    private class FakeFlatSetRepository : FlatSetRepository {
-        val logged = mutableListOf<FlatSet>()
-
-        override fun observeSetsForExercise(exerciseId: Long): Flow<List<FlatSet>> = flowOf(emptyList())
-        override fun observeAllSets(): Flow<List<FlatSet>> = flowOf(emptyList())
-        override suspend fun getLastSet(exerciseId: Long): AppResult<FlatSet?> = AppResult.Success(null)
-
-        override suspend fun logSet(exerciseId: Long, weightMilliKg: Long, reps: Int): AppResult<Long> {
-            val set = FlatSet(id = logged.size + 1L, exerciseId = exerciseId, weightMilliKg = weightMilliKg, reps = reps, loggedAtEpochMs = 0L)
-            logged += set
-            return AppResult.Success(set.id)
-        }
-
-        override suspend fun deleteSet(setId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun getMaxVolumeForExercise(exerciseId: Long): AppResult<Long?> = AppResult.Success(null)
-        override suspend fun getVolumeForDay(dayStart: Long): AppResult<Long?> = AppResult.Success(null)
-        override suspend fun getRecentSets(limit: Int): AppResult<List<FlatSet>> = AppResult.Success(emptyList())
-    }
-
     private class FakeShadowSessionRecorder : ShadowSessionRecorder {
         val recorded = mutableListOf<ShadowDiffEvent>()
 
         override fun recordSet(event: ShadowDiffEvent) {
             recorded += event
         }
-    }
-
-    private class FakeRestTimerPreferencesRepository : RestTimerPreferencesRepository {
-        override val restPresetsSeconds: Flow<List<Int>> = flowOf(RestTimerPreferencesRepository.DEFAULT_PRESETS_SECONDS)
-        override suspend fun setRestPresetsSeconds(seconds: List<Int>) = Unit
-        override val getReadyEnabled: Flow<Boolean> = flowOf(false)
-        override val getReadySeconds: Flow<Int> = flowOf(RestTimerPreferencesRepository.DEFAULT_GET_READY_SECONDS)
-        override suspend fun setGetReady(enabled: Boolean, seconds: Int) = Unit
-    }
-
-    private class FakeWorkoutRepository : WorkoutRepository {
-        override val activeSession: Flow<WorkoutSessionInfo?> = flowOf(null)
-        override fun observeExercises(locale: String): Flow<List<ExerciseInfo>> = flowOf(emptyList())
-        override fun observeSessionExercises(sessionId: Long, locale: String): Flow<List<SessionExerciseInfo>> =
-            flowOf(emptyList())
-
-        override suspend fun startSession(title: String?, fromRoutineId: Long?): AppResult<Long> = AppResult.Success(0L)
-        override suspend fun completeSession(sessionId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun discardSession(sessionId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun addExercise(sessionId: Long, exerciseId: Long, supersetGroupId: Long?): AppResult<Long> =
-            AppResult.Success(0L)
-
-        override suspend fun completeCluster(
-            sessionExerciseId: Long,
-            setRole: SetRole,
-            segments: List<SegmentInput>,
-            note: String?,
-        ): AppResult<Long> = AppResult.Success(0L)
-
-        override suspend fun undoCompleteCluster(clusterId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun recomputeRecords(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun lastCompletedClusterPrefill(exerciseId: Long): AppResult<List<SegmentInput>> =
-            AppResult.Success(emptyList())
-
-        override suspend fun recordPlaybackSnapshot(
-            sessionId: Long,
-            songId: Long,
-            markerId: Long?,
-            positionMs: Long,
-        ): AppResult<Long> = AppResult.Success(0L)
-
-        override suspend fun getPlaybackSnapshots(sessionId: Long): AppResult<List<PlaybackSnapshotInfo>> =
-            AppResult.Success(emptyList())
-
-        override fun observeExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> = flowOf(emptyList())
-        override suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long> = AppResult.Success(0L)
-        override suspend fun getExerciseDetail(exerciseId: Long, locale: String): AppResult<ExerciseDetail> =
-            throw UnsupportedOperationException("not needed for this test")
-
-        override suspend fun archiveExercise(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
-        override suspend fun getRestPref(exerciseId: Long): AppResult<RestPref?> = AppResult.Success(null)
-        override suspend fun setRestPref(exerciseId: Long, restSeconds: Int, restMode: RestMode): AppResult<Unit> =
-            AppResult.Success(Unit)
-
-        override suspend fun swapSessionExercise(
-            sessionExerciseId: Long,
-            newExerciseId: Long,
-            strategy: SwapStrategy,
-        ): AppResult<Unit> = AppResult.Success(Unit)
-
-        override suspend fun repeatLastSession(): AppResult<Long> = AppResult.Success(0L)
-        override fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>> = flowOf(emptyList())
-        override suspend fun getSessionMusic(sessionId: Long): AppResult<List<PlayedTrackInfo>> =
-            AppResult.Success(emptyList())
-    }
-
-    private class FakeClock : Clock {
-        override fun elapsedRealtimeMs(): Long = 0L
-        override fun epochMillis(): Long = 0L
     }
 
     private class NoOpCueOutput : CueOutput {
