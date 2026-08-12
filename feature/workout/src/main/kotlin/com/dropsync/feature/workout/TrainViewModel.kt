@@ -30,6 +30,8 @@ import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.WorkoutRepository
+import com.dropsync.feature.workout.shadow.ShadowDiffEvent
+import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,6 +60,7 @@ class TrainViewModel
         private val sensorProvider: SensorProvider,
         private val calibrationProfileRepository: CalibrationProfileRepository,
         restTimerPreferences: RestTimerPreferencesRepository,
+        private val shadowSessionRecorder: ShadowSessionRecorder,
     ) : ViewModel() {
         val exercises: StateFlow<List<ExerciseInfo>> =
             workoutRepository
@@ -226,6 +229,9 @@ class TrainViewModel
             val weightKg = _weightInput.value.toDoubleOrNull() ?: return
             val reps = _repsInput.value.toIntOrNull() ?: return
             val weightMilliKg = (weightKg * 1_000_000).toLong()
+            // Captured before any reset below (D3/ADR-0014): reflects what
+            // the user actually confirmed for *this* set, not a later state.
+            val repsEdited = _repsInputEdited.value
 
             viewModelScope.launch {
                 when (flatSetRepository.logSet(exercise.id, weightMilliKg, reps)) {
@@ -235,10 +241,23 @@ class TrainViewModel
                         loadRecentSets()
                         // Live (confirmed) count for the shadow diff (11b).
                         liveRepCount += reps
+                        val counted = _liveCountedReps.value
+                        // Shadow-Diff-Harness-Plan Schritt 1 (D2/D3/D4):
+                        // recorded while confirmedReps/repsEdited/shadowRepCount
+                        // still reflect this set, before the learn loop/clear.
+                        shadowSessionRecorder.recordSet(
+                            ShadowDiffEvent(
+                                exerciseId = exercise.id,
+                                weightMilliKg = weightMilliKg,
+                                confirmedReps = reps,
+                                confirmedRepsEdited = repsEdited,
+                                liveCountedReps = counted,
+                                shadowReps = shadowRepCount,
+                            ),
+                        )
                         // Learn loop: a logged count that differs from the
                         // live-counted one re-analyses the buffered set and
                         // improves the profile silently (design doc Phase 4).
-                        val counted = _liveCountedReps.value
                         if (setSamples.isNotEmpty() && counted != reps) {
                             applyCorrection(reps)
                         }

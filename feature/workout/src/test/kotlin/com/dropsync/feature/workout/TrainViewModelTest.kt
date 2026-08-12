@@ -28,6 +28,8 @@ import com.dropsync.domain.workout.SessionExerciseInfo
 import com.dropsync.domain.workout.SwapStrategy
 import com.dropsync.domain.workout.WorkoutRepository
 import com.dropsync.domain.workout.WorkoutSessionInfo
+import com.dropsync.feature.workout.shadow.ShadowDiffEvent
+import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
 import com.dropsync.core.model.RestMode
 import com.dropsync.core.model.SetRole
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +68,7 @@ class TrainViewModelTest {
     private lateinit var sensorProvider: FakeSensorProvider
     private lateinit var calibrationProfileRepository: FakeCalibrationProfileRepository
     private lateinit var timerEngine: TimerEngine
+    private lateinit var shadowSessionRecorder: FakeShadowSessionRecorder
 
     @Before
     fun setUp() {
@@ -75,6 +78,7 @@ class TrainViewModelTest {
         sensorProvider = FakeSensorProvider()
         calibrationProfileRepository = FakeCalibrationProfileRepository()
         timerEngine = TimerEngine(clock = FakeClock(), cueOutput = NoOpCueOutput())
+        shadowSessionRecorder = FakeShadowSessionRecorder()
     }
 
     @After
@@ -90,6 +94,7 @@ class TrainViewModelTest {
         sensorProvider = sensorProvider,
         calibrationProfileRepository = calibrationProfileRepository,
         restTimerPreferences = FakeRestTimerPreferencesRepository(),
+        shadowSessionRecorder = shadowSessionRecorder,
     )
 
     @Test
@@ -190,6 +195,38 @@ class TrainViewModelTest {
             )
         }
 
+    @Test
+    fun `logSet zeichnet ein ShadowDiffEvent mit confirmedRepsEdited=true auf`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+            vm.setWeight("20")
+            vm.setReps("12")
+            dispatcher.scheduler.runCurrent()
+            vm.logSet()
+            dispatcher.scheduler.runCurrent()
+
+            assertEquals(1, shadowSessionRecorder.recorded.size)
+            val event = shadowSessionRecorder.recorded.single()
+            assertEquals("aktiv per setReps eingetippt", true, event.confirmedRepsEdited)
+            assertEquals(12, event.confirmedReps)
+            assertEquals(1L, event.exerciseId)
+            // Kein Live-Set gelaufen: liveCountedReps/shadowReps bleiben 0 -
+            // delta ist hier kein Freigabe-Signal (D3: nur bei
+            // confirmedRepsEdited=true zaehlt confirmedReps ueberhaupt).
+            assertEquals(0, event.liveCountedReps)
+            assertEquals(0, event.shadowReps)
+        }
+
+    // Absichtlich kein Test fuer "unveraenderte Vorbefuellung -> edited=false
+    // im Event": dafuer braucht es einen echten liveCountedReps > 0-Zustand,
+    // den die aktuellen Fakes (kein Kalibrierungsprofil, kein simulierter
+    // Live-Count) nicht sauber treiben koennen - dieselbe Fake-Luecke, die
+    // ExerciseEnginePipelineIsolationTest.kt (:domain:sensor) bereits als
+    // offenen Punkt fuer den ViewModel-Level-Test benennt. Lieber offen
+    // lassen als einen Test schreiben, der etwas anderes prueft als er
+    // behauptet.
+
     // --- Fakes ------------------------------------------------------------
 
     private class FakeSensorProvider : SensorProvider {
@@ -234,6 +271,14 @@ class TrainViewModelTest {
         override suspend fun getMaxVolumeForExercise(exerciseId: Long): AppResult<Long?> = AppResult.Success(null)
         override suspend fun getVolumeForDay(dayStart: Long): AppResult<Long?> = AppResult.Success(null)
         override suspend fun getRecentSets(limit: Int): AppResult<List<FlatSet>> = AppResult.Success(emptyList())
+    }
+
+    private class FakeShadowSessionRecorder : ShadowSessionRecorder {
+        val recorded = mutableListOf<ShadowDiffEvent>()
+
+        override fun recordSet(event: ShadowDiffEvent) {
+            recorded += event
+        }
     }
 
     private class FakeRestTimerPreferencesRepository : RestTimerPreferencesRepository {
