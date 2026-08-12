@@ -92,3 +92,15 @@ Session-Kennung als Referenz.
 - [!] **Wichtig:** keine dieser Änderungen wurde mit einem echten `./gradlew test`-Lauf verifiziert (kein Gradle/Maven-Netzwerkzugriff in der ausführenden Sandbox) — nur Code-Audit + für die Testdaten eine unabhängige Python-Simulation der Zählalgorithmen. Vor dem nächsten Schritt: `./gradlew test` lokal laufen lassen und diesen Punkt hier auf `[x]` setzen.
 
 **Nächster Schritt:** `./gradlew test` lokal verifizieren, danach `ShadowEngineIsolationTest` (ViewModel-Ebene) oder Shadow-Diff-Harness-Plan Schritt 1 (Recorder), je nach Priorität.
+
+---
+
+## F. Heutige Session, Fortsetzung (2026-08-12, Session: c7f2a9e1)
+
+- [x] erledigt (`9216db2`) – Shadow-Diff-Harness-Plan Schritt 1: `ShadowSessionRecorder`/`ShadowDiffEvent` (`feature/workout/shadow/`), `NoOpShadowSessionRecorder` als Platzhalter-Binding. `logSet()` zeichnet jetzt ein Event auf (vor Lern-Loop/Reset, damit `confirmedRepsEdited` den tatsächlich bestätigten Zustand abbildet). 1 neuer Test; zweiten geplanten Test (unedited-Vorbefüllung) wieder verworfen — mit den aktuellen Fakes nicht sauber treibbar, gleiche Lücke wie beim ViewModel-Level-Isolationstest.
+- [x] erledigt – RecoFit-Caveat in `SHADOW_DIFF_HARNESS_PLAN.md` (Abschnitt D, offener Punkt) ergänzt.
+- [!] `feature/train`-ADR bewusst nicht umgesetzt: Einschätzung aus Abschnitt E ("verfrüht") übernommen.
+- [!] Weiterhin offen: `ShadowEngineIsolationTest` (ViewModel-Ebene, braucht Fake-Umbau), MTU-Negotiator-Extraktion (Testinfra Schritt 2), echte JSONL-Persistenz für den Recorder (Schritt 2/3), RecoFit-Corpus-Bootstrap selbst (nur das Caveat ist erledigt).
+- [!] **Nicht mit echtem `./gradlew test` verifiziert** (kein Gradle-Netzwerkzugriff in dieser Sandbox) — nur Code-Audit + Klammer-/Referenz-Abgleich per Hand. Vor dem nächsten Schritt lokal gegenprüfen.
+
+**Nächster Schritt:** `./gradlew test` lokal verifizieren (deckt jetzt auch diese Runde ab), danach echte JSONL-Persistenz für den Recorder oder der ViewModel-Level-Isolationstest.
