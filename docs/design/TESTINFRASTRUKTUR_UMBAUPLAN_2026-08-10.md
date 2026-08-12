@@ -413,7 +413,8 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 | RestMusicCoordinator | `RestMusicCoordinatorTest` (Unit, grün) | 1 (bleibt) | — |
 | Route-Wechsel während Countdown | — | 1 (Generation Token) | `CountdownRouteSwitchTest` |
 | Golden Audio Fixtures | — | Fixtures + 1/4 | `audio_fixtures.py` + DSP-Tests |
-| Shadow-Isolation (`:feature:workout`) | — | 1 (pure JVM) | `ShadowEngineIsolationTest` — `shadowEngine.repCount` beeinflusst niemals `_repsInput`/`_liveCountedReps` (und umgekehrt); kein Übersprechen zwischen Live- und Shadow-Pfad |
+| Shadow-Isolation, Domain (`:domain:sensor`) | ✅ erledigt (Session Claude-814d9738, 2026-08-12) | 1 (pure JVM) | `ExerciseEnginePipelineIsolationTest` — zwei Pipeline-Instanzen (live/shadow-Konfiguration wie in TrainViewModel) teilen keinen Zustand, numerisch gegen eine Python-Simulation von SignalChain/PeakDetector/RepCounter verifiziert |
+| Shadow-Isolation, ViewModel (`:feature:workout`) | offen | 1 (pure JVM) | `ShadowEngineIsolationTest` — `shadowEngine.repCount` beeinflusst niemals `_repsInput`/`_liveCountedReps` (und umgekehrt). Braucht `FakeCalibrationProfileRepository` mit injizierbarem Profil (aktuell immer `null`) + steuerbare `connectionState` in `FakeSensorProvider`; die Domain-Test-Sample-Sequenz aus `ExerciseEnginePipelineIsolationTest` ist direkt uebertragbar |
 
 ---
 
@@ -426,7 +427,8 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 - `data/timer/src/test/.../AudioFocusDuckingTest.kt`
 - `feature/player/src/androidTest/.../WaveformScrubbingTest.kt`
 - `feature/player/src/androidTest/.../MarkerLongPressTest.kt`
-- `feature/workout/src/test/.../ShadowEngineIsolationTest.kt` (pure JVM, Target Layer 1)
+- `domain/sensor/src/test/.../ExerciseEnginePipelineIsolationTest.kt` (pure JVM, Layer 1) — ✅ erledigt (Session Claude-814d9738, 2026-08-12)
+- `feature/workout/src/test/.../ShadowEngineIsolationTest.kt` (pure JVM, Target Layer 1) — offen, siehe Fake-Umbau oben
 
 **Härtung (Punkt 5):**
 - `domain/timer/.../TimerEngine.kt` (+ `snapshot`/`restore`)

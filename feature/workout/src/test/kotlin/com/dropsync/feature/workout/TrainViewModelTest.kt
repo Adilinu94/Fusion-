@@ -150,6 +150,46 @@ class TrainViewModelTest {
             assertEquals("", vm.repsInput.value)
         }
 
+    @Test
+    fun `setReps markiert Edit auch wenn derselbe Wert erneut eingetippt wird`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            assertEquals("frisch erzeugtes ViewModel: noch nichts editiert", false, vm.repsInputEdited.value)
+            vm.setReps("8")
+            assertEquals(true, vm.repsInputEdited.value)
+            // Kein Wertevergleich (D3): Retippen desselben Werts ist trotzdem
+            // eine aktive Bestaetigung, keine "unveraenderte Vorbefuellung".
+            vm.setReps("8")
+            assertEquals(
+                "erneutes Eintippen desselben Werts bleibt eine aktive Bestaetigung",
+                true,
+                vm.repsInputEdited.value,
+            )
+        }
+
+    @Test
+    fun `repsInputEdited nur durch setReps wahr, logSet setzt fuer den naechsten Satz zurueck`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+            vm.setWeight("20")
+            assertEquals("setWeight ist kein Reps-Edit", false, vm.repsInputEdited.value)
+
+            vm.setReps("12")
+            assertEquals("setReps markiert eine aktive Nutzereingabe", true, vm.repsInputEdited.value)
+
+            dispatcher.scheduler.runCurrent()
+            vm.logSet()
+            dispatcher.scheduler.runCurrent()
+
+            assertEquals(1, flatSetRepository.logged.size)
+            assertEquals(
+                "nach dem Loggen ist das Feld leer und wieder unediert (naechster Satz)",
+                false,
+                vm.repsInputEdited.value,
+            )
+        }
+
     // --- Fakes ------------------------------------------------------------
 
     private class FakeSensorProvider : SensorProvider {

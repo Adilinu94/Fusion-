@@ -85,6 +85,17 @@ class TrainViewModel
         private val _repsInput = MutableStateFlow("")
         val repsInput: StateFlow<String> = _repsInput.asStateFlow()
 
+        /**
+         * True once the user has typed into the reps field for the current
+         * set (Shadow-Diff-Harness-Plan D3: Ground-Truth-Regel). Set only in
+         * [setReps] (the UI's onValueChange path), reset to false whenever
+         * the pipeline pre-fills the field ([stopCountedSet], [logSet]'s
+         * cleanup, [finishExercise]) - never derived by comparing values,
+         * since retyping the same number is still an active confirmation.
+         */
+        private val _repsInputEdited = MutableStateFlow(false)
+        val repsInputEdited: StateFlow<Boolean> = _repsInputEdited.asStateFlow()
+
         val canLog: Boolean
             get() = _weightInput.value.toDoubleOrNull() != null && _repsInput.value.toIntOrNull() != null
 
@@ -133,6 +144,7 @@ class TrainViewModel
             _maxVolumeKg.value = null
             _weightInput.value = ""
             _repsInput.value = ""
+            _repsInputEdited.value = false
             shadowEngine = null
             shadowRepCount = 0
             liveRepCount = 0
@@ -206,6 +218,7 @@ class TrainViewModel
 
         fun setReps(value: String) {
             _repsInput.value = value
+            _repsInputEdited.value = true
         }
 
         fun logSet() {
@@ -234,6 +247,7 @@ class TrainViewModel
                         _liveCountedReps.value = 0
                         // Keep weight, reset reps for the next set.
                         _repsInput.value = ""
+                        _repsInputEdited.value = false
                         // Rule (design step 5): set done -> rest timer starts.
                         startRestTimer()
                     }
@@ -473,6 +487,7 @@ class TrainViewModel
             _countdownSeconds.value = 0
             if (counted > 0) {
                 _repsInput.value = counted.toString()
+                _repsInputEdited.value = false
             }
         }
 
