@@ -159,3 +159,12 @@ Session-Kennung als Referenz.
 - [x] Verifiziert: `:domain:timer:test`, `:domain:playback:test`, `:data:timer:testDebugUnitTest` (25 Tests), `:data:playback:testDebugUnitTest`, `:core:testing:test`, `:app:compileDebugKotlin` — alle grün.
 
 **Nächster Schritt:** Testinfra Schritt 2 ist damit vollständig (5a MTU war bereits im vorherigen Commit verdrahtet). Übrig aus Schritt 6: Design-Doku-Konsolidierung (Punkt 4). Danach Umbauplan Punkte 4-6 (Accel-Kanal, Multi-Template, adaptive Refraktärzeit).
+
+## L. Restpunkte abgearbeitet (2026-08-13): Umbauplan-Tests 4-6 + Doku-Konsolidierung
+
+- [x] **Umbauplan Punkte 4-6 (Implementierung existierte, Plan-Tests fehlten):** Die Logik für Accel-Voting, Multi-Template-Pool und adaptive Refraktärzeit war im Code bereits vorhanden, aber die im Umbauplan geforderten Tests fehlten teilweise. Ergänzt: `SignalChainAccelTest` (3 Tests: smoothedAccel bei Bewegung, Ruhe ~0, deaktivierter Zweig bleibt 0), `RepPipelineTest` (Pool füllt sich nach bestätigter Rep, FIFO-Eviction bei poolSize=3, `trackForAdaptation` adaptiert die erwartete Dauer nach 3 Reps). `:domain:sensor:test` grün.
+- [x] **Design-Doku-Konsolidierung (Testinfra-Plan Punkt 4):** Benannte Anker (`<a name="...">`) im Design-Doc für Abschnitte 9-13 und 11a/11b gesetzt; alle Zahl-Verweise (`Abschnitt <n>`) in den lebenden Design-Plänen (`FLOWREP_DROPSYNC_FUSION_DESIGN`, `SHADOW_DIFF_HARNESS_PLAN`, `TESTINFRASTRUKTUR_UMBAUPLAN`, `REP_ZAEHLUNG_UMBAUPLAN`, `WISSEN_POWERAMP_OFFTRACK`) auf Anker-Links umgestellt. Neues `tools/doku_links_check.py`: prüft Anker-Ziele, tote Links und verbietet Zahl-Verweise in `docs/design/*.md` (Archiv/STATUS/ADR bleiben historisch ausgenommen). CI-Job um den Check erweitert.
+- [x] **Konsolidierungs-Entscheidung dokumentiert:** Die ausführliche Abschnitt-9-Fassung bleibt erhalten (Adi-Entscheidung aus STATUS A1); der Check verhindert künftige stille Umnummerierungs-Regressionen, ohne die Doku umzubauen.
+- [x] Umbauplan-DoD und Reporting-Tabelle (Punkte 4-6 erledigt, Punkt 7 als `[~]` mit Hardware-Hinweis) aktualisiert.
+
+**Nächster Schritt:** Alle automatisierbaren Punkte sind erledigt. Offen bleibt ausschließlich Hardware-Validierung durch Adi (5 Freigabe-Szenarien, Anleitung in `tools/golden_shadow_corpus/README.md`), danach Gate-11b-Entscheidung und Flag-Aktivierung (`accelEnabled`/`orientationTrackingEnabled`).

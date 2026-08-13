@@ -3,12 +3,12 @@
 **Datum:** 2026-08-10
 **Status:** Entwurf / zur Freigabe
 **Zweck:** Automatisierte Vergleichs-/Diff-Logik zwischen Shadow- und Live-Zählung
-schließen (Design-Dokument Abschnitt 11b, offener Punkt aus
+schließen (Design-Dokument [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod), offener Punkt aus
 `docs/STATUS_FORTSCHRITT.md` B.3). Macht die fünf Freigabe-Szenarien aus
-Abschnitt 11b objektiv prüfbar, statt auf Logcat-Zeilen zu vertrauen.
+dem [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) objektiv prüfbar, statt auf Logcat-Zeilen zu vertrauen.
 
 **Referenzen:**
-- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → Abschnitt 11b (Shadow-DoD), Phase 4 Schritt 6
+- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod), Phase 4 Schritt 6
 - `docs/STATUS_FORTSCHRITT.md` → B.3 (offener Punkt)
 - `docs/archive/flowrep-import/docs/design/DIRECTIONAL_GP_SHADOW_ROLLOUT_2026-07-27.md` → Vorbild für Shadow-Gates
 - FlowRep-Referenz (ausserhalb der Fusion): `app/lib/domain/metrics/shadow_report.dart` (FR-B12, JSONL), `app/lib/data/repositories/csv_session_recorder.dart`, `tools/golden_csv_harness.py` (Auswertungs-Harness)
@@ -17,7 +17,7 @@ Abschnitt 11b objektiv prüfbar, statt auf Logcat-Zeilen zu vertrauen.
 
 ## 1. Ausgangslage und Problem
 
-### 1.1 Was Abschnitt 11b fordert
+### 1.1 Was der [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) fordert
 
 Die neue Zähl-Pipeline (`ExerciseEnginePipeline`/`PeakDetector`/`PhaseValidator`/
 `TemplateMatcher`) läuft seit Phase 4 im Shadow-Modus mit. Vor der Freigabe als
@@ -42,7 +42,7 @@ der Legacy-Engine** über mehrere unabhängige Sessions gezeigt wird.
 
 ### 1.4 Wichtige Erkenntnis aus der Ist-Analyse
 
-Abschnitt 11b spricht vom Rep-Diff gegenüber der **Legacy-Engine**. In der
+Der [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) spricht vom Rep-Diff gegenüber der **Legacy-Engine**. In der
 Fusion existiert die Legacy-Engine **nicht mehr** — es gibt nur noch die neue
 Pipeline, die bereits live zählt (Live-Engine beim `startCountedSet`) und
 gleichzeitig als Shadow läuft. Der reale, aussagekräftige Diff ist daher der gegenüber den **vom Nutzer
@@ -54,7 +54,7 @@ in FlowRep, das die dortige Harness bereits als Wahrheit nutzt.
 Wahrheit, wenn der Nutzer den von der App vorbefüllten Wert **aktiv editiert**
 hat. Lässt er den vorbefüllten Wert unverändert stehen, ist er nicht
 unabhängig — er ist nur die Zahl, die die App selbst berechnet hat. Für die
-Freigabe-Szenarien (Abschnitt 9) ist daher eine aktive Nutzer-Korrektur
+Freigabe-Szenarien ([Zuordnung](#9-zuordnung)) ist daher eine aktive Nutzer-Korrektur
 Pflicht; unbestätigte `confirmedReps` dienen nur der Diagnose.
 
 **Konsequenz für das Design:** Der Diff ist `shadow ↔ bestätigte Reps`. Der
@@ -118,7 +118,7 @@ Smoke-Test-Modus mit synthetischen Fixtures (ersetzt keine echte Validierung).
 - **Kritische Einsicht aus flowrep-clone:** `tools/golden_csv_corpus/` ist dort
   bis heute **leer** — Infrastruktur war da, aber nie wurden echte Aufnahmen
   kuratiert. Das Design muss deshalb den **Kurations-Workflow** als Erstklass-
-  Bürger einplanen (siehe Abschnitt 8), sonst wird die Harness wieder tote Daten
+  Bürger einplanen (siehe [Kurations-Workflow](#8-kuration)), sonst wird die Harness wieder tote Daten
   produzieren.
 
 ---
@@ -213,6 +213,7 @@ Smoke-Test-Modus mit synthetischen Fixtures (ersetzt keine echte Validierung).
 
 ---
 
+<a name="6-jsonl-schema"></a>
 ## 6. JSONL-Schema (Recorder-Ausgabe)
 
 Eine Datei pro Session, Append-only, UTF-8, `\n`-getrennt. Jede Zeile ist ein
@@ -285,8 +286,8 @@ JSON-Objekt mit einer `t`-Zeile vom Typ. Zwei Kategorien:
 }
 ```
 
-`scenario` ist eines der 5 Szenarien aus Abschnitt 11b (Schlüssel siehe
-Abschnitt 9 dieses Plans — die Szenario-Tabelle unten). `known_active_reps` pro Satz in chronologischer Reihenfolge —
+`scenario` ist eines der 5 Szenarien aus dem [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) (Schlüssel siehe
+[Zuordnung](#9-zuordnung) dieses Plans — die Szenario-Tabelle unten). `known_active_reps` pro Satz in chronologischer Reihenfolge —
 die unabhängige, von Hand gezählte Kontrollgröße (Kurations-Schritt 2).
 
 **Wahrheits-Priorität (pro Satz):**
@@ -301,6 +302,7 @@ die unabhängige, von Hand gezählte Kontrollgröße (Kurations-Schritt 2).
 
 ---
 
+<a name="8-kuration"></a>
 ## 8. Kurations-Workflow (erste Klasse — Lehre aus flowrep-clone)
 
 Damit die Harness nicht wieder tote Daten produziert, wird der Ablauf als
@@ -327,7 +329,8 @@ bricht die CI. So bleibt die Harness nicht unbeobachtet.
 
 ---
 
-## 9. Zuordnung zu den 5 Freigabe-Szenarien (Abschnitt 11b)
+<a name="9-zuordnung"></a>
+## 9. Zuordnung zu den 5 Freigabe-Szenarien ([Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod))
 
 | Szenario (11b) | Manifest-`scenario` | Erwartung (Abnahmekriterium) |
 |---|---|---|
@@ -399,7 +402,7 @@ Oberhofer et al. 2021, Sports 9(9):118 — Smartwatch-Rep-Counting-Validierung):
 | 3 | Optionaler Sample-Listener + Schalter + Tests | Kotlin |
 | 4 | `tools/shadow_harness.py` + Manifest-Serde + Smoke-Fixtures | Python |
 | 5 | `tools/golden_shadow_corpus/README.md` + Kurations-Workflow | Markdown |
-| 5.5 | **Öffentlichen IMU-Datensatz als Corpus-Baseline:** Microsoft RecoFit-Datensatz (`microsoft/Exercise-Recognition-from-Wearable-Sensors`, 200+ Teilnehmer, Acc+Gyro, rep-gelabelt, Matlab-`.mat`) per Python-Script (`scipy.io.loadmat`) in unser JSONL-Schema konvertieren und als ersten Corpus-Inhalt ablegen. Damit ist die Harness vor dem ersten Hardware-Lauf gegen echte Kurven validierbar — struktureller Schutz gegen die „leerer Corpus"-Falle aus flowrep-clone. Optional ergänzend: IEEE DataPort „Gym Gesture Classification Using IMU" (wrist-worn, CSV, TinyML-nah am M5StickC-Formfaktor). **Caveat (Review 2026-08-12):** anderes Gerät, andere Sensorposition (Handgelenk statt M5Stick-Montage) und vermutlich andere Übungen als unsere 5 Hammer-Strength-Maschinen — ein grüner RecoFit-Lauf validiert die Harness-*Mechanik* (JSONL-Pfad, Diff-Berechnung, Kurationsworkflow), ist aber kein Ersatz für die 5-Szenarien-Hardwarefreigabe aus Abschnitt 11b/ADR-0014. Nicht als Fortschritt Richtung Freigabe werten. | Python, `tools/` |
+| 5.5 | **Öffentlichen IMU-Datensatz als Corpus-Baseline:** Microsoft RecoFit-Datensatz (`microsoft/Exercise-Recognition-from-Wearable-Sensors`, 200+ Teilnehmer, Acc+Gyro, rep-gelabelt, Matlab-`.mat`) per Python-Script (`scipy.io.loadmat`) in unser JSONL-Schema konvertieren und als ersten Corpus-Inhalt ablegen. Damit ist die Harness vor dem ersten Hardware-Lauf gegen echte Kurven validierbar — struktureller Schutz gegen die „leerer Corpus"-Falle aus flowrep-clone. Optional ergänzend: IEEE DataPort „Gym Gesture Classification Using IMU" (wrist-worn, CSV, TinyML-nah am M5StickC-Formfaktor). **Caveat (Review 2026-08-12):** anderes Gerät, andere Sensorposition (Handgelenk statt M5Stick-Montage) und vermutlich andere Übungen als unsere 5 Hammer-Strength-Maschinen — ein grüner RecoFit-Lauf validiert die Harness-*Mechanik* (JSONL-Pfad, Diff-Berechnung, Kurationsworkflow), ist aber kein Ersatz für die 5-Szenarien-Hardwarefreigabe aus dem [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod)/ADR-0014. Nicht als Fortschritt Richtung Freigabe werten. | Python, `tools/` |
 | 6 | Erste echte Aufnahme (Szenario 1, eine Übung) als Pilot der Kette | Hardware-Lauf + Kuration |
 | 7 | CI-Schritt (sobald Corpus existiert) | `.github/workflows/ci.yml` |
 
@@ -439,7 +442,7 @@ werden.
 Mit diesem Plan ist der offene Punkt B.3 aus `docs/STATUS_FORTSCHRITT.md`
 geschlossen: Die Shadow-vs-Live-Diffs werden **strukturiert aufgezeichnet**,
 **kuratiert** und **objektiv ausgewertet**. Die fünf Freigabe-Szenarien aus
-Abschnitt 11b bekommen ein reproduzierbares, CI-fähiges Kriterium. Und dank der
+dem [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) bekommen ein reproduzierbares, CI-fähiges Kriterium. Und dank der
 optionalen Rohdaten-Aufnahme (D2) ist jede spätere Pipeline-Verbesserung gegen
 echte Bewegungsdaten offline testbar — genau der Mehrwert, den FlowRep mit
 seinem (nie befüllten) `golden_csv_corpus` eigentlich liefern sollte.

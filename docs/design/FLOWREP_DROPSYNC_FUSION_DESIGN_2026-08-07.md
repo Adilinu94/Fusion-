@@ -301,6 +301,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
+<a name="9-phasenplan"></a>
 ## 9. Phasenplan
 
 ### Phase 0 – Repo Merge und Fundament (Vorarbeit)
@@ -381,7 +382,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 3. Portiere FlowRep WorkoutEngine und PCA Kalibrierung nach Kotlin, persist pro Übung+Gerät, Calibration Wizard Screen 3 langsame Reps 20-30s.
 4. Hilt Module bindet Sensor nur wenn Chip verbunden, sonst Fake Provider für manuelles +/-.
 5. Train Waveform speist Live Samples aus Provider + Blitz bei Peak.
-6. Neue Zähl-Pipeline (`ExerciseEngine`/`PeakDetector`/`PhaseValidator`/`TemplateMatcher`) zusätzlich nach Kotlin portieren, ausschließlich im Shadow-Modus wie im aktuellen FlowRep-Verhalten (`_useNewPipeline=false`, Shadow läuft automatisch mit sobald ein Kalibrierungsprofil vorliegt, zählt aber nicht live). Vorher in FlowRep den bekannten Befund-C-Fix anwenden (`rep_counter.dart`: `TemplateMatcher.match()` zurück auf `peak.window` statt erweitertem `window`, ein Zeiler — Details in `docs/archive/umbauplan/PHASE_VALIDATOR_FIX_AUDIT_2026-08-05.md` Abschnitt 7). Freischalten als live zählende Methode erst nach eigenem Shadow-DoD, siehe Abschnitt 11b.
+6. Neue Zähl-Pipeline (`ExerciseEngine`/`PeakDetector`/`PhaseValidator`/`TemplateMatcher`) zusätzlich nach Kotlin portieren, ausschließlich im Shadow-Modus wie im aktuellen FlowRep-Verhalten (`_useNewPipeline=false`, Shadow läuft automatisch mit sobald ein Kalibrierungsprofil vorliegt, zählt aber nicht live). Vorher in FlowRep den bekannten Befund-C-Fix anwenden (`rep_counter.dart`: `TemplateMatcher.match()` zurück auf `peak.window` statt erweitertem `window`, ein Zeiler — Details im FlowRep-Archiv: `flowrep-clone/docs/archive/umbauplan/PHASE_VALIDATOR_FIX_AUDIT_2026-08-05.md`). Freischalten als live zählende Methode erst nach eigenem Shadow-DoD, siehe [→ Shadow-DoD](#11b-shadow-dod).
 
 **Dateien neu:** `domain/sensor/*`, `data/sensor/*`, `feature/train/calibration/*`
 
@@ -391,7 +392,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ### Phase 5 – Audio-POC und manuelle Marker (statt Auto-Erkennung)
 
-**Ziel:** Timing-Grundformel und manuelle Marker beweisen, bevor Crossfade, Route-Kalibrierung und Auto-Erkennung draufgebaut werden (Grundprinzip Abschnitt 12).
+**Ziel:** Timing-Grundformel und manuelle Marker beweisen, bevor Crossfade, Route-Kalibrierung und Auto-Erkennung draufgebaut werden (Grundprinzip [→ Phasen-Reihenfolge](#12-phasen-reihenfolge)).
 
 **Schritte:**
 
@@ -413,7 +414,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 * **AudioClock-Abstraktion:** `Media3AudioClock` (MVP) hinter Interface, später `AudioTrackTimestampClock`. Timer basiert auf `SystemClock.elapsedRealtimeNanos()`, Drop-Start rechnet `WorkStart = Go - Marker - Latenz`.
 * **RouteProfile:** `AudioRouteProfile(routeKey, sampleRate, channels, estimatedLatencyMs, p50ErrorMs, p95ErrorMs, calibratedAt, confidence)`. `routeKey` = interner Lautsprecher / USB / Kabel / BT-Gerät + Codec + Sample-Rate. Bei Route-Wechsel, Sample-Rate-Wechsel oder Fokusverlust Profil als unsicher markieren.
-* **Latenz ohne Mikrofon:** Feste Latenz-Tabellen je Codec/BT-Gerät pflegen (siehe Abschnitt 10), wo verfügbar mit `AudioTimestamp` extrapolieren (`audibleFrame ≈ framePosition + (nowNanos - tsNano) * rate`). Kein Loopback-Messaufbau.
+* **Latenz ohne Mikrofon:** Feste Latenz-Tabellen je Codec/BT-Gerät pflegen (siehe [→ Latenz-Kalibrierung](#10-latenz-kalibrierung)), wo verfügbar mit `AudioTimestamp` extrapolieren (`audibleFrame ≈ framePosition + (nowNanos - tsNano) * rate`). Kein Loopback-Messaufbau.
 * **Modus intern:** `EXACT / CALIBRATED / BEST_EFFORT / UNAVAILABLE`. Bei `BEST_EFFORT` keine "millisekundengenau"-Aussage in der UI, nur dezenter Hinweis "Timing passt sich Route an".
 * **Cue Mode:** Go ist autoritativ. Erste Rep vor Go (Toleranz 250-500ms) wird als `EARLY_START` markiert, Timer und Drop bleiben bei Go, kein Adaptive Mode im Backlog.
 * **Generation Token:** `PlaybackGeneration(id)` bei jedem Skip/Satzwechsel/Route-Wechsel erhöhen; alte geplante Audio-Events ignorieren.
@@ -515,17 +516,18 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ### Phase 12 – Auto-Drop-Erkennung und große Analyse-Queue
 
-**Ziel:** Auto-Erkennung erst wenn manuelle Marker (Phase 5) und die komplette Audio-Kette (Phasen 6-8) bewiesen sind, nicht vorher (Grundprinzip Abschnitt 12).
+**Ziel:** Auto-Erkennung erst wenn manuelle Marker (Phase 5) und die komplette Audio-Kette (Phasen 6-8) bewiesen sind, nicht vorher (Grundprinzip [→ Phasen-Reihenfolge](#12-phasen-reihenfolge)).
 
 **Schritte:**
 
 1. `OnsetDetection` Worker `onset_detection_<songId>` Top 5 Mindestabstand 5s, schreibt Kandidaten mit `AUTO_DETECTED isEnabled=false` (Nutzer bestätigt/verwirft über den Review-Screen aus Phase 5/8).
-2. Skalierung auf große Bibliotheken nach dem WorkManager-Modell aus Abschnitt 11a (PENDING/RUNNING/DONE/FAILED_RETRYABLE/FAILED_PERMANENT/STALE/CANCELLED, Priorität angefordert > zuletzt gespielt > aktuelle Playlist > restliche Bibliothek) — nicht 1.000 Songs in einem unteilbaren Worker.
+2. Skalierung auf große Bibliotheken nach dem WorkManager-Modell aus [→ Analyse-Pipeline](#11a-analyse-pipeline) (PENDING/RUNNING/DONE/FAILED_RETRYABLE/FAILED_PERMANENT/STALE/CANCELLED, Priorität angefordert > zuletzt gespielt > aktuelle Playlist > restliche Bibliothek) — nicht 1.000 Songs in einem unteilbaren Worker.
 
 **Verifikation:** Auto-Kandidaten erscheinen deaktiviert im Review-Screen, ändern nichts ohne Bestätigung. Große Bibliothek (>500 Songs) blockiert App-Start nicht, Fortschritt persistiert bei Abbruch.
 
 ---
 
+<a name="10-latenz-kalibrierung"></a>
 ## 10. Latenz-Kalibrierung ohne Mikrofon
 
 **Ziel:** Drop-Timing pro Route bestmöglich, ohne externen Messaufbau, keine Versprechen in UI.
@@ -537,6 +539,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
+<a name="11-tests-gates"></a>
 ## 11. Tests und Gates
 
 * Unit: Planner Equal Power, FADE identisch, Monotonie, paarweise verschieden, Crossfade Mikro Rampe, Codec Roundtrip, Slugs Progress, Repo 18 inkl Swap Repeat RestPref Snapshot, Migration 1->6 gegen JSON. Plus: Generation Token (Skip invalidiert alte Events), Ducking min() (kein Doppel-Duck), RouteProfile-Wechsel (BEST_EFFORT), Cue Mode (frühe Rep verschiebt Drop nicht), Direct-Drop mit seekPrerollFrame.
@@ -547,6 +550,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
+<a name="11a-analyse-pipeline"></a>
 ## 11a. Analyse-Pipeline (Waveform, Onset, BPM)
 
 * **Ein Decoder-Durchgang:** MediaExtractor/MediaCodec -> PCM-Block -> Mono-Downmix -> niedrigere Analyse-Sample-Rate -> gemeinsames Feature-Fenster (Waveform Min/Max/RMS, Spectral Flux, Onsets, BPM). Key nur optional und später (teuer, empfindlich).
@@ -558,6 +562,7 @@ Liste Gruppiert nach Tag, je Satz Zeile `10:42 Bankdrücken 80 kg x 8 = 640 kg V
 
 ---
 
+<a name="11b-shadow-dod"></a>
 ## 11b. Shadow-DoD Neue Zähl-Pipeline (vor `_useNewPipeline`-Äquivalent = true)
 
 Betrifft die in Phase 4, Schritt 6 portierte `ExerciseEngine`/`PeakDetector`/`PhaseValidator`/`TemplateMatcher`-Pipeline. Läuft ab Portierung im Shadow-Modus (beobachtet mit, zählt nicht live). Für die vergleichbare `DirectionalGpShadow`-Pipeline existiert bereits ein Hardware-Gate mit konkreten Freigabe-Szenarien (`docs/design/DIRECTIONAL_GP_SHADOW_ROLLOUT_2026-07-27.md`) — das Äquivalent für diese Pipeline war bisher nirgends definiert, nur als Regel referenziert (`docs/Version1.0/13_OFFENE_PUNKTE.md` B5/G7: "nicht ohne Shadow-DoD"). Hiermit nachgeholt.
@@ -578,6 +583,7 @@ Betrifft die in Phase 4, Schritt 6 portierte `ExerciseEngine`/`PeakDetector`/`Ph
 
 ---
 
+<a name="12-phasen-reihenfolge"></a>
 ## 12. Phasen-Reihenfolge (angepasst nach Super-KI Review)
 
 Grundprinzip: Erst Audio-Grundlage mit manuellem Marker beweisen, dann Crossfade, dann TTS/Gain, dann Waveform, Auto-Erkennung und Skalierung ans Ende. Kein Feature bauen, dessen Fundament nicht steht.
@@ -600,6 +606,7 @@ Grundprinzip: Erst Audio-Grundlage mit manuellem Marker beweisen, dann Crossfade
 
 ---
 
+<a name="13-risiken"></a>
 ## 13. Risiken und Antworten
 
 * HyperOS MTU 517 Bug -> Require 185 anfordern aber 517 akzeptieren, Protokoll v2 53 Byte passt.

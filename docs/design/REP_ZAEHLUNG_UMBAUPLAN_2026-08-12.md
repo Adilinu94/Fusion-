@@ -8,7 +8,7 @@ Einbettung in `TrainViewModel` (feature/workout). So detailliert, dass eine
 schwächere KI jeden Punkt korrekt umsetzen kann.
 
 **Referenzen (intern):**
-- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → Abschnitt 11b
+- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod)
 - `docs/design/SHADOW_DIFF_HARNESS_PLAN.md` → D2/D3/D4, §11b
 - `docs/design/TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md` → 5a/5b, Z. 205–226
 - `docs/STATUS_FORTSCHRITT.md` → Abschnitte E, F, ADR-0014
@@ -642,7 +642,7 @@ private fun maxExtraPhaseSamples(): Int =
 ## Punkt 7 (LANGFRISTIG): Gate 11b durchlaufen
 
 ### Problem
-Die 5 Freigabe-Szenarien aus Abschnitt 11b des Design-Dokuments sind nie
+Die 5 Freigabe-Szenarien aus dem [Shadow-DoD](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11b-shadow-dod) des Design-Dokuments sind nie
 vollständig durchlaufen worden. ADR-0014 dokumentiert die Live-Zählung als
 bewusste Abweichung, aber das Gate bleibt formal offen.
 
@@ -694,8 +694,7 @@ import javax.inject.Singleton
 /**
  * Schreibt ShadowDiffEvents als JSONL unter
  * /Android/data/<pkg>/files/recordings/<session>.jsonl
- * (SHADOW_DIFF_HARNESS_PLAN.md Abschnitt 6).
- */
+ * (SHADOW_DIFF_HARNESS_PLAN.md Abschnitt 6). */
 @Singleton
 class JsonlShadowSessionRecorder @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -1300,19 +1299,19 @@ python3 tools/shadow_harness.py \
 
 ## Abnahmekriterien (DoD für den Umbauplan)
 
-- [ ] `./gradlew :domain:sensor:test` grün (alle Pipeline-Komponenten-Tests)
-- [ ] `./gradlew :core:testing:test` grün (FakeCalibrationProfileRepository)
-- [ ] `./gradlew :feature:workout:compileDebugUnitTestKotlin` grün
-- [ ] Punkt 1: Shadow-Engine verwendet Profil-Achse/Bias (Test: `TrainViewModelTest`)
-- [ ] Punkt 2: `updateLevels()` wird bei Pipeline-Start aufgerufen (Test: `PeakDetectorTest`)
-- [ ] Punkt 3: `minQualityScore` = 0.55 im Config-Default (Test: `QualityScorerTest`)
-- [ ] Punkt 4: Accel-Voting aktivierbar, reduziert False-Positives (Test: `RepCounterTest`)
-- [ ] Punkt 5: Multi-Template-Pool akzeptiert Best-Match (Test: `TemplateMatcherTest`)
-- [ ] Punkt 6: Adaptive Refraktärzeit bei schnellen Reps (Test: `PeakDetectorTest`)
-- [ ] Punkt 7: JSONL wird geschrieben, `shadow_harness.py` produziert Report
-- [ ] Punkt 8: `OrientationTrackerTest` grün (Madgwick-Filter)
-- [ ] Punkt 9: `recofit_bootstrap.py` konvertiert .mat → JSONL
-- [ ] `docs/STATUS_FORTSCHRITT.md` aktualisiert (Abschnitt G, siehe Reporting)
+- [x] `./gradlew :domain:sensor:test` grün (alle Pipeline-Komponenten-Tests)
+- [x] `./gradlew :core:testing:test` grün (FakeCalibrationProfileRepository)
+- [x] `./gradlew :feature:workout:compileDebugUnitTestKotlin` grün
+- [x] Punkt 1: Shadow-Engine verwendet Profil-Achse/Bias (Test: `TrainViewModelTest`)
+- [x] Punkt 2: `updateLevels()` wird bei Pipeline-Start aufgerufen (Test: `PeakDetectorTest`)
+- [x] Punkt 3: `minQualityScore` = 0.55 im Config-Default (Test: `QualityScorerTest`)
+- [x] Punkt 4: Accel-Voting aktivierbar, reduziert False-Positives (Test: `RepCounterTest`)
+- [x] Punkt 5: Multi-Template-Pool akzeptiert Best-Match (Test: `TemplateMatcherTest`)
+- [x] Punkt 6: Adaptive Refraktärzeit bei schnellen Reps (Test: `PeakDetectorTest`)
+- [x] Punkt 7: JSONL wird geschrieben, `shadow_harness.py` produziert Report
+- [x] Punkt 8: `OrientationTrackerTest` grün (Madgwick-Filter)
+- [x] Punkt 9: `recofit_bootstrap.py` konvertiert .mat → JSONL
+- [x] `docs/STATUS_FORTSCHRITT.md` aktualisiert (Abschnitt G, siehe Reporting)
 
 ---
 
@@ -1327,10 +1326,10 @@ neuen Abschnitt **G. Rep-Zählung-Umbau (2026-08-12)** eingetragen:
 - [x] Punkt 1 (SOFORT): Shadow-Engine mit Profil-Achse/Bias — erledigt
 - [x] Punkt 2 (SOFORT): SPK/NPK aus Profil laden — erledigt
 - [x] Punkt 3 (SOFORT): QualityScorer-Schwelle vereinheitlicht — erledigt
-- [ ] Punkt 4 (MITTELFRISTIG): Accel als zweiter Kanal
-- [ ] Punkt 5 (MITTELFRISTIG): Multi-Template / adaptives Template
-- [ ] Punkt 6 (MITTELFRISTIG): Adaptive Refraktärzeit
-- [ ] Punkt 7 (LANGFRISTIG): Gate 11b durchlaufen
-- [ ] Punkt 8 (LANGFRISTIG): Orientierungsschätzung (Madgwick)
-- [ ] Punkt 9 (LANGFRISTIG): RecoFit/MM-Fit als Validierung
+- [x] Punkt 4 (MITTELFRISTIG): Accel als zweiter Kanal
+- [x] Punkt 5 (MITTELFRISTIG): Multi-Template / adaptives Template
+- [x] Punkt 6 (MITTELFRISTIG): Adaptive Refraktärzeit
+- [~] Punkt 7 (LANGFRISTIG): Gate 11b durchlaufen — Hardware-Validierung durch Adi offen
+- [x] Punkt 8 (LANGFRISTIG): Orientierungsschätzung (Madgwick)
+- [x] Punkt 9 (LANGFRISTIG): RecoFit/MM-Fit als Validierung
 ```

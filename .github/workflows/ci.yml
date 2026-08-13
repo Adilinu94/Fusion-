@@ -50,6 +50,9 @@ jobs:
       - name: Unit-Tests (./gradlew test)
         run: ./gradlew test --stacktrace
 
+      - name: Doku-Link-Check (tools/doku_links_check.py)
+        run: python3 tools/doku_links_check.py
+
       - name: Formatierung/Lint (./gradlew spotlessCheck)
         run: ./gradlew spotlessCheck --stacktrace
 

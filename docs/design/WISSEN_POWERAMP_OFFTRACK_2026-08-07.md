@@ -2531,7 +2531,7 @@ Das entspricht gleichzeitig dem Poweramp-Muster (`Pipeline2`-Grenze) und dem Off
 
 ## 47. Offene Punkte für eine weitere Analyse-Runde
 
-Die Nummerierung 41–47 bildet bewusst den nachträglich ergänzten Vertiefungs-Appendix; das Quellenkapitel folgt als Abschnitt 48.
+Die Nummerierung 41–47 bildet bewusst den nachträglich ergänzten Vertiefungs-Appendix; das Quellenkapitel folgt als [Quellen](#48-quellen).
 
 Die statische Analyse beantwortet jetzt den Java-/Smali-Datenfluss weitgehend. Offen bleiben bewusst:
 
@@ -2550,6 +2550,7 @@ Für diese Punkte wäre eine nächste Runde mit kontrollierten lokalen Testtrack
 
 ---
 
+<a name="48-quellen"></a>
 ## 48. Quellen und Artefaktverweise
 
 ### 48.2 Öffentliche Produktclaims – nicht mit APK-/Smali-Evidenz gleichsetzen

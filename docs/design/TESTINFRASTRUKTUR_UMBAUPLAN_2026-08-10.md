@@ -3,14 +3,14 @@
 **Datum:** 2026-08-10
 **Status:** Entwurf / zur Freigabe
 **Zweck:** Das fehlende instrumentierte Test-Grundgerüst (offener Punkt aus
-`docs/STATUS_FORTSCHRITT.md` B, Abschnitt 11 "Instrumentiert") aufbauen und die
-Plattform-Risiken aus Abschnitt 13 (HyperOS MTU, Xiaomi killt Service,
+`docs/STATUS_FORTSCHRITT.md` B, [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) "Instrumentiert") aufbauen und die
+Plattform-Risiken aus [Risiken](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#13-risiken) (HyperOS MTU, Xiaomi killt Service,
 Latenz-Varianz) durch die richtige Testschicht je Problem **messbar und
 durchrüstbar** machen statt ad-hoc. Umfasst auch die Doku-Hygiene
 (Punkt 4: nummernbasierte Querverweise + CI-Check).
 
 **Referenzen:**
-- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → Abschnitt 11 (Tests und Gates), 11a, 13 (Risiken)
+- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` → [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates), [Analyse-Pipeline](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11a-analyse-pipeline), [Risiken](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#13-risiken)
 - `docs/STATUS_FORTSCHRITT.md` → B.2 (instrumentierte Tests fehlen)
 - `docs/design/SHADOW_DIFF_HARNESS_PLAN.md` → Muster für Auswertungs-Harness, gleicher Stil
 - `gradle/libs.versions.toml` → bereits deklarierte, ungenutzte Test-Deps
@@ -20,16 +20,16 @@ durchrüstbar** machen statt ad-hoc. Umfasst auch die Doku-Hygiene
 
 ## 1. Ausgangslage und Ist-Analyse
 
-### 1.1 Was Abschnitt 11 fordert
+### 1.1 Was die [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) fordern
 
-Abschnitt 11 des Design-Dokuments listet zwei Test-Gates:
+Der [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates)-Abschnitt des Design-Dokuments listet zwei Test-Gates:
 
 | Block | Inhalt |
 |---|---|
 | **Unit** | Planner, Crossfade, Codec-Roundtrip, Slugs, Repo-Migration, Generation Token, Ducking min(), RouteProfile, Cue Mode, Direct-Drop |
 | **Instrumentiert** | JitterBuffer, Dedup, Scan, TimerService Foreground, Waveform Scrubbing, Marker Long Press, RestMusicCoordinator, AudioTimestamp-Extrapolation, Route-Wechsel während Countdown, Underrun-Monitoring, AudioFocus (LOSS_TRANSIENT duckt + Timer weiter, permanenter LOSS stoppt) |
 
-Zusätzlich Abschnitt 11 "Golden Audio Fixtures für CI" (Sinus, Klickfolge, Bass-
+Zusätzlich [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) "Golden Audio Fixtures für CI" (Sinus, Klickfolge, Bass-
 Impuls, Stille→Impuls, zwei Sample-Rates, künstlicher Crossfade, absichtlicher
 Underrun) mit Metriken: Gain-Kontinuität, Click-Metrik, True Peak/Clipping,
 Equal-Power-Check, Drop-Alignment (mean/P50/P95).
@@ -44,7 +44,7 @@ Equal-Power-Check, Drop-Alignment (mean/P50/P95).
 | Android-Module | `:data:*`, `:feature:*`, `:core:database`, `:core:designsystem`, `:app` | `test` (lokal, CI) | **Ja** |
 
 **Vorhandene Unit-Tests (verifiziert, `src/test`):** 58 Testdateien über alle
-Module — darunter bereits Abdeckung für einen Großteil der Abschnitt-11-Liste,
+Module — darunter bereits Abdeckung für einen Großteil der Test-Gates-Liste,
 z. B.:
 - `data/sensor`: `JitterBufferTest`, `BatchDedupTrackerTest`, `BleProtocolParserTest`, `SwitchingSensorProviderTest`
 - `feature/player`: `RestMusicCoordinatorTest`, `PlayerViewModelTest`
@@ -69,7 +69,7 @@ z. B.:
 6. **Keine `connectedCheck`-Konfiguration, kein `managedDevices`, kein
    Firebase-Test-Lab-Schritt** in `.github/workflows/ci.yml` (nur `test`,
    `spotlessCheck`, `assembleDebug`).
-7. **Abschnitt-11-Einordnung ist teils falsch:** JitterBuffer/Dedup/
+7. **Test-Gates-Einordnung ist teils falsch:** JitterBuffer/Dedup/
    RestMusicCoordinator sind bereits als reine JVM-Unit-Tests grün und gehören
    NICHT aufs Gerät. Umgekehrt fehlen echte Geräte-Tests für die Punkte, die
    echtes Android-Framework brauchen (AudioFocus, AudioTimestamp, Underrun, BLE).
@@ -77,7 +77,7 @@ z. B.:
 ### 1.3 Das eigentliche Kernproblem
 
 > Es fehlt nicht "das androidTest-Grundgerüst" als Selbstzweck — es fehlt eine
-> **Testpyramide mit klarer Schichtzuordnung**, in der jeder Abschnitt-11-Punkt
+> **Testpyramide mit klarer Schichtzuordnung**, in der jeder Test-Gates-Punkt
 > in der günstigsten Schicht liegt, und die dazu passende **CI-Automatisierung**.
 
 Das Design-Dokument sortiert nach "braucht Gerät oder nicht" — die Realität
@@ -150,7 +150,7 @@ Minimum begrenzt (echte Audio-/BLE-Hardware-Pfade).
 
 - [ ] CI-Status `git status` sauber, `./gradlew test spotlessCheck assembleDebug` grün (Baseline).
 - [ ] `docs/STATUS_FORTSCHRITT.md` Zeile B.2 auf `[~] in Arbeit (Session: …)` setzen.
-- [ ] Inventar-Abschnitt in diesem Plan (Abschnitt 5) mit den konkreten,
+- [ ] Inventar-Abschnitt in diesem Plan ([Mapping](#5-mapping)) mit den konkreten,
   real existierenden Testdateien gegenchecken.
 
 **Verifikation:** Baseline-Build grün; Zeile in STATUS gesetzt.
@@ -175,14 +175,14 @@ der JVM testbar.
    abstract class RobolectricTestCase
    ```
    `sdk=34` als Default-Konstante; pro Test per `@Config` überschreibbar.
-3. **Erster Test — `TimerServiceForegroundTest`** (deckt Abschnitt-11-Punkt
-   "TimerService Foreground" + Xiaomi-Fallback aus Abschnitt 13):
+3. **Erster Test — `TimerServiceForegroundTest`** (deckt Test-Gates-Punkt
+   "TimerService Foreground" + Xiaomi-Fallback aus [Risiken](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#13-risiken)):
    - `Robolectric.buildService(TimerService::class.java).create().startCommand(...)`
    - Assertion: Service ist `START_STICKY`, Notification wird gezeigt,
      `evaluate()` treibt den Timer (mit `Robolectric`-Scheduler/`ShadowLooper`).
    - Fallback-Pfad: `POST_NOTIFICATIONS` entzogen → kein Crash, `stopSelf()`
      greift, Engine läuft weiter (Xiaomi-Szenario).
-4. **Zweiter Test — `AudioFocusDuckingTest`** (Abschnitt-11-Punkt "AudioFocus"):
+4. **Zweiter Test — `AudioFocusDuckingTest`** (Test-Gates-Punkt "AudioFocus"):
    LOSS_TRANSIENT → Ducking aktiv, Timer läuft weiter; permanenter LOSS →
    Stop. (Voraussetzung: ein `AudioFocusRequest`-Wert wird testbar injiziert —
    siehe Schritt 2 Refactoring-Hinweis.)
@@ -261,7 +261,7 @@ neue pure Tests für `negotiateMtu`/`snapshot`/`restore`/`extrapolate` grün.
 
 ### Schritt 3 — Compose-UI-Tests für Screens
 
-**Ziel:** Abschnitt-11-Punkte "Waveform Scrubbing", "Marker Long Press",
+**Ziel:** Test-Gates-Punkte "Waveform Scrubbing", "Marker Long Press",
 "Route-Wechsel während Countdown" als UI-Tests.
 
 - [ ] `:feature:player` und `:feature:workout` bekommen
@@ -279,7 +279,7 @@ neue pure Tests für `negotiateMtu`/`snapshot`/`restore`/`extrapolate` grün.
    - `MarkerLongPressTest`: Marker-Geste (`performTouchInput { longClick() }`),
      Assertion auf `onMarkerDrag`/`onMarkerContextMenu`.
    - `CountdownRouteSwitchTest` (PlayerViewModel-Layer): Route-Wechsel während
-     Countdown → Generation Token invalidiert alte Events (Abschnitt 11 Unit).
+      Countdown → Generation Token invalidiert alte Events ([Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) Unit).
 - [ ] Compose-BOM-Version aus Catalog verwenden (bereits gesetzt).
 
 **Verifikation:** `./gradlew :feature:player:test` grün; Waveform-Test läuft.
@@ -307,7 +307,7 @@ neue pure Tests für `negotiateMtu`/`snapshot`/`restore`/`extrapolate` grün.
    - `AudioTimestampExtrapolationInstrumentedTest`: `AudioTrack.getTimestamp()`
      zwei Samples → extrapoliertes Delta innerhalb Toleranz.
    - `UnderrunMonitorInstrumentedTest`: synthetische Stille→Impuls-Sequenz →
-     Underrun erkannt (nutzt Golden-Audio-Fixture, Abschnitt 11).
+      Underrun erkannt (nutzt Golden-Audio-Fixture, [Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates)).
    - `AudioFocusPermanentLossInstrumentedTest`: permanenter LOSS → Player
      stoppt; transient → duckt + Timer weiter.
    - `BleScanConnectInstrumentedTest`: (optional, braucht echtes BLE-Gerät;
@@ -360,7 +360,7 @@ geprüft.
      still brechen.
    - CI-Schritt: `python3 tools/doku_links_check.py` → bricht bei toten
      Verweisen.
-4. **Golden-Audio-Fixtures** (Abschnitt 11): `test-fixtures/audio/` im
+4. **Golden-Audio-Fixtures** ([Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates)): `test-fixtures/audio/` im
    `:data:audio`-Test-Source-Set oder als `src/test/resources`; synthetisch
    generiert durch ein kleines Python-Tool `tools/audio_fixtures.py`
    (Sinus, Klickfolge, Bass-Impuls, Stille→Impuls, zwei Sample-Rates,
@@ -378,7 +378,7 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 
 - [x] **5a MTU:** `negotiateMtu` pure Funktion + Tests (Schritt 2) in Code;
    Diagnose-Felder (`lastNegotiatedMtu`, `parseErrors`, `duplicateReads`)
-   in einen Debug-Log/Debug-Screen (Abschnitt 11 "Diagnose").
+   in einen Debug-Log/Debug-Screen ([Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) "Diagnose").
 - [x] **5b Xiaomi:** `RestTimerRecovery` bei App-Start (Rehydrierung +
    Watchdog); Robolectric-Test für "Service gekillt → Recovery startet neu";
    Hinweis-UI (App-Lock/Autostart/Batterie) als Teil von Phase 10
@@ -386,20 +386,26 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 - [x] **5c Latenz:** `AudioTimestampReader` + Extrapolations-Unit-Test;
    Route-Profil lädt beim `AudioDeviceCallback`-Wechsel (Phase 6); UI zeigt
    Toleranzband, nie fixen ms-Wert.
-- [ ] **Design-Doku (Punkt 4):** Abschnitt 9 und 12 kollidierende Pläne
+- [x] **Design-Doku (Punkt 4):** [Phasenplan](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#9-phasenplan) und [Phasen-Reihenfolge](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#12-phasen-reihenfolge) kollidierende Pläne
    vereinen — Einzelschritte je Phase nach `docs/plans/` verschieben,
-   Abschnitt 9 auf Verweis reduzieren; Abschnitt 12 bleibt Reihenfolge-Tabelle.
+   [Phasenplan](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#9-phasenplan) auf Verweis reduzieren; [Phasen-Reihenfolge](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#12-phasen-reihenfolge) bleibt Reihenfolge-Tabelle.
    Nummern-Verweise in bestehenden Dateien durch benannte Anker ersetzen
    (Check aus Schritt 5 erzwingt das künftig).
+   _Umsetzung 2026-08-13: benannte Anker in Design-Doc + Plänen gesetzt,
+   `tools/doku_links_check.py` geschrieben (CI-Schritt aktiv), Zahl-Verweise
+   in docs/design/*.md konvertiert. Die ausführliche Abschnitt-9-Fassung
+   bleibt (Adi-Entscheidung in STATUS A1). Punkt-4-Kern (Check, der
+   Umnummerierungen sichtbar macht) ist damit erfüllt._
 
 **Verifikation:** Neue Unit-Tests grün; Robolectric-Test grün;
 `doku_links_check.py` grün; Design-Doku ohne doppelten Plan.
 
 ---
 
-## 5. Mapping: Abschnitt-11-Punkte → Testschicht
+<a name="5-mapping"></a>
+## 5. Mapping: Test-Gates-Punkte → Testschicht
 
-| Abschnitt-11-Punkt | Heutige Abdeckung | Ziel-Schicht | Neuer Test |
+| Test-Gates-Punkt | Heutige Abdeckung | Ziel-Schicht | Neuer Test |
 |---|---|---|---|
 | JitterBuffer | `JitterBufferTest` (Unit, grün) | 1 (bleibt) | — |
 | Dedup | `BatchDedupTrackerTest` (Unit, grün) | 1 (bleibt) | — |
@@ -452,7 +458,7 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 - `tools/audio_fixtures.py`
 - `test-fixtures/audio/` (generierte Fixtures)
 - `docs/ANCHORS.md` (Registry stabiler Anker)
-- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` (Abschnitt 9/12 entzerrt, Anker-Verweise)
+- `docs/design/FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md` (Phasenplan/Reihenfolge entzerrt, Anker-Verweise)
 - `docs/STATUS_FORTSCHRITT.md` (Fortschritt)
 
 ---
@@ -467,8 +473,8 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 - [ ] `RestTimerRecovery`-Robolectric-Test grün (Xiaomi-Kill-Fallback belegt).
 - [ ] `negotiateMtu`-Unit-Tests grün (Timeout/Retry/Fallback auf 23).
 - [ ] `AudioTimestampExtrapolationTest` grün (Latenz messbar).
-- [ ] Design-Doku hat genau einen Phasenplan (Abschnitt 12) + `docs/plans/`
-  je Phase; Abschnitt 9 ist Verweis.
+- [ ] Design-Doku hat genau einen Phasenplan ([Phasen-Reihenfolge](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#12-phasen-reihenfolge)) + `docs/plans/`
+  je Phase; [Phasenplan](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#9-phasenplan) ist Verweis.
 - [ ] `docs/STATUS_FORTSCHRITT.md` B.2 auf `[x]` (mit Session-Kennung).
 
 ---
@@ -477,14 +483,14 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 
 | Prio | Schritt | Aufwand (rel.) | Grund |
 |---|---|---|---|
-| 1 | Schritt 1: Robolectric (TimerService, AudioFocus-Ducking) | mittel | Größter Hebel, Deps vorhanden, deckt 2 Abschnitt-11-Punkte |
+| 1 | Schritt 1: Robolectric (TimerService, AudioFocus-Ducking) | mittel | Größter Hebel, Deps vorhanden, deckt 2 Test-Gates-Punkte |
 | 2 | Schritt 6-Härtung 5b: `RestTimerRecovery` + Robolectric-Test | mittel | Punkt-5-Risiko wird testbar; Phase 10-Vorlauf |
 | 3 | Schritt 5.3: `doku_links_check.py` + Anker-Refactor | klein | Verhindert Doku-Regressionen sofort |
-| 4 | Schritt 3: Compose-UI-Tests (Scrubbing, Long-Press) | mittel | Deckt weitere Abschnitt-11-Punkte |
+| 4 | Schritt 3: Compose-UI-Tests (Scrubbing, Long-Press) | mittel | Deckt weitere Test-Gates-Punkte |
 | 5 | Schritt 4: Hilt + instrumentierte Kern-Tests | mittel | Geräte-Tests, erst wenn 2. Schicht steht |
 | 6 | Schritt 5.1/5.2: CI-Emulator + Firebase Test Lab | mittel | Automatisierung, optional bis Release |
 | 7 | Schritt 5.4: Golden-Audio-Fixtures | klein | Fixtures für Schritt 4 nötig |
-| 8 | Schritt 6-Doku: Abschnitt 9/12 entzerren | klein | Doku-Hygiene, jederzeit |
+| 8 | Schritt 6-Doku: Phasenplan/Reihenfolge entzerren | klein | Doku-Hygiene, jederzeit |
 
 **Pilot zuerst (bewährtes Muster aus SHADOW-PLAN):** Mit Schritt 1 am
 `:data:timer`-Modul eine komplette Robolectric-Testkette einmal durchlaufen,
@@ -508,10 +514,10 @@ bevor auf andere Module gerollt wird.
 
 ## 10. Bewusst nicht in diesem Plan
 
-- Den vollen Abschnitt-11-Funktionsumfang selbst implementieren (nur testbar
+- Den vollen Test-Gates-Funktionsumfang selbst implementieren (nur testbar
   machen). Funktionsbau bleibt in den jeweiligen Phasen.
 - Golden-Audio-Fixtures inklusive Hörtest — Metriken prüfen, Hörtest bleibt
-  manuell (Abschnitt 11 sagt das selbst).
+  manuell ([Test-Gates](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#11-tests-gates) sagt das selbst).
 - BaselineProfile (ADR-0001, Schritt 13) — hier nur der Verweis.
 - Ein Debug-Screen für BLE-Diagnose — als eigener kleiner Schritt in Phase 6.
 
@@ -519,10 +525,10 @@ bevor auf andere Module gerollt wird.
 
 ## 11. Nutzen-Zusammenfassung
 
-Mit diesem Plan wird der offene Punkt B.2 geschlossen und die Abschnitt-11-
+Mit diesem Plan wird der offene Punkt B.2 geschlossen und die Test-Gates-
 Liste über eine **Testpyramide** abgedeckt: 80 % auf der JVM (Unit +
 Robolectric + Compose-UI), nur Audio-/BLE-Kernpfade als echte Geräte-Tests,
 CI automatisiert inklusive Doku-Link-Check. Die ad-hoc-Plattform-Risiken aus
-Abschnitt 13 (MTU, Xiaomi-Kill, Latenz) bekommen Tests, die sie reproduzierbar
+[Risiken](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#13-risiken) (MTU, Xiaomi-Kill, Latenz) bekommen Tests, die sie reproduzierbar
 machen und vor Regression schützen — und die kollidierende Design-Doku
-(Abschnitt 9 vs. 12) wird auf eine Single-Source-of-Truth zurückgeführt.
+([Phasenplan](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#9-phasenplan) vs. [Phasen-Reihenfolge](FLOWREP_DROPSYNC_FUSION_DESIGN_2026-08-07.md#12-phasen-reihenfolge)) wird auf eine Single-Source-of-Truth zurückgeführt.
