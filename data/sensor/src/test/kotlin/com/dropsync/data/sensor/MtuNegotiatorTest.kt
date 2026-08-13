@@ -44,4 +44,57 @@ class MtuNegotiatorTest {
         val d = MtuNegotiator.onTimeout(retriesUsed = 1)
         assertEquals(3, (d as MtuNegotiator.Decision.Request).attempt)
     }
+
+    @Test
+    fun `session zaehlt retries ueber mehrere callbacks hinweg`() {
+        val session = MtuNegotiationSession()
+
+        // 1. Fehler (133) -> Retry, Zaehler auf 1.
+        val first = session.onMtuChanged(mtu = 0, status = MtuNegotiator.GATT_ERROR)
+        assertTrue(first is MtuNegotiator.Decision.Request)
+        assertEquals(2, (first as MtuNegotiator.Decision.Request).attempt)
+        assertEquals(1, session.retriesUsed)
+
+        // Timeout -> zweiter Retry, Zaehler auf 2.
+        val second = session.onTimeout()
+        assertTrue(second is MtuNegotiator.Decision.Request)
+        assertEquals(3, (second as MtuNegotiator.Decision.Request).attempt)
+        assertEquals(2, session.retriesUsed)
+
+        // Noch ein Fehler -> Retries erschoepft, Fallback.
+        val third = session.onMtuChanged(mtu = 0, status = 8)
+        assertTrue(third is MtuNegotiator.Decision.UseFallback)
+        assertEquals(MtuNegotiator.FALLBACK_MTU, (third as MtuNegotiator.Decision.UseFallback).mtu)
+    }
+
+    @Test
+    fun `session reset beginnt neu`() {
+        val session = MtuNegotiationSession()
+        session.onTimeout()
+        session.onTimeout()
+        assertEquals(2, session.retriesUsed)
+
+        session.reset()
+        assertEquals(0, session.retriesUsed)
+        val d = session.onTimeout()
+        assertTrue(d is MtuNegotiator.Decision.Request)
+        assertEquals(2, (d as MtuNegotiator.Decision.Request).attempt)
+    }
+
+    @Test
+    fun `request mtu bleibt unterhalb der hyperos off-by-one grenze`() {
+        // HyperOS MTU-517 Bug (Produktions-Praxis): der angefragte Wert
+        // muss deutlich unter 517 bleiben, 512 waere riskant.
+        assertTrue("512 trifft die HyperOS-Grenze, $MtuNegotiator.REQUEST_MTU ist sicher",
+            MtuNegotiator.REQUEST_MTU < 517)
+    }
+
+    @Test
+    fun `erfolg nach retries liefert die verhandelte mtu`() {
+        val session = MtuNegotiationSession()
+        session.onTimeout() // retry 1
+        val d = session.onMtuChanged(mtu = 247, status = MtuNegotiator.GATT_SUCCESS)
+        assertTrue(d is MtuNegotiator.Decision.Negotiated)
+        assertEquals(247, (d as MtuNegotiator.Decision.Negotiated).mtu)
+    }
 }

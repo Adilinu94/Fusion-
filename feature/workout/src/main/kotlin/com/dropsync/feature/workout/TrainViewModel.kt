@@ -500,6 +500,9 @@ class TrainViewModel
                         expectedProminence = profile.expectedProminence,
                         expectedDurationSamples = profile.expectedDurationSamples,
                         hasValidCalibration = true,
+                        // Rollout (Umbauplan Punkte 4/8): accelEnabled/
+                        // orientationTrackingEnabled bleiben false, bis die
+                        // 5 Freigabe-Szenarien (Gate 11b) gruen sind.
                     ),
                 ).also { engine ->
                     engine.setTemplate(profile.repTemplate)
@@ -617,6 +620,8 @@ class TrainViewModel
                             expectedProminence = profile?.expectedProminence ?: 50.0,
                             expectedDurationSamples = profile?.expectedDurationSamples ?: 50.0,
                             hasValidCalibration = profile != null,
+                            // Rollout (Umbauplan Punkte 4/8): Flags bleiben
+                            // false, bis das Gate 11b gruen ist.
                         ),
                     )
                 profile?.let {

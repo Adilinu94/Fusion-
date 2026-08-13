@@ -92,6 +92,7 @@ class BleSensorProvider
         private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { _samples.tryEmit(it) })
         private val dedupTracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
         private val gattClient = BleGattClient()
+        private val mtuNegotiation = MtuNegotiationSession()
 
         private var sensorDataChar: BluetoothGattCharacteristic? = null
         private var controlPointChar: BluetoothGattCharacteristic? = null
@@ -100,6 +101,7 @@ class BleSensorProvider
 
         private var pollJob: Job? = null
         private var deviceEventPollJob: Job? = null
+        private var mtuTimeoutJob: Job? = null
         private var lastDeviceEventSeq = 0
 
         /** Last negotiated MTU (diagnostics). */
@@ -227,12 +229,14 @@ class BleSensorProvider
                             remoteId = device.address
                             _connectedDeviceId.value = device.address
                             // MTU before the CCCD sequence (HyperOS quirk).
-                            gattClient.requestMtu(REQUIRED_MTU)
+                            // Testinfra-Plan 5a: Timeout/Retry/Fallback statt
+                            // fire-and-forget - siehe startMtuNegotiation().
+                            mtuNegotiation.reset()
+                            runMtuNegotiation()
                         }
 
                         is GattEvent.MtuChanged -> {
-                            lastNegotiatedMtu = event.mtu
-                            gattClient.discoverServices()
+                            handleMtuChanged(event)
                         }
 
                         is GattEvent.ServicesDiscovered -> {
@@ -240,6 +244,8 @@ class BleSensorProvider
                         }
 
                         is GattEvent.Disconnected -> {
+                            mtuTimeoutJob?.cancel()
+                            mtuTimeoutJob = null
                             if (cont.isActive) {
                                 cont.resume(AppResult.failure(AppError.Unknown("Verbindung getrennt")))
                             }
@@ -257,6 +263,42 @@ class BleSensorProvider
                 cont.invokeOnCancellation { gattClient.close() }
                 gattClient.connect(context, device)
             }
+
+        /**
+         * MTU-Verhandlung (Testinfra-Plan 5a): der reine Entscheidungskern
+         * [MtuNegotiationSession] entscheidet pro Callback/Timeout, hier wird
+         * nur ausgefuehrt. Samsung-Quirk (silent failure) wird durch den
+         * Timeout abgefangen: kein `onMtuChanged` -> Retry, nie Endlos-Warten.
+         */
+        private fun runMtuNegotiation() {
+            mtuTimeoutJob?.cancel()
+            gattClient.requestMtu(MtuNegotiator.REQUEST_MTU)
+            mtuTimeoutJob =
+                scope.launch {
+                    delay(MTU_TIMEOUT_MS)
+                    when (val decision = mtuNegotiation.onTimeout()) {
+                        is MtuNegotiator.Decision.Request -> runMtuNegotiation()
+                        is MtuNegotiator.Decision.UseFallback -> finishMtuNegotiation(decision.mtu)
+                        is MtuNegotiator.Decision.Negotiated -> Unit // unreachable
+                    }
+                }
+        }
+
+        private fun handleMtuChanged(event: GattEvent.MtuChanged) {
+            mtuTimeoutJob?.cancel()
+            mtuTimeoutJob = null
+            when (val decision = mtuNegotiation.onMtuChanged(event.mtu, event.status)) {
+                is MtuNegotiator.Decision.Request -> runMtuNegotiation()
+                is MtuNegotiator.Decision.Negotiated -> finishMtuNegotiation(decision.mtu)
+                is MtuNegotiator.Decision.UseFallback -> finishMtuNegotiation(decision.mtu)
+            }
+        }
+
+        /** Success or exhausted retries: proceed to service discovery. */
+        private fun finishMtuNegotiation(mtu: Int) {
+            lastNegotiatedMtu = mtu
+            gattClient.discoverServices()
+        }
 
         private fun onServicesDiscovered(
             device: BluetoothDevice,
@@ -401,9 +443,6 @@ class BleSensorProvider
             val BATTERY_LEVEL_UUID: UUID = UUID.fromString("0000fee3-0000-1000-8000-00805f9b34fb")
             val DEVICE_EVENT_UUID: UUID = UUID.fromString("0000fee4-0000-1000-8000-00805f9b34fb")
 
-            /** Requested MTU (HyperOS off-by-one workaround, see class doc). */
-            const val REQUIRED_MTU = 185
-
             const val CONTROL_START_STREAM = 0x01
             const val CONTROL_STOP_STREAM = 0x02
             const val CONTROL_REQUEST_BATTERY = 0x03
@@ -412,6 +451,8 @@ class BleSensorProvider
             private const val FIRMWARE_STREAM_DELAY_MS = 600L
             private const val DEVICE_EVENT_POLL_MS = 250L
             private const val POLL_ERROR_BACKOFF_MS = 50L
+            /** MTU-Timeout: kein onMtuChanged -> Retry (Samsung silent failure). */
+            private const val MTU_TIMEOUT_MS = 1_000L
         }
     }
 
@@ -425,6 +466,7 @@ internal sealed interface GattEvent {
 
     data class MtuChanged(
         val mtu: Int,
+        val status: Int,
     ) : GattEvent
 
     data object ServicesDiscovered : GattEvent
@@ -481,7 +523,7 @@ internal class BleGattClient {
                 mtu: Int,
                 status: Int,
             ) {
-                onEvent(GattEvent.MtuChanged(mtu))
+                onEvent(GattEvent.MtuChanged(mtu, status))
                 opDone()
             }
 

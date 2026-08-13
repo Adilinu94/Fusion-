@@ -15,8 +15,13 @@ package com.dropsync.data.sensor
  * welche Aktion als naechstes ansteht.
  */
 object MtuNegotiator {
-    /** Angefragte MTU; das Peripheral handelt herunter. */
-    const val REQUEST_MTU = 512
+    /**
+     * Angefragte MTU; das Peripheral handelt herunter. 185 statt 512:
+     * HyperOS MTU-517 off-by-one boundary bug (Produktions-Praxis, siehe
+     * BleSensorProvider). Der Wert ist bewusst kleiner als der
+     * V2-Payload-Bedarf (53 Byte + Overhead passen in 185).
+     */
+    const val REQUEST_MTU = 185
 
     /** Fallback, wenn die Verhandlung endgueltig scheitert. */
     const val FALLBACK_MTU = 23
@@ -71,4 +76,44 @@ object MtuNegotiator {
         } else {
             Decision.UseFallback()
         }
+}
+
+/**
+ * Stateful wrapper around [MtuNegotiator] that tracks the retry counter
+ * across a negotiation sequence. The [BleSensorProvider] calls the
+ * decision functions per GATT callback/timeout; this class is the pure,
+ * JVM-testable part of the wiring (Testinfra-Plan 5a: "negotiateMtu als
+ * pure, testbare Funktion").
+ *
+ * Counter semantics: [retriesUsed] counts how many retry requests have
+ * been issued so far. A [MtuNegotiator.Decision.Request] means "send the
+ * next request now" and increments the counter; the caller must send it.
+ */
+class MtuNegotiationSession {
+    var retriesUsed = 0
+        private set
+
+    /** Starts a fresh negotiation (first request). */
+    fun reset() {
+        retriesUsed = 0
+    }
+
+    /** Handles an `onMtuChanged` callback and returns the next action. */
+    fun onMtuChanged(
+        mtu: Int,
+        status: Int,
+    ): MtuNegotiator.Decision =
+        MtuNegotiator
+            .onMtuChanged(mtu, status, retriesUsed)
+            .also { decision ->
+                if (decision is MtuNegotiator.Decision.Request) retriesUsed++
+            }
+
+    /** Handles a request timeout and returns the next action. */
+    fun onTimeout(): MtuNegotiator.Decision =
+        MtuNegotiator
+            .onTimeout(retriesUsed)
+            .also { decision ->
+                if (decision is MtuNegotiator.Decision.Request) retriesUsed++
+            }
 }
