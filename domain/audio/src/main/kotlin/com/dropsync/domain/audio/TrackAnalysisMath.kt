@@ -1,5 +1,6 @@
 package com.dropsync.domain.audio
 
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -43,6 +44,9 @@ class WaveformAccumulator(
             if (quantized < mins[bucketIndex]) mins[bucketIndex] = quantized
             if (quantized > maxs[bucketIndex]) maxs[bucketIndex] = quantized
         }
+        // Track-Peak fuer die Anzeige-Normalisierung (Phase 8).
+        val magnitude = abs(sample)
+        if (magnitude > peakLinear) peakLinear = magnitude
         seenSamples++
     }
 
@@ -54,6 +58,44 @@ class WaveformAccumulator(
             .roundToInt()
             .coerceIn(Byte.MIN_VALUE.toInt(), Byte.MAX_VALUE.toInt())
             .toByte()
+
+    /** Groesster Betrag bisher (0..1); Grundlage der Anzeige-Normalisierung. */
+    fun peak(): Double = peakLinear
+
+    private var peakLinear: Double = 0.0
+}
+
+/**
+ * Visuelle Lautheits-Normalisierung der Waveform (Phase 8).
+ *
+ * Problem: Int8-Min/Max sind absolut. Ein leise gemasterter Track
+ * (Peak 0.1) wuerde als fast flache Linie erscheinen. Die Anzeige
+ * skaliert deshalb mit einem Boden hoch: alles unter [FLOOR_LINEAR]
+ * wird auf den Boden angehoben, laute Tracks bleiben unveraendert -
+ * ehrlich, nie uebersteuert, deterministisch.
+ */
+object WaveformDisplayGain {
+    /** Boden: Tracks mit Peak unter 0.35 werden hochskaliert. */
+    const val FLOOR_LINEAR: Double = 0.35
+
+    /** Multiplikator fuer die Anzeige; mindestens 1 (nie absenken). */
+    fun gainForPeak(peakLinear: Double): Double {
+        if (peakLinear <= 0.0 || peakLinear >= FLOOR_LINEAR) return 1.0
+        return (FLOOR_LINEAR / peakLinear).coerceIn(1.0, MAX_BOOST)
+    }
+
+    /** Anzeige-Buckets: Byte auf [-1..1], mit Boden hochskaliert. */
+    fun displayBuckets(
+        buckets: List<WaveformBucket>,
+        peakLinear: Double,
+    ): List<Pair<Float, Float>> {
+        val gain = gainForPeak(peakLinear).toFloat()
+        return buckets.map { bucket ->
+            (bucket.min / 127f * gain) to (bucket.max / 127f * gain)
+        }
+    }
+
+    private const val MAX_BOOST: Double = 8.0
 }
 
 /**

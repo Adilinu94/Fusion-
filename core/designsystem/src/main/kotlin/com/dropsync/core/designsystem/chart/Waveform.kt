@@ -81,7 +81,9 @@ object WaveformMapping {
         }
     }
 
-    /** X-Position in einen Fortschrittsanteil [0..1] uebersetzen. */
+    /**
+     * X-Position in einen Fortschrittsanteil [0..1] uebersetzen.
+     */
     fun fractionAt(
         x: Float,
         width: Float,
@@ -102,6 +104,40 @@ object WaveformMapping {
             fractions.indices.minByOrNull { abs(fractions[it] - fraction) } ?: return -1
         return if (abs(fractions[index] - fraction) <= slop) index else -1
     }
+
+    /**
+     * Balken als flaches Float-Array (left, top, width, height je Bar)
+     * statt `List<Bar>`-Objekten. Der Canvas-Zeichenpfad nutzt diese
+     * Form, damit pro Frame keine Objekt-Allokation anfaellt
+     * (Wissensdoku Abschnitt 25: "Canvas nur aus vorbereiteten Arrays
+     * zeichnen", "bei Scrubbing nicht pro Pixel neue Objekte
+     * allokieren"). Gleiche Mathematik wie [mapToBars], deterministisch
+     * testbar.
+     */
+    fun toFlatBars(
+        buckets: List<Pair<Float, Float>>,
+        width: Float,
+        height: Float,
+        gapFraction: Float = 0.25f,
+    ): FloatArray {
+        if (buckets.isEmpty() || width <= 0f || height <= 0f) return EMPTY_FLOATS
+        val slot = width / buckets.size
+        val barWidth = (slot * (1f - gapFraction.coerceIn(0f, 0.9f))).coerceAtLeast(1f)
+        val center = height / 2f
+        val out = FloatArray(buckets.size * 4)
+        buckets.forEachIndexed { index, (min, max) ->
+            val top = center - max.coerceIn(-1f, 1f) * center
+            val bottom = center - min.coerceIn(-1f, 1f) * center
+            val offset = index * 4
+            out[offset] = index * slot
+            out[offset + 1] = top
+            out[offset + 2] = barWidth
+            out[offset + 3] = (bottom - top).coerceAtLeast(1f)
+        }
+        return out
+    }
+
+    private val EMPTY_FLOATS = FloatArray(0)
 }
 
 /** Anteil der Hoehe fuer die gespiegelte Reflexion unter der Grundlinie. */
@@ -251,7 +287,9 @@ fun Waveform(
         // Oberer Bereich traegt die Hauptwellenform, darunter liegt die Reflexion.
         val gap = 2.dp.toPx()
         val mainHeight = size.height * (1f - REFLECTION_RATIO)
-        val bars = WaveformMapping.mapToBars(buckets, size.width, mainHeight)
+        // Flaches Float-Array statt Objektliste: keine Allokation im
+        // Zeichenpfad (Wissensdoku Abschnitt 25, Scrubbing-Performance).
+        val bars = WaveformMapping.toFlatBars(buckets, size.width, mainHeight)
         if (bars.isEmpty()) return@Canvas
 
         val playedX = shownFraction * size.width
@@ -275,23 +313,29 @@ fun Waveform(
                 endY = size.height,
             )
 
-        bars.forEach { bar ->
-            val played = bar.left + bar.width / 2f <= playedX
+        var offset = 0
+        while (offset < bars.size) {
+            val left = bars[offset]
+            val top = bars[offset + 1]
+            val barWidth = bars[offset + 2]
+            val barHeight = bars[offset + 3]
+            val played = left + barWidth / 2f <= playedX
             val color = if (played) playedColor else restColor
             // Hauptbalken (blendet ueber [appear] ein).
             drawRoundRect(
                 color = color.copy(alpha = appear),
-                topLeft = Offset(bar.left, bar.top),
-                size = Size(bar.width, bar.height),
+                topLeft = Offset(left, top),
+                size = Size(barWidth, barHeight),
                 cornerRadius = corner,
             )
             // Reflexion: gestauchter Balken, an der Grundlinie haengend.
             drawRoundRect(
                 brush = if (played) playedReflection else restReflection,
-                topLeft = Offset(bar.left, reflectionTop),
-                size = Size(bar.width, bar.height * REFLECTION_SCALE),
+                topLeft = Offset(left, reflectionTop),
+                size = Size(barWidth, barHeight * REFLECTION_SCALE),
                 cornerRadius = corner,
             )
+            offset += 4
         }
         // Marker-Ticks (Phase 4): duenne Linien in Akzentfarbe im Hauptbereich.
         markerFractions.forEach { fraction ->
@@ -377,18 +421,21 @@ fun MiniWaveform(
         }
     Canvas(modifier = semanticsModifier) {
         if (buckets.isEmpty()) return@Canvas
-        val bars = WaveformMapping.mapToBars(buckets, size.width, size.height, gapFraction = 0.35f)
+        val bars = WaveformMapping.toFlatBars(buckets, size.width, size.height, gapFraction = 0.35f)
         if (bars.isEmpty()) return@Canvas
         val playedX = progressFraction.coerceIn(0f, 1f) * size.width
         val corner = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-        bars.forEach { bar ->
-            val played = bar.left + bar.width / 2f <= playedX
+        var offset = 0
+        while (offset < bars.size) {
+            val left = bars[offset]
+            val played = left + bars[offset + 2] / 2f <= playedX
             drawRoundRect(
                 color = if (played) playedColor else restColor,
-                topLeft = Offset(bar.left, bar.top),
-                size = Size(bar.width, bar.height),
+                topLeft = Offset(left, bars[offset + 1]),
+                size = Size(bars[offset + 2], bars[offset + 3]),
                 cornerRadius = corner,
             )
+            offset += 4
         }
     }
 }

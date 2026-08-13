@@ -26,6 +26,9 @@ data class TrackAnalysisEntity(
     val analyzerVersion: Int,
     @ColumnInfo(name = "analyzed_at_epoch_ms")
     val analyzedAtEpochMs: Long,
+    /** Track-Peak (0..1) fuer die visuelle Lautheits-Normalisierung (Phase 8). */
+    @ColumnInfo(name = "peak_linear", defaultValue = "0.0")
+    val peakLinear: Double = 0.0,
 ) {
     // ByteArray braucht inhaltsbasierte Gleichheit (data class vergleicht Referenzen).
     override fun equals(other: Any?): Boolean {
@@ -35,7 +38,8 @@ data class TrackAnalysisEntity(
             waveformData.contentEquals(other.waveformData) &&
             bucketCount == other.bucketCount &&
             analyzerVersion == other.analyzerVersion &&
-            analyzedAtEpochMs == other.analyzedAtEpochMs
+            analyzedAtEpochMs == other.analyzedAtEpochMs &&
+            peakLinear == other.peakLinear
     }
 
     override fun hashCode(): Int {
@@ -44,6 +48,7 @@ data class TrackAnalysisEntity(
         result = 31 * result + bucketCount
         result = 31 * result + analyzerVersion
         result = 31 * result + analyzedAtEpochMs.hashCode()
+        result = 31 * result + peakLinear.hashCode()
         return result
     }
 }

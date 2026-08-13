@@ -192,3 +192,15 @@ Session-Kennung als Referenz.
 - [x] Verifiziert: `:feature:library`, `:core:designsystem`, `:feature:player`, `:domain:timer`, `:app:compileDebugKotlin`, `spotlessCheck` — alle grün.
 
 **Nächster Schritt:** Phase 9 (Train-Hero-Politur: Rep-Zahl groß, Waveform unter Hero, Gewicht-Reihe, +/- Pill, Timer-Pille, Mini-Player-Badges, Swipe-Pager, Leerzustände mit CTA, Verlaufs-Chart, Undo). Hinweis: 60fps-Scrubbing ist auf dem 256-Bucket-Canvas (einfache drawRoundRect-Schleife) strukturell unkritisch, aber bewusst nicht instrumentiert gemessen — das bleibt ein Punkt für die Hardware-Abnahme.
+
+## O. Waveform-Härtung (2026-08-13): Lautheits-Normalisierung + Zeichenpfad ohne Allokation
+
+Anlass: Überprüfung gegen `WISSEN_POWERAMP_OFFTRACK` (Abschnitt 25: Waveform in Compose) und `D:\rev-tools\poweramp_offline_triage` (keine zusätzlichen Waveform-Befunde, nur "track peak" als Keyword). Zwei Lücken gefunden und geschlossen:
+
+- [x] **Lautstärke-Robustheit:** Der `WaveformAccumulator` speicherte absolute Int8-Peaks, ein leise gemastertes Lied ergab eine fast flache Waveform. Jetzt: `WaveformAccumulator.peak()` trackt den größten Betrag (0..1) je Analyse; `WaveformDisplayGain` (Boden 0.35, Deckel 8x) skaliert leise Tracks ehrlich hoch, laute bleiben unverändert, Stille/Peak 0 hebt nie an. Persistiert als `track_analysis.peak_linear` (DB v6, Migration 5→6 additiv), `ANALYZER_VERSION` 2→3 invalidiert den alten Cache automatisch. `PlayerViewModel.waveform` und `LibraryViewModel.waveformFor` wenden dieselbe Normalisierung an (Player und Library identisch).
+- [x] **Zeichenpfad ohne Allokation:** `WaveformMapping.toFlatBars` liefert die Balkengeometrie als FloatArray (left/top/width/height) statt Objektliste; `Waveform` und `MiniWaveform` zeichnen per while-Schleife direkt aus dem Array (Wissensdoku Abschnitt 25: keine Objekt-Allokation pro Frame, Canvas nur aus vorbereiteten Arrays). `mapToBars` bleibt für die Tests erhalten.
+- [x] **Tests:** 5 neue JVM-Tests (Peak, Boden, laute unverändert, Deckel, symmetrische Skalierung), Geometrie-Äquivalenz `toFlatBars`↔`mapToBars`, leer bei ungültiger Fläche, Player-Test "leiser Track wird angehoben".
+- [x] **Nebenbefund:** `core:database`-Robolectric lief gegen SDK 36 (Java-21-Pflicht unter Java 17) → `robolectric.properties` auf sdk=34, wie bereits data:audio/data:playback.
+- [x] Verifiziert: `:domain:audio`, `:core:designsystem`, `:feature:player`, `:feature:library`, `:core:database` (inkl. MigrationTest), `:data:audio`, `:app:compileDebugKotlin`, `spotlessCheck` — alle grün.
+
+**Bewertung Geschwindigkeit:** Die Analyse ist ein einmaliger WorkManager-Durchgang (MediaCodec, 256 Buckets, expedited bei Titelwechsel), danach kommt alles aus dem Room-Cache. Das Zeichnen sind 256 drawRoundRect + Reflexion auf einem Canvas ohne Allokation im Zeichenpfad — strukturell weit unterhalb der 60fps-Grenze. Echte FPS-Messung bleibt bewusst der Hardware-Abnahme vorbehalten.

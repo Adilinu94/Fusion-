@@ -61,6 +61,14 @@ interface TrackAnalysisRepository {
 data class TrackAnalysis(
     val waveformBuckets: List<WaveformBucket>,
     val onsetCandidatesMs: List<Long>,
+    /**
+     * Groesster Betrag des Mono-Downmix (0..1) ueber den ganzen Track.
+     * Grundlage der visuellen Lautheits-Normalisierung (Phase 8):
+     * leise gemasterte Tracks wuerden sonst als fast flache Linie
+     * erscheinen; der Peak erlaubt einen ehrlichen Boden (leise
+     * hochskalieren), ohne laute Tracks zu verzerren.
+     */
+    val peakLinear: Double = 0.0,
 )
 
 /** Ein Waveform-Bucket: Mono-Min/Max, auf Int8 normalisiert. */
@@ -75,7 +83,7 @@ data class WaveformBucket(
  */
 object WaveformCodec {
     /** Version des Analyse-Algorithmus; invalidiert den Cache bei Aenderung. */
-    const val ANALYZER_VERSION: Int = 2
+    const val ANALYZER_VERSION: Int = 3
 
     fun pack(buckets: List<WaveformBucket>): ByteArray {
         val bytes = ByteArray(buckets.size * 2)

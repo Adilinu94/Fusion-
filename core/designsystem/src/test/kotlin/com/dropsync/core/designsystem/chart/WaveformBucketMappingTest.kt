@@ -97,4 +97,28 @@ class WaveformBucketMappingTest {
         assertEquals(-1, WaveformMapping.nearestMarkerIndex(markers, 0.9f))
         assertEquals(-1, WaveformMapping.nearestMarkerIndex(emptyList(), 0.5f))
     }
+
+    @Test
+    fun `toFlatBars liefert identische Geometrie wie mapToBars`() {
+        val buckets = listOf(-0.5f to 0.5f, 0f to 0f, -1f to 1f)
+
+        val objects = WaveformMapping.mapToBars(buckets, width = 120f, height = 60f)
+        val flat = WaveformMapping.toFlatBars(buckets, width = 120f, height = 60f)
+
+        assertEquals(objects.size * 4, flat.size)
+        objects.forEachIndexed { index, bar ->
+            val offset = index * 4
+            assertEquals(bar.left, flat[offset], 1e-6f)
+            assertEquals(bar.top, flat[offset + 1], 1e-6f)
+            assertEquals(bar.width, flat[offset + 2], 1e-6f)
+            assertEquals(bar.height, flat[offset + 3], 1e-6f)
+        }
+    }
+
+    @Test
+    fun `toFlatBars ist leer bei ungueltiger Flaeche`() {
+        assertTrue(WaveformMapping.toFlatBars(emptyList(), 100f, 50f).isEmpty())
+        assertTrue(WaveformMapping.toFlatBars(listOf(0f to 1f), 0f, 50f).isEmpty())
+        assertTrue(WaveformMapping.toFlatBars(listOf(0f to 1f), 100f, 0f).isEmpty())
+    }
 }

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.getOrNull
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.audio.TrackAnalysisRepository
+import com.dropsync.domain.audio.WaveformDisplayGain
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.playback.PlaybackRepository
@@ -225,9 +226,13 @@ class PlayerViewModel
 
                                 else -> {
                                     WaveformUiState.Ready(
-                                        analysis.waveformBuckets.map { bucket ->
-                                            bucket.min / 127f to bucket.max / 127f
-                                        },
+                                        // Phase 8: visuelle Lautheits-Normalisierung.
+                                        // Leise Tracks werden mit Boden hochskaliert,
+                                        // damit sie nicht als flache Linie erscheinen.
+                                        WaveformDisplayGain.displayBuckets(
+                                            analysis.waveformBuckets,
+                                            analysis.peakLinear,
+                                        ),
                                     )
                                 }
                             }

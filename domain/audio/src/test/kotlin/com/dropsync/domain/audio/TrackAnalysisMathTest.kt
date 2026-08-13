@@ -169,4 +169,50 @@ class TrackAnalysisMathTest {
     fun `unpack verwirft BLOBs ungerader Laenge`() {
         assertTrue(WaveformCodec.unpack(byteArrayOf(1, 2, 3)).isEmpty())
     }
+
+    // --- WaveformAccumulator Peak + Anzeige-Normalisierung (Phase 8) ---
+
+    @Test
+    fun `peak folgt dem groessten Betrag`() {
+        val accumulator = WaveformAccumulator(totalSamples = 100L, bucketCount = 4)
+        repeat(50) { accumulator.accept(0.1) }
+        repeat(50) { accumulator.accept(-0.7) }
+
+        assertEquals(0.7, accumulator.peak(), 1e-9)
+    }
+
+    @Test
+    fun `leiser Track wird auf den Boden angehoben`() {
+        // Peak 0.1 -> Anzeige skaliert auf 0.35: Faktor 3.5.
+        val gain = WaveformDisplayGain.gainForPeak(0.1)
+        assertEquals(3.5, gain, 1e-9)
+    }
+
+    @Test
+    fun `laute Tracks bleiben unveraendert`() {
+        assertEquals(1.0, WaveformDisplayGain.gainForPeak(0.5), 1e-9)
+        assertEquals(1.0, WaveformDisplayGain.gainForPeak(1.0), 1e-9)
+        // Peak 0 (keine Messung/Stille): nie anheben.
+        assertEquals(1.0, WaveformDisplayGain.gainForPeak(0.0), 1e-9)
+    }
+
+    @Test
+    fun `Anhebung ist nach oben begrenzt`() {
+        // Stille-naher Track (0.01) -> Faktor waere 35, gekappt auf 8.
+        assertEquals(8.0, WaveformDisplayGain.gainForPeak(0.01), 1e-9)
+    }
+
+    @Test
+    fun `Anzeige-Buckets skalieren symmetrisch`() {
+        val buckets =
+            listOf(
+                WaveformBucket(min = (-10).toByte(), max = 10.toByte()),
+            )
+        val displayed = WaveformDisplayGain.displayBuckets(buckets, peakLinear = 0.2)
+
+        assertEquals(1, displayed.size)
+        // Faktor 0.35/0.2 = 1.75; 10/127 * 1.75 = 0.1378.
+        assertEquals(10 / 127f * 1.75f, displayed[0].second, 1e-4f)
+        assertEquals(-10 / 127f * 1.75f, displayed[0].first, 1e-4f)
+    }
 }

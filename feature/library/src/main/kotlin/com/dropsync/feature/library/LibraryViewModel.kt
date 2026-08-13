@@ -9,6 +9,7 @@ import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformBucket
+import com.dropsync.domain.audio.WaveformDisplayGain
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.Genre
@@ -175,7 +176,15 @@ class LibraryViewModel
          */
         fun waveformFor(songId: Long): Flow<List<Pair<Float, Float>>?> =
             trackAnalysisRepository.observeAnalysis(songId).map { analysis ->
-                analysis?.waveformBuckets?.let(::normalizeBuckets)
+                analysis
+                    ?.waveformBuckets
+                    ?.let { buckets ->
+                        normalizeBuckets(buckets)?.let { normalized ->
+                            // Phase 8: visuelle Lautheits-Normalisierung wie im Player.
+                            val gain = WaveformDisplayGain.gainForPeak(analysis.peakLinear).toFloat()
+                            normalized.map { (min, max) -> min * gain to max * gain }
+                        }
+                    }
             }
 
         /** Position des laufenden Titels in der Warteschlange; -1 wenn leer. */

@@ -89,5 +89,21 @@ val MIGRATION_4_5 =
         }
     }
 
+/**
+ * v5 -> v6: fuegt `track_analysis` die Spalte `peak_linear` hinzu
+ * (visuelle Lautheits-Normalisierung, Phase 8). Additiv mit Default 0;
+ * alte Analysen bleiben gueltig (Peak 0 = keine Anhebung), der
+ * Analyzer-Version-Bump (2 -> 3) sorgt fuer die Neu-Analyse.
+ */
+val MIGRATION_5_6 =
+    object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `track_analysis` ADD COLUMN `peak_linear` REAL NOT NULL DEFAULT 0.0",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
-val DROPSYNC_MIGRATIONS: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+val DROPSYNC_MIGRATIONS: Array<Migration> =
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)

@@ -196,6 +196,29 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun `leiser Track wird in der Waveform auf den Boden angehoben`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 11L)
+            trackAnalysisRepository.analyses.value =
+                mapOf(
+                    11L to
+                        TrackAnalysis(
+                            waveformBuckets = listOf(WaveformBucket(min = 0, max = 10)),
+                            onsetCandidatesMs = emptyList(),
+                            // Peak 0.2 -> Anzeige-Faktor 1.75 (Boden 0.35).
+                            peakLinear = 0.2,
+                        ),
+                )
+
+            viewModel().waveform.test {
+                val ready =
+                    awaitItemUntilWaveform { it is WaveformUiState.Ready } as WaveformUiState.Ready
+                assertEquals(1, ready.buckets.size)
+                assertEquals(10 / 127f * 1.75f, ready.buckets[0].second, 1e-4f)
+            }
+        }
+
+    @Test
     fun `requestAnalysis reicht den geladenen Song an das Analyse-Repository durch`() =
         runTest(dispatcher) {
             libraryRepository.songById[5L] = songFixture(id = 5L, title = "Peak")

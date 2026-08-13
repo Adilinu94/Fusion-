@@ -53,6 +53,7 @@ class TrackAnalysisRepositoryImpl(
                     TrackAnalysis(
                         waveformBuckets = WaveformCodec.unpack(it.waveformData),
                         onsetCandidatesMs = emptyList(),
+                        peakLinear = it.peakLinear,
                     )
                 }
         }
@@ -139,6 +140,7 @@ class TrackAnalysisWorker(
                         bucketCount = buckets.size,
                         analyzerVersion = WaveformCodec.ANALYZER_VERSION,
                         analyzedAtEpochMs = deps.clock().epochMillis(),
+                        peakLinear = result.value.peakLinear,
                     ),
                 )
                 if (detectOnsets) {

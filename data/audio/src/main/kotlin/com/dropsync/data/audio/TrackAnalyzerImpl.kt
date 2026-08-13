@@ -99,6 +99,8 @@ class TrackAnalyzerImpl(
                     } else {
                         emptyList()
                     },
+                // Track-Peak fuer die visuelle Lautheits-Normalisierung (Phase 8).
+                peakLinear = waveform.peak(),
             )
         } finally {
             extractor.release()
