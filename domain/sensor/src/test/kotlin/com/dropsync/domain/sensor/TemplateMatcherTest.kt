@@ -70,4 +70,54 @@ class TemplateMatcherTest {
         assertFalse(matcher.hasTemplate)
         assertTrue(matcher.match(sine(20)).noTemplate)
     }
+
+    // --- Punkt 5: Multi-Template-Pool -------------------------------------
+
+    @Test
+    fun `multi template best match wins`() {
+        val matcher = TemplateMatcher(poolSize = 5)
+        // Basis-Template: Sinus mit 1 Periode. Ein Fenster mit 2 Perioden
+        // ist dazu (nahezu) orthogonal (NCC ~ 0 < 0.7) -> abgelehnt.
+        matcher.setTemplate(sine(64, periods = 1.0))
+        assertFalse(
+            "2-Perioden-Fenster darf gegen das 1-Perioden-Template nicht matchen",
+            matcher.match(sine(64, periods = 2.0)).accepted,
+        )
+
+        // Sobald die 2-Perioden-Form im Pool liegt, gewinnt der Best-Match.
+        matcher.addToPool(sine(64, periods = 2.0))
+        val result = matcher.match(sine(64, periods = 2.0))
+        assertTrue("Best-Match gegen das 2-Perioden-Template im Pool muss gewinnen", result.accepted)
+        assertTrue(result.correlation > 0.95)
+    }
+
+    @Test
+    fun `addToPool adds and evicts FIFO`() {
+        val matcher = TemplateMatcher(poolSize = 5)
+        matcher.setTemplate(sine(64, periods = 1.0))
+        assertEquals(1, matcher.poolCount)
+        // 7 weitere Windows -> Pool waechst nur bis 5.
+        repeat(7) { i ->
+            matcher.addToPool(sine(64 + i, periods = 2.0))
+        }
+        assertEquals(5, matcher.poolCount)
+        // Der Pool behaelt das juengste 2-Perioden-Template -> matcht weiter.
+        assertTrue(matcher.match(sine(64, periods = 2.0)).accepted)
+    }
+
+    @Test
+    fun `addToPool ignores too short windows`() {
+        val matcher = TemplateMatcher(poolSize = 5)
+        matcher.setTemplate(sine(64))
+        matcher.addToPool(listOf(1.0, 2.0))
+        assertEquals("zu kurzes Window darf den Pool nicht erweitern", 1, matcher.poolCount)
+    }
+
+    @Test
+    fun `constant window is not added to pool`() {
+        val matcher = TemplateMatcher(poolSize = 5)
+        matcher.setTemplate(sine(64))
+        matcher.addToPool(List(64) { 3.0 })
+        assertEquals("konstantes Window normalisiert zu null und wird verworfen", 1, matcher.poolCount)
+    }
 }

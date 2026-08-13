@@ -438,14 +438,30 @@ class TrainViewModel
                     if (_setPhase.value == SetPhase.COUNTING) {
                         setSamples.add(sample)
                         liveEngine?.let { engine ->
-                            engine.processSample(sample.timestampMs, sample.gx, sample.gy, sample.gz)
+                            engine.processSample(
+                                sample.timestampMs,
+                                sample.gx,
+                                sample.gy,
+                                sample.gz,
+                                sample.ax,
+                                sample.ay,
+                                sample.az,
+                            )
                             _liveCountedReps.value = engine.repCount.value
                         }
                     }
                     // Shadow DoD 11b: feed the new pipeline; its repCount is
                     // tracked only for the diff against the live count.
                     shadowEngine?.let { engine ->
-                        engine.processSample(sample.timestampMs, sample.gx, sample.gy, sample.gz)
+                        engine.processSample(
+                            sample.timestampMs,
+                            sample.gx,
+                            sample.gy,
+                            sample.gz,
+                            sample.ax,
+                            sample.ay,
+                            sample.az,
+                        )
                         if (engine.repCount.value != shadowRepCount) {
                             shadowRepCount = engine.repCount.value
                             Log.d(SHADOW_TAG, "shadow rep=$shadowRepCount live=$liveRepCount")
@@ -481,7 +497,11 @@ class TrainViewModel
                     ),
                 ).also { engine ->
                     engine.setTemplate(profile.repTemplate)
-                    engine.updateLevels(profile.signalPeakLevel, profile.noisePeakLevel)
+                    engine.updateLevels(
+                        spk = profile.signalPeakLevel,
+                        npk = profile.noisePeakLevel,
+                        expectedDurationSamples = profile.expectedDurationSamples,
+                    )
                 }
             countdownJob?.cancel()
             countdownJob =
@@ -595,7 +615,11 @@ class TrainViewModel
                     )
                 profile?.let {
                     shadowEngine?.setTemplate(it.repTemplate)
-                    shadowEngine?.updateLevels(it.signalPeakLevel, it.noisePeakLevel)
+                    shadowEngine?.updateLevels(
+                        spk = it.signalPeakLevel,
+                        npk = it.noisePeakLevel,
+                        expectedDurationSamples = it.expectedDurationSamples,
+                    )
                     Log.d(
                         SHADOW_TAG,
                         "shadow engine configured: axis=${it.rotationAxis}, " +

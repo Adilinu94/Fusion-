@@ -3,14 +3,17 @@ package com.dropsync.domain.sensor
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.max
+import kotlin.math.sqrt
 
 /**
  * Signal chain of the new rep-detection pipeline (port of
  * filters/signal_chain.dart): raw gyro -> bias-corrected projection onto the
  * calibrated rotation axis -> One-Euro filter -> envelope -> ProcessedFrame.
  *
- * The chain needs [settleSamples] frames before peaks are evaluated
- * (filters must settle first; `isSettled` gates the PeakDetector upstream).
+ * Punkt 4: mit [accelEnabled] laeuft ein zweiter Zweig fuer den Accel-Kanal.
+ * Die Abweichung der Magnitude von 1 g (Ruhezustand ~0) wird gefiltert und
+ * als `smoothedAccel`/`accelEnvelope` in den Frame gelegt; der RepCounter
+ * stimmt Gyro-Peaks per Voting gegen diesen Kanal ab.
  */
 class SignalChain(
     private var rotationAxis: DoubleArray,
@@ -20,21 +23,28 @@ class SignalChain(
     private val oneEuroBeta: Double = 0.007,
     private val envelopeCutoffHz: Double = 3.0,
     private val settleSamples: Int = 50,
+    private val accelEnabled: Boolean = false,
+    private val accelOneEuroMinCutoff: Double = 2.0,
 ) {
     private var samplesSeen = 0
     private val oneEuro = OneEuroFilter(oneEuroMinCutoff, oneEuroBeta, sampleRateHz)
     private val envelope = EnvelopeDetector(envelopeCutoffHz, sampleRateHz)
+    private val oneEuroAccel = OneEuroFilter(accelOneEuroMinCutoff, oneEuroBeta, sampleRateHz)
+    private val envelopeAccel = EnvelopeDetector(envelopeCutoffHz, sampleRateHz)
 
     /** True once [settleSamples] frames passed (filters warmed up). */
     val isSettled: Boolean
         get() = samplesSeen >= settleSamples
 
-    /** Processes one raw gyro sample into a [ProcessedFrame]. */
+    /** Processes one raw sample into a [ProcessedFrame]. */
     fun process(
         timestampMs: Long,
         gx: Double,
         gy: Double,
         gz: Double,
+        ax: Double = 0.0,
+        ay: Double = 0.0,
+        az: Double = 0.0,
     ): ProcessedFrame {
         samplesSeen++
         val dx = gx - gyroBias[0]
@@ -43,12 +53,17 @@ class SignalChain(
         val rawGp = dx * rotationAxis[0] + dy * rotationAxis[1] + dz * rotationAxis[2]
         val filtered = oneEuro.process(rawGp)
         val env = envelope.process(abs(filtered))
+        val accelDev = if (accelEnabled) abs(sqrt(ax * ax + ay * ay + az * az) - 1.0) else 0.0
+        val filteredAccel = oneEuroAccel.process(accelDev)
+        val envAccel = envelopeAccel.process(abs(filteredAccel))
         return ProcessedFrame(
             timestampMs = timestampMs,
             rawGp = rawGp,
             filteredGp = filtered,
             smoothedGp = filtered,
             envelope = env,
+            smoothedAccel = filteredAccel,
+            accelEnvelope = envAccel,
             isSettled = isSettled,
         )
     }
@@ -68,6 +83,8 @@ class SignalChain(
         samplesSeen = 0
         oneEuro.reset()
         envelope.reset()
+        oneEuroAccel.reset()
+        envelopeAccel.reset()
     }
 }
 

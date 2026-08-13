@@ -18,6 +18,14 @@ private enum class DetectorState { IDLE, RISING, FALLING }
  * Adaptive peak detector after Pan-Tompkins (port of peak_detector.dart):
  * theta = NPK + factor * (SPK - NPK), idle -> rising -> falling state
  * machine, refractory time against double counting, prominence filter.
+ *
+ * Punkt 6 (adaptive Refraktaerzeit): [updateExpectedDuration] setzt die
+ * Refraktaerzeit auf 30% der erwarteten Rep-Dauer (wie CalibrationRefiner);
+ * [updateLevels] kann die Dauer direkt aus dem Profil uebernehmen.
+ *
+ * Punkt 4 (Accel-Kanal): [signal] waehlt aus, welches Feld des Frames der
+ * Detector auswertet - default `smoothedGp` (Gyro), fuer den Accel-Zweig
+ * `smoothedAccel`.
  */
 class PeakDetector(
     val sampleRateHz: Double = 50.0,
@@ -28,6 +36,8 @@ class PeakDetector(
     private val fallingDebounce: Int = 4,
     refractorySeconds: Double = 0.5,
     private val prominenceRatio: Double = 0.2,
+    private val refractoryDurationRatio: Double = 0.3,
+    private val signal: (ProcessedFrame) -> Double = { it.smoothedGp },
 ) {
     private var spk: Double = initialSpk
     private var npk: Double = initialNpk
@@ -39,7 +49,11 @@ class PeakDetector(
     private val window = mutableListOf<Double>()
     private var sampleIndex = 0
     private var lastPeakSampleIndex: Int? = null
-    private val refractorySamples = (refractorySeconds * sampleRateHz).toInt()
+    private var refractorySamples = (refractorySeconds * sampleRateHz).toInt()
+
+    /** Erwartete Rep-Dauer (Basis fuer die adaptive Refraktaerzeit). */
+    var expectedDurationSamples: Double = refractorySeconds * sampleRateHz
+        private set
 
     /** Current adaptive threshold theta = NPK + factor * (SPK - NPK). */
     val currentThreshold: Double
@@ -48,10 +62,23 @@ class PeakDetector(
     var lastPeakDurationSamples: Int = 0
     var lastPeakProminence: Double = 0.0
 
+    /**
+     * Punkt 6: setzt die Refraktaerzeit auf 30% der erwarteten Rep-Dauer,
+     * begrenzt auf 100 ms bis 2 s. Schnelle Reps (kurze Dauer) werden so
+     * nicht mehr faelschlich unterdrueckt.
+     */
+    fun updateExpectedDuration(durationSamples: Double) {
+        expectedDurationSamples = durationSamples
+        refractorySamples =
+            (durationSamples * refractoryDurationRatio).toInt()
+                .coerceAtLeast(5)
+                .coerceAtMost(100)
+    }
+
     /** Processes ONE frame; returns a [PeakEvent] when a peak is confirmed. */
     fun process(frame: ProcessedFrame): PeakEvent? {
         sampleIndex++
-        val value = frame.smoothedGp
+        val value = signal(frame)
         if (value.isNaN()) return null
 
         val theta = currentThreshold
@@ -143,8 +170,10 @@ class PeakDetector(
     fun updateLevels(
         spk: Double? = null,
         npk: Double? = null,
+        expectedDurationSamples: Double? = null,
     ) {
         spk?.let { this.spk = it }
         npk?.let { this.npk = it }
+        expectedDurationSamples?.let { updateExpectedDuration(it) }
     }
 }

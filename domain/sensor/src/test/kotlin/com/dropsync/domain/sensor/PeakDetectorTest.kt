@@ -95,4 +95,56 @@ class PeakDetectorTest {
         detector.updateLevels(spk = 200.0, npk = 20.0)
         assertEquals(65.0, detector.currentThreshold, 1e-6)
     }
+
+    // --- Punkt 6: adaptive Refraktaerzeit ---------------------------------
+
+    @Test
+    fun `adaptive refractory fast reps not suppressed`() {
+        // Erwartete Rep-Dauer 25 Samples (0.5 s) -> Refraktaerzeit
+        // 0.3 * 25 = 7 Samples (>= Minimum 5). Zwei Peaks im Abstand von
+        // 10 Samples duerfen beide erkannt werden; mit der alten festen
+        // Refraktaerzeit von 25 Samples waere der zweite unterdrueckt.
+        val detector = PeakDetector()
+        detector.updateLevels(expectedDurationSamples = 25.0)
+
+        val first = feedPeak(detector, 0)
+        assertNotNull(first)
+        // Zweiter Peak startet nach dem Ende des ersten + 10 Samples.
+        val secondStart = first!!.window.size * 20L + 10 * 20L
+        assertNotNull(
+            "schneller zweiter Peak darf bei adaptiver Refraktaerzeit nicht unterdrueckt werden",
+            feedPeak(detector, secondStart),
+        )
+    }
+
+    @Test
+    fun `adaptive refractory respects minimum floor`() {
+        val detector = PeakDetector()
+        // Extrem kurze Dauer -> Refraktaerzeit muss auf >= 5 Samples
+        // geklemmt werden (100 ms Floor).
+        detector.updateLevels(expectedDurationSamples = 1.0)
+        assertNotNull(feedPeak(detector, 0))
+        // Abstand 6 Samples > Floor 5 -> zweiter Peak moeglich.
+        assertNotNull(feedPeak(detector, 6 * 20L + 3000))
+    }
+
+    @Test
+    fun `adaptive refractory respects maximum cap`() {
+        val detector = PeakDetector()
+        // Sehr lange Dauer -> Refraktaerzeit auf <= 100 Samples geklemmt.
+        detector.updateLevels(expectedDurationSamples = 10_000.0)
+        assertNotNull(feedPeak(detector, 0))
+        // Der interne sampleIndex zaehlt Samples, nicht Zeitstempel:
+        // 105 ruhige Frames schicken, dann ist das Cap (100) ueberschritten.
+        for (i in 0 until 105) detector.process(frame((3000 + i) * 20L, 0.0))
+        assertNotNull(feedPeak(detector, (3105) * 20L))
+    }
+
+    @Test
+    fun `updateExpectedDuration changes refractory directly`() {
+        val detector = PeakDetector()
+        assertEquals(25.0, detector.expectedDurationSamples, 1e-6)
+        detector.updateExpectedDuration(50.0)
+        assertEquals(50.0, detector.expectedDurationSamples, 1e-6)
+    }
 }

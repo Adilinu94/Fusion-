@@ -26,12 +26,26 @@ data class RepResult(
  * Befund-C fix applied: TemplateMatcher.match() receives `peak.window`,
  * NOT the extended window used by PhaseValidator (see
  * PHASE_VALIDATOR_FIX_AUDIT_2026-08-05 section 7).
+ *
+ * Punkt 4: mit [accelPeakDetector] != null laeuft ein zweiter PeakDetector
+ * auf dem Accel-Kanal (smoothedAccel). Ein Gyro-Peak zaehlt nur, wenn der
+ * Accel-Kanal innerhalb von [accelVoteWindowSamples] um denselben Index
+ * ebenfalls einen Peak gemeldet hat (Voting gegen False-Positives wie
+ * Erschuetterungen).
+ *
+ * Punkt 5: bestaetigte Rep-Windows wandern per addToPool in den
+ * Template-Pool (Formdrift / Ermuedung).
+ *
+ * Punkt 6: trackForAdaptation aktualisiert die erwartete Rep-Dauer im
+ * PeakDetector (adaptive Refraktaerzeit) und die Pending-Fenster-Grenze.
  */
 class RepCounter(
     private val peakDetector: PeakDetector,
     private val templateMatcher: TemplateMatcher,
     private val phaseValidator: PhaseValidator,
     private val qualityScorer: QualityScorer,
+    private val accelPeakDetector: PeakDetector? = null,
+    private val accelVoteWindowSamples: Int = 5,
 ) {
     var repCount: Int = 0
         private set
@@ -50,9 +64,18 @@ class RepCounter(
     private var pendingWentBelowStartMin = false
     private var pendingExtraSamples = 0
 
+    /** Punkt 4: Accel-Peaks (Sample-Index) der letzten Frames. */
+    private val recentAccelPeakIndexes = ArrayDeque<Int>()
+
     /** Processes ONE frame through the whole pipeline. */
     fun process(frame: ProcessedFrame): RepResult {
         val peak = peakDetector.process(frame)
+        accelPeakDetector?.process(frame)?.let { accelPeak ->
+            recentAccelPeakIndexes.addLast(accelPeak.sampleIndex)
+            while (recentAccelPeakIndexes.size > 600) {
+                recentAccelPeakIndexes.removeFirst()
+            }
+        }
 
         if (peak != null) {
             var finishedOld: RepResult? = null
@@ -75,6 +98,17 @@ class RepCounter(
         return RepResult.NONE
     }
 
+    /**
+     * Punkt 4: Gyro-Peak muss einen Accel-Peak im Toleranzfenster haben.
+     * Bewusst erst in decide() geprueft: der Accel-Peak feuert wegen der
+     * Falling-Debounce oft 1-2 Samples spaeter als der Gyro-Peak; zum
+     * Zeitpunkt der Pending-Finalisierung liegt er sicher vor.
+     */
+    private fun accelVotePassed(peak: PeakEvent): Boolean {
+        val accel = accelPeakDetector ?: return true
+        return recentAccelPeakIndexes.any { kotlin.math.abs(it - peak.sampleIndex) <= accelVoteWindowSamples }
+    }
+
     private fun startPending(peak: PeakEvent) {
         pendingPeak = peak
         pendingWindow = peak.window.toMutableList()
@@ -85,11 +119,24 @@ class RepCounter(
 
     private fun pendingComplete(): Boolean {
         val window = pendingWindow ?: return false
+        // Punkt 4: bei aktivem Accel-Voting erst schliessen, wenn der
+        // Accel-Peak im Toleranzfenster liegt - er feuert wegen seiner
+        // Falling-Debounce einige Samples spaeter als der Gyro-Peak.
+        if (accelPeakDetector != null && !accelVotePassed(pendingPeak!!)) {
+            return pendingExtraSamples >= maxExtraPhaseSamples()
+        }
         val hasNegative = window.any { it < 0 }
         if (!hasNegative) return true
         return (pendingWentBelowStartMin && window.last() >= 0) ||
-            pendingExtraSamples >= MAX_EXTRA_PHASE_SAMPLES
+            pendingExtraSamples >= maxExtraPhaseSamples()
     }
+
+    /**
+     * Punkt 6: Pending-Fenster-Grenze dynamisch aus der erwarteten
+     * Rep-Dauer (2x, begrenzt auf 60-300 Samples), statt fix 120.
+     */
+    private fun maxExtraPhaseSamples(): Int =
+        (peakDetector.expectedDurationSamples * 2.0).toInt().coerceIn(60, 300)
 
     private fun finalizePending(): RepResult {
         val peak = pendingPeak!!
@@ -103,6 +150,17 @@ class RepCounter(
         peak: PeakEvent,
         window: List<Double>,
     ): RepResult {
+        // Punkt 4: erst beim Finalisieren voten - der Accel-Peak feuert
+        // wegen der Falling-Debounce oft einige Samples spaeter als der
+        // Gyro-Peak und liegt zu diesem Zeitpunkt sicher vor.
+        if (!accelVotePassed(peak)) {
+            return RepResult(
+                repCounted = false,
+                repNumber = repCount,
+                rejectionReason = "Accel-Voting fehlgeschlagen: kein Peak im Accel-Kanal",
+            )
+        }
+
         // Befund-C fix: TemplateMatcher sees the ORIGINAL peak.window,
         // PhaseValidator sees the (possibly extended) window.
         val matchResult = templateMatcher.match(peak.window)
@@ -139,6 +197,7 @@ class RepCounter(
         }
 
         repCount++
+        templateMatcher.addToPool(peak.window)
         trackForAdaptation(peak.prominence, window.size)
         return RepResult(
             repCounted = true,
@@ -161,10 +220,14 @@ class RepCounter(
             recentProminences.removeAt(0)
         }
         if (recentDurations.size >= 3) {
+            val avgDuration = recentDurations.average()
+            val avgProminence = recentProminences.average()
             qualityScorer.updateExpectations(
-                expectedDurationSamples = recentDurations.average(),
-                expectedProminence = recentProminences.average(),
+                expectedDurationSamples = avgDuration,
+                expectedProminence = avgProminence,
             )
+            // Punkt 6: adaptive Refraktaerzeit folgt der echten Rep-Dauer.
+            peakDetector.updateExpectedDuration(avgDuration)
         }
     }
 
@@ -178,7 +241,9 @@ class RepCounter(
         pendingStartMin = 0.0
         pendingWentBelowStartMin = false
         pendingExtraSamples = 0
+        recentAccelPeakIndexes.clear()
         peakDetector.reset()
+        accelPeakDetector?.reset()
     }
 
     fun setTemplate(template: List<Double>) = templateMatcher.setTemplate(template)
@@ -187,12 +252,9 @@ class RepCounter(
     fun updateLevels(
         spk: Double? = null,
         npk: Double? = null,
-    ) = peakDetector.updateLevels(spk, npk)
+        expectedDurationSamples: Double? = null,
+    ) = peakDetector.updateLevels(spk, npk, expectedDurationSamples)
 
     val hasTemplate: Boolean
         get() = templateMatcher.hasTemplate
-
-    companion object {
-        private const val MAX_EXTRA_PHASE_SAMPLES = 120
-    }
 }

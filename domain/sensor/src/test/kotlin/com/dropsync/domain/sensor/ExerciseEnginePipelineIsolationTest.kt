@@ -138,4 +138,60 @@ class ExerciseEnginePipelineIsolationTest {
             ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0))
         assertEquals(0.55, config.minQualityScore, 1e-9)
     }
+
+    // --- Punkt 4: Accel-Voting ---------------------------------------------
+
+    @Test
+    fun `accel voting unterdrueckt reinen Gyro-Peak`() {
+        // accelEnabled=true, aber der Accel-Kanal bleibt ruhig (ax=1.0):
+        // der Gyro-Peak hat keinen Accel-Partner -> Voting schlaegt fehl.
+        val engine =
+            ExerciseEnginePipeline(
+                ExerciseEngineConfig(
+                    rotationAxis = listOf(1.0, 0.0, 0.0),
+                    gyroBias = listOf(0.0, 0.0, 0.0),
+                    accelEnabled = true,
+                ),
+            )
+        twoRepRawStream().forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0, ay = 0.0, az = 0.0)
+        }
+        assertEquals(
+            "Gyro-Peak ohne Accel-Partner darf bei aktivem Voting nicht zaehlen",
+            0,
+            engine.repCount.value,
+        )
+    }
+
+    @Test
+    fun `accel voting zaehlt wenn beide Kanaele peaken`() {
+        // Gleichphasige Accel-Abweichung waehrend der Reps (Magnitude
+        // schlaegt von 1 g auf bis 1.5 g aus): beide Kanaele peaken.
+        val engine =
+            ExerciseEnginePipeline(
+                ExerciseEngineConfig(
+                    rotationAxis = listOf(1.0, 0.0, 0.0),
+                    gyroBias = listOf(0.0, 0.0, 0.0),
+                    accelEnabled = true,
+                ),
+            )
+        twoRepRawStream().forEachIndexed { i, gx ->
+            val accelDev = 0.5 * (gx / 60.0)
+            engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0 + accelDev, ay = 0.0, az = 0.0)
+        }
+        assertEquals("Gyro- und Accel-Peak gleichphasig: Voting muss beide Reps zaehlen", 2, engine.repCount.value)
+    }
+
+    @Test
+    fun `accel disabled verhaelt sich wie vorher`() {
+        // Default accelEnabled=false: reine Gyro-Zaehlung wie bisher.
+        val engine =
+            ExerciseEnginePipeline(
+                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
+            )
+        twoRepRawStream().forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0)
+        }
+        assertEquals(2, engine.repCount.value)
+    }
 }

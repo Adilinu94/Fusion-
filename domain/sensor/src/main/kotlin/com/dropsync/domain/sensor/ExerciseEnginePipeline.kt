@@ -21,10 +21,15 @@ data class ExerciseEngineConfig(
     val expectedProminence: Double = 50.0,
     val expectedDurationSamples: Double = 50.0,
     val hasValidCalibration: Boolean = false,
+    /** Punkt 4: Accel-Kanal + Voting aktiv (Feature-Flag fuer den Rollout). */
+    val accelEnabled: Boolean = false,
+    /** Punkt 5: Groesse des Template-Pools (Formdrift). */
+    val templatePoolSize: Int = 5,
 ) {
     init {
         require(rotationAxis.size == 3) { "rotationAxis must have 3 components" }
         require(gyroBias.size == 3) { "gyroBias must have 3 components" }
+        require(templatePoolSize >= 1) { "templatePoolSize must be >= 1" }
     }
 }
 
@@ -64,6 +69,7 @@ class ExerciseEnginePipeline(
             oneEuroMinCutoff = config.oneEuroMinCutoff,
             oneEuroBeta = config.oneEuroBeta,
             envelopeCutoffHz = config.envelopeCutoffHz,
+            accelEnabled = config.accelEnabled,
         )
 
     private val qualityScorer =
@@ -73,7 +79,11 @@ class ExerciseEnginePipeline(
             minScore = config.minQualityScore,
         )
 
-    private val templateMatcher = TemplateMatcher(threshold = config.templateThreshold)
+    private val templateMatcher =
+        TemplateMatcher(
+            threshold = config.templateThreshold,
+            poolSize = config.templatePoolSize,
+        )
 
     private val repCounter =
         RepCounter(
@@ -85,6 +95,22 @@ class ExerciseEnginePipeline(
             templateMatcher = templateMatcher,
             phaseValidator = PhaseValidator(),
             qualityScorer = qualityScorer,
+            accelPeakDetector =
+                if (config.accelEnabled) {
+                    // Punkt 4: Accel-Signale sind eine Magnituden-Abweichung
+                    // (~0 im Ruhezustand), also deutlich kleiner als Gyro.
+                    // Konservative Levels: theta niedrig, Prominenz niedrig.
+                    PeakDetector(
+                        sampleRateHz = config.sampleRateHz,
+                        initialSpk = 0.5,
+                        initialNpk = 0.05,
+                        thresholdFactor = 0.25,
+                        prominenceRatio = 0.2,
+                        signal = { it.smoothedAccel },
+                    )
+                } else {
+                    null
+                },
         )
 
     private val _repCount = MutableStateFlow(0)
@@ -109,8 +135,11 @@ class ExerciseEnginePipeline(
         gx: Double,
         gy: Double,
         gz: Double,
+        ax: Double = 0.0,
+        ay: Double = 0.0,
+        az: Double = 0.0,
     ): EngineFrameResult {
-        val frame = signalChain.process(timestampMs, gx, gy, gz)
+        val frame = signalChain.process(timestampMs, gx, gy, gz, ax, ay, az)
         if (!frame.isSettled) {
             framesRejected++
             return EngineFrameResult(frame = frame, repResult = RepResult.NONE)
@@ -163,7 +192,8 @@ class ExerciseEnginePipeline(
     fun updateLevels(
         spk: Double? = null,
         npk: Double? = null,
-    ) = repCounter.updateLevels(spk, npk)
+        expectedDurationSamples: Double? = null,
+    ) = repCounter.updateLevels(spk, npk, expectedDurationSamples)
 
     /** Adopts a new calibration axis + bias without resetting counts. */
     fun updateCalibration(

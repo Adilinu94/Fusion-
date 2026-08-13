@@ -24,6 +24,9 @@ data class ProcessedFrame(
     val filteredGp: Double,
     val smoothedGp: Double,
     val envelope: Double,
+    /** Accel channel (Punkt 4): deviation of the magnitude from 1 g, filtered. */
+    val smoothedAccel: Double = 0.0,
+    val accelEnvelope: Double = 0.0,
     /** False until all filters have settled; no peaks before that. */
     val isSettled: Boolean,
 )

@@ -17,41 +17,66 @@ data class MatchResult(
  * Resamples the window to [TEMPLATE_LENGTH], normalizes both signals
  * (mean 0, std 1) and computes NCC = sum(a[i]*b[i]) / N. O(N) per match,
  * fine for realtime at 50 Hz.
+ *
+ * Punkt 5 (Multi-Template): statt eines einzelnen Templates haelt der
+ * Matcher einen Pool der letzten [poolSize] bestaetigten Rep-Windows. Der
+ * beste NCC-Wert gegen alle Templates gewinnt; [addToPool] erweitert den
+ * Pool FIFO. So faengt der Matcher Formdrift (Ermuedung) ab, die das
+ * starre Einzel-Template unter die Schwelle druecken wuerde.
  */
 class TemplateMatcher(
     private val threshold: Double = 0.7,
+    private val poolSize: Int = 5,
 ) {
-    private var template: List<Double>? = null
+    private val templates: MutableList<List<Double>> = mutableListOf()
 
     /** Sets the learned rep template (any length; resampled internally). */
     fun setTemplate(rawTemplate: List<Double>) {
         if (rawTemplate.size < 4) {
-            template = null
+            templates.clear()
             return
         }
-        template = normalize(resample(rawTemplate, TEMPLATE_LENGTH))
+        templates.clear()
+        normalize(resample(rawTemplate, TEMPLATE_LENGTH))?.let { templates.add(it) }
     }
 
     /**
-     * Matches a peak window against the template. Callers pass
+     * Punkt 5: nimmt ein bestaetigtes Rep-Window in den Pool auf
+     * (normalisiert + resampled, FIFO mit [poolSize] Eintraegen).
+     */
+    fun addToPool(rawWindow: List<Double>) {
+        if (rawWindow.size < 4) return
+        val normalized = normalize(resample(rawWindow, TEMPLATE_LENGTH)) ?: return
+        templates.add(normalized)
+        if (templates.size > poolSize) {
+            templates.removeAt(0)
+        }
+    }
+
+    /**
+     * Matches a peak window against the templates. Callers pass
      * `peak.window` directly — never an extended window (Befund-C fix,
      * PHASE_VALIDATOR_FIX_AUDIT_2026-08-05 section 7).
      */
     fun match(window: List<Double>): MatchResult {
-        val tpl = template ?: return MatchResult(0.0, accepted = true, noTemplate = true)
+        if (templates.isEmpty()) return MatchResult(0.0, accepted = true, noTemplate = true)
         if (window.size < 4) return MatchResult(0.0, accepted = false)
         val normalized =
             normalize(resample(window, TEMPLATE_LENGTH))
                 ?: return MatchResult(0.0, accepted = false)
-        val ncc = crossCorrelate(tpl, normalized)
-        return MatchResult(ncc, accepted = ncc >= threshold)
+        val bestNcc = templates.maxOf { crossCorrelate(it, normalized) }
+        return MatchResult(bestNcc, accepted = bestNcc >= threshold)
     }
 
     val hasTemplate: Boolean
-        get() = template != null
+        get() = templates.isNotEmpty()
+
+    /** Anzahl der Templates im Pool (Punkt 5: fuer Tests). */
+    val poolCount: Int
+        get() = templates.size
 
     fun clearTemplate() {
-        template = null
+        templates.clear()
     }
 
     companion object {
