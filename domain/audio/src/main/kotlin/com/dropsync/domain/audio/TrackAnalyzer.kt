@@ -43,6 +43,16 @@ interface TrackAnalysisRepository {
     suspend fun requestAnalysis(song: Song)
 
     /**
+     * Stoesst die Analyse fuer mehrere Songs in einem Rutsch an.
+     * Implementierungen muessen den Cache-Miss fuer alle Songs in
+     * EINER Abfrage bestimmen (Import-Pfad, Poweramp-Scanner-Muster:
+     * Batches statt N Einzel-Queries bei Tausenden von Titeln).
+     * Songs ohne Cache-Eintrag werden einzeln enqueued und sind
+     * untereinander dedupliziert.
+     */
+    suspend fun requestAnalysisForNewSongs(songs: List<Song>)
+
+    /**
      * Stoesst die Onset-Erkennung (A2) fuer genau diesen Song an, vom
      * Nutzer ausgeloest ("Drops automatisch erkennen"). Kandidaten landen
      * als SongMarker(source = AUTO_DETECTED, isEnabled = false) und

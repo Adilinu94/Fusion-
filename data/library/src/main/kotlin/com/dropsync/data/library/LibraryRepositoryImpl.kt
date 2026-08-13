@@ -102,16 +102,16 @@ class LibraryRepositoryImpl(
 
                 // Import-Pipeline (Phase 5): neue, verfuegbare Songs stossen
                 // ihre Waveform-Analyse direkt nach dem Scan automatisch an,
-                // statt erst beim Oeffnen des Now-Playing-Screens. Der Worker
-                // dedupliziert ueber track_analysis_<songId>, doppelte Aufrufe
-                // sind also kostenlos; die UI zeigt den pulsierenden Placeholder.
+                // statt erst beim Oeffnen des Now-Playing-Screens. Der Batch-
+                // Anstoss bestimmt Cache-Misses in EINER Abfrage (Poweramp-
+                // Scanner-Muster: keine N Einzel-Queries bei grossen
+                // Bibliotheken); der Worker dedupliziert ueber
+                // track_analysis_<songId>.
                 val newSongs =
                     entities
                         .filter { it.mediaStoreId !in existing && it.isAvailable }
                         .map { it.toDomain() }
-                for (song in newSongs) {
-                    trackAnalysisRepository.requestAnalysis(song)
-                }
+                trackAnalysisRepository.requestAnalysisForNewSongs(newSongs)
 
                 AppResult.success(
                     LibraryScanResult(

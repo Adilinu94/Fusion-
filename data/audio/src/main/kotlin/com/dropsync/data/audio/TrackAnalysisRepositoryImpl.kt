@@ -61,9 +61,29 @@ class TrackAnalysisRepositoryImpl(
     override suspend fun requestAnalysis(song: Song) {
         val cached = trackAnalysisDao.getBySongId(song.mediaStoreId)
         if (cached != null && cached.analyzerVersion == WaveformCodec.ANALYZER_VERSION) return
+        enqueueAnalysis(song.mediaStoreId)
+    }
+
+    override suspend fun requestAnalysisForNewSongs(songs: List<Song>) {
+        if (songs.isEmpty()) return
+        // Eine Abfrage fuer alle Songs statt N Einzel-Queries (Import-
+        // Pfad, Poweramp-Scanner-Muster: Batches bei Tausenden Titeln).
+        val cachedIds =
+            trackAnalysisDao
+                .getBySongIds(songs.map { it.mediaStoreId })
+                .filter { it.analyzerVersion == WaveformCodec.ANALYZER_VERSION }
+                .mapTo(mutableSetOf()) { it.songId }
+        songs.forEach { song ->
+            if (song.mediaStoreId !in cachedIds) {
+                enqueueAnalysis(song.mediaStoreId)
+            }
+        }
+    }
+
+    private fun enqueueAnalysis(mediaStoreId: Long) {
         val request =
             OneTimeWorkRequestBuilder<TrackAnalysisWorker>()
-                .setInputData(workDataOf(TrackAnalysisWorker.KEY_SONG_ID to song.mediaStoreId))
+                .setInputData(workDataOf(TrackAnalysisWorker.KEY_SONG_ID to mediaStoreId))
                 // Beschleunigt: die Wellenform soll moeglichst zeitnah zum
                 // Titelwechsel bereitstehen, nicht erst nach WorkManager-
                 // Standardlatenz. Faellt auf normale Ausfuehrung zurueck, wenn
@@ -73,7 +93,7 @@ class TrackAnalysisRepositoryImpl(
         WorkManager
             .getInstance(context)
             .enqueueUniqueWork(
-                "track_analysis_${song.mediaStoreId}",
+                "track_analysis_$mediaStoreId",
                 ExistingWorkPolicy.KEEP,
                 request,
             )

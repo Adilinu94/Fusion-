@@ -381,6 +381,10 @@ private class FakeTrackAnalysisRepository : TrackAnalysisRepository {
         requestedSongIds += song.mediaStoreId
     }
 
+    override suspend fun requestAnalysisForNewSongs(songs: List<Song>) {
+        requestedSongIds += songs.map { it.mediaStoreId }
+    }
+
     override suspend fun requestOnsetDetection(song: Song) {
         onsetRequestedSongIds += song.mediaStoreId
     }

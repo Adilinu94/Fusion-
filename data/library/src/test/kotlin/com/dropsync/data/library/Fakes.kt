@@ -290,6 +290,13 @@ class FakeTrackAnalysisRepository : TrackAnalysisRepository {
         requestedSongs += song
     }
 
+    override suspend fun requestAnalysisForNewSongs(songs: List<Song>) {
+        batchRequestedSongs += songs
+        requestedSongs += songs
+    }
+
+    val batchRequestedSongs = mutableListOf<List<Song>>()
+
     override suspend fun requestOnsetDetection(song: Song) {
         // Nicht in dieser Phase relevant.
     }

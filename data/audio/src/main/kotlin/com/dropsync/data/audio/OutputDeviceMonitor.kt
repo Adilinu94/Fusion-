@@ -1,5 +1,6 @@
 package com.dropsync.data.audio
 
+import android.bluetooth.BluetoothCodecConfig
 import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
@@ -20,6 +21,13 @@ data class OutputDeviceSnapshot(
     val name: String?,
     /** Geraeteadresse (BT/USB) fuer Profil-Schluessel (ADR-0008). */
     val address: String? = null,
+    /**
+     * A2DP-Codec-Name (BluetoothCodecConfig.CODEC_*) falls bekannt; null
+     * fuer Nicht-BT-Routen. Latenzprofile unterscheiden damit SBC/AAC/
+     * LDAC statt pauschal SBC anzunehmen (Poweramp-Muster
+     * PaBluetoothCodecConfig, Triage-Lektion 2026-08-13).
+     */
+    val bluetoothCodec: String? = null,
 )
 
 /**
@@ -95,6 +103,43 @@ class OutputDeviceMonitor
                     },
                 name = ranked?.productName?.toString(),
                 address = ranked?.address?.takeIf { it.isNotBlank() },
+                bluetoothCodec = bluetoothCodecName(ranked),
             )
+        }
+
+        /**
+         * Aktueller A2DP-Codec fuer [device] bzw. null ausserhalb von
+         * Bluetooth oder wenn die Abfrage nicht verfuegbar ist (null =
+         * SBC-Annahme im RouteProfileStore, dem A2DP-Fallback).
+         *
+         * `AudioManager.getBluetoothCodecStatus()` ist in vielen
+         * SDK-Builds eine versteckte API (nicht im android.jar); Poweramp
+         * ruft genau solche Methoden per Reflection mit Exception-Fallback
+         * auf (sein Log "AudioManager.getProperty java exception" zeigt das
+         * Muster). Die Typ-Konstanten kommen aus der public Klasse
+         * [BluetoothCodecConfig], deshalb kein API-Level-Guard noetig.
+         */
+        private fun bluetoothCodecName(device: AudioDeviceInfo?): String? {
+            if (device?.type != AudioDeviceInfo.TYPE_BLUETOOTH_A2DP) return null
+            return runCatching {
+                val codec =
+                    runCatching {
+                        val getter = AudioManager::class.java.getMethod("getBluetoothCodecStatus")
+                        val status = getter.invoke(audioManager) ?: return null
+                        val configGetter = status.javaClass.getMethod("getCodecConfig")
+                        val config = configGetter.invoke(status) ?: return null
+                        val typeGetter = config.javaClass.getMethod("getCodecType")
+                        typeGetter.invoke(config) as? Int
+                    }.getOrNull() ?: return null
+                when (codec) {
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_SBC -> "SBC"
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_AAC -> "AAC"
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_APTX -> "APTX"
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_APTX_HD -> "APTX_HD"
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_LDAC -> "LDAC"
+                    BluetoothCodecConfig.SOURCE_CODEC_TYPE_LC3 -> "LC3"
+                    else -> null
+                }
+            }.getOrNull()
         }
     }

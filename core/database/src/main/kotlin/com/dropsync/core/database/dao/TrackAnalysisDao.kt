@@ -17,6 +17,14 @@ interface TrackAnalysisDao {
     @Query("SELECT * FROM track_analysis WHERE song_id = :songId")
     suspend fun getBySongId(songId: Long): TrackAnalysisEntity?
 
+    /**
+     * Alle Cache-Eintraege einer Song-Liste in einer Abfrage; Ergebnis
+     * enthaelt nur Songs MIT Eintrag (fehlende = Cache-Miss). Basis fuer
+     * den Batch-Anstoss beim Import statt N Einzel-Queries.
+     */
+    @Query("SELECT * FROM track_analysis WHERE song_id IN (:songIds)")
+    suspend fun getBySongIds(songIds: List<Long>): List<TrackAnalysisEntity>
+
     /** Beobachtet den Cache-Eintrag eines Songs (null bis zur ersten Analyse). */
     @Query("SELECT * FROM track_analysis WHERE song_id = :songId")
     fun observeBySongId(songId: Long): Flow<TrackAnalysisEntity?>

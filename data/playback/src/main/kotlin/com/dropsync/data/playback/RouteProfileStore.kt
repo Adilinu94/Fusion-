@@ -124,7 +124,17 @@ class RouteProfileStore
                 }
 
                 OutputDeviceKind.BLUETOOTH_A2DP -> {
-                    AudioRouteProfile(key, 48_000, 2, LATENCY_BT_SBC_MS)
+                    // Codec-spezifische Latenz (Poweramp-Muster
+                    // PaBluetoothCodecConfig): LDAC/AAC liegen deutlich
+                    // ueber/unter SBC; pauschal SBC waere falsche
+                    // Praezision. Unbekannter Codec = SBC (A2DP-Fallback).
+                    val latency =
+                        when (device.bluetoothCodec) {
+                            "AAC" -> LATENCY_BT_AAC_MS
+                            "LDAC" -> LATENCY_BT_LDAC_MS
+                            else -> LATENCY_BT_SBC_MS
+                        }
+                    AudioRouteProfile(key, 48_000, 2, latency)
                 }
 
                 OutputDeviceKind.USB -> {
@@ -139,7 +149,19 @@ class RouteProfileStore
         private fun routeKey(device: OutputDeviceSnapshot): String? {
             if (device.kind == OutputDeviceKind.OTHER) return null
             val suffix = device.address?.takeIf { it.isNotBlank() } ?: device.kind.name
-            return "${device.kind.name}:$suffix"
+            // Codec als Teil des Profilschluessels (Phase 8-Ergaenzung):
+            // derselbe Kopfhoerer darf fuer SBC und LDAC getrennte
+            // Messwerte halten; die Tabelle greift nur ohne Messung.
+            val codec = device.bluetoothCodec?.takeIf { it.isNotBlank() }
+            return buildString {
+                append(device.kind.name)
+                append(':')
+                append(suffix)
+                if (codec != null) {
+                    append('#')
+                    append(codec)
+                }
+            }
         }
 
         companion object {

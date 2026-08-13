@@ -204,3 +204,15 @@ Anlass: Überprüfung gegen `WISSEN_POWERAMP_OFFTRACK` (Abschnitt 25: Waveform i
 - [x] Verifiziert: `:domain:audio`, `:core:designsystem`, `:feature:player`, `:feature:library`, `:core:database` (inkl. MigrationTest), `:data:audio`, `:app:compileDebugKotlin`, `spotlessCheck` — alle grün.
 
 **Bewertung Geschwindigkeit:** Die Analyse ist ein einmaliger WorkManager-Durchgang (MediaCodec, 256 Buckets, expedited bei Titelwechsel), danach kommt alles aus dem Room-Cache. Das Zeichnen sind 256 drawRoundRect + Reflexion auf einem Canvas ohne Allokation im Zeichenpfad — strukturell weit unterhalb der 60fps-Grenze. Echte FPS-Messung bleibt bewusst der Hardware-Abnahme vorbehalten.
+
+## P. Poweramp-Triage-Lektionen umgesetzt (2026-08-13): BT-Codec-Latenz + Batch-Import-Analyse
+
+Anlass: `D:\rev-tools\poweramp_offline_triage` tief durchsucht (native ELF-Strings, Smali, DEX-Keyword-Report) und mit unserem Player abgeglichen. Befunde, die wir übernehmen konnten:
+
+**Was Poweramp in nativ versteckt (bewusst NICHT kopiert):** Der komplette Audio-Hotpath (DSP-Thread, Resampler, Output-Puffer `output_buf_ms`/`dsp_bufs`, AAudio/OpenSL, `AudioTrack.getMinBufferSize`, `AudioManager.getProperty(OUTPUT_FRAMES_PER_BUFFER)`). Diese Strings liegen nur in `libpowerampcore.so`, nicht im DEX. Das bestätigt unsere Entscheidung (Wissensdoku Abschnitt 15/36): Media3-Decks fürs MVP, native Engine erst nach Messung.
+
+- [x] **A2DP-Codec-spezifische Latenz (Poweramp-Muster `PaBluetoothCodecConfig`):** `OutputDeviceSnapshot` führt jetzt `bluetoothCodec` (SBC/AAC/APTX/LDAC/LC3). `RouteProfileStore` nutzt AAC=80ms / LDAC=150ms statt pauschal SBC=120ms, unbekannt = SBC (ehrlicher A2DP-Fallback). Profil-Key enthält den Codec (`BLUETOOTH_A2DP:addr#AAC`), damit dasselbe Gerät für SBC/LDAC getrennte Messwerte halten kann. `AudioManager.getBluetoothCodecStatus()` ist versteckt API → Reflection mit Exception-Fallback, genau wie Poweramp es für versteckte AudioManager-Aufrufe macht (seine Logs "getProperty java exception" zeigen das Muster).
+- [x] **Batch statt N-Queries beim Import (Poweramp-Scanner-Muster: Batches bei Tausenden Titeln):** Neu `TrackAnalysisRepository.requestAnalysisForNewSongs` + `TrackAnalysisDao.getBySongIds` (eine IN-Query für alle Cache-Misses). `refreshLibrary` enqueued den Batch statt pro Song eine Cache-Abfrage + Worker-Anlage. Bei 1000 neuen Songs: 1 statt 1000 Room-Queries.
+- [x] **Bereits erfüllt (nur geprüft):** Scanner-Muster `setThreadPriority(LOWEST)` + `SystemClock.sleep` entspricht unserem WorkManager-Ansatz (lässt das System die Priorität steuern); MediaSession-Baum getrennt vom DSP (unsere `:data:playback`-Grenze); LazyList mit stabilen Keys (`mediaStoreId`) überall in der Library; Analyse-Cache versioniert mit Datei-Fingerprint.
+- [x] **Tests:** `neue songs laufen gebatcht in genau einem anstoss` (data:library); bestehende Import-/Player-/DB-Tests grün.
+- [x] Verifiziert: `:data:audio`, `:data:playback`, `:data:library`, `:feature:player`, `:core:database`, `:app:compileDebugKotlin` — alle grün.

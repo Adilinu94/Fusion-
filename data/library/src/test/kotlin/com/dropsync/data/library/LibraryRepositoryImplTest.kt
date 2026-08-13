@@ -156,6 +156,22 @@ class LibraryRepositoryImplTest {
         }
 
     @Test
+    fun `neue songs laufen gebatcht in genau einem anstoss`() =
+        runTest {
+            // Poweramp-Scanner-Muster (Triage 2026-08-13): bei grossen
+            // Bibliotheken ein Batch statt N Einzel-Aufrufe, damit die
+            // Cache-Miss-Abfrage in EINER Query laeuft.
+            gateway.audio = listOf(song(1), song(2), song(3))
+            repository.refreshLibrary(force = false)
+
+            assertEquals(1, trackAnalysis.batchRequestedSongs.size)
+            assertEquals(
+                listOf(1L, 2L, 3L),
+                trackAnalysis.batchRequestedSongs.single().map { it.mediaStoreId },
+            )
+        }
+
+    @Test
     fun `rescan stösst analyse nur fuer neue songs an`() =
         runTest {
             gateway.audio = listOf(song(1))
