@@ -146,3 +146,16 @@ Session-Kennung als Referenz.
 - [x] Verifiziert: `:data:sensor:testDebugUnitTest`, `:domain:sensor:test`, `:feature:workout:testDebugUnitTest`, `shadow_harness.py --smoke-test`, RecoFit-Harness-Lauf (2 Sessions, 20 Fenster) — alle grün.
 
 **Nächster Schritt:** Umbauplan komplett implementiert. Übrig: echte Hardware-Validierung durch Adi (5 Freigabe-Szenarien, Anleitung in `tools/golden_shadow_corpus/README.md`), danach Gate-11b-Entscheidung und Flag-Aktivierung.
+
+## K. Testinfra Schritt 2 abgeschlossen: 5b Kill-Fallback + 5c Audio-Timestamp (2026-08-13)
+
+- [x] **5b TimerService-Kill-Fallback vollständig verdrahtet:** Der Domain-Kern (`TimerEngine.snapshot()/restore()`, `RestTimerRecovery`, `DataStoreTimerSnapshotStore`) existierte bereits, war aber nirgends eingebaut. Neu:
+  - `TimerService` persistiert bei jedem Tick laufende NORMAL/REST-Timer (RUNNING/PAUSED) und leert das Snapshot bei COMPLETED/CANCELLED; schreibt den monotonen Zeitwert für die Reboot-Erkennung mit.
+  - `TimerRecoveryStarter` (neu): App-Start-Prüfung RebootGuard → Snapshot verwerfen (DEVICE_REBOOT_OR_UNKNOWN_CLOCK) oder Engine rehydrieren + Foreground-Service neu starten. Eingebunden in `DropSyncApplication.onCreate()`.
+  - DI: `TimerSnapshotStore` + `RestTimerRecovery` in `TimerDataModule`.
+  - Tests: 3 neue Robolectric-Hilt-Tests (Snapshot persistiert, nach Abschluss geleert, PAUSED mit Restzeit) + 5 neue JVM-Tests für `TimerRecoveryStarter` (Reboot verwirft, Rehydrierung startet Service, kein Snapshot = kein Start). `FakeTimerSnapshotStore` um `snapshot`-Getter ergänzt.
+- [x] **5c AudioTimestamp-Latenz:** `AudioTimestampReader`-Interface + `AudioTimestampExtrapolator` in `:domain:playback` (pur, formelgetreu `audibleFrame ≈ framePosition + (nowNs - tsNano) * rate`, Buffer-Anteil abziehbar, Warm-up-Gate fällt auf Playhead zurück, Rückwärtsuhr extrapoliert nicht). `AudioTrackTimestampReader` in `:data:playback` als echte Implementierung (bewusst noch nicht DI-verdrahtet, Media3 verwaltet den Sink). 6 JVM-Tests: Vorwärts-Extrapolation über Deltas, Warm-up-Fallback, Null-Timestamp, Rückwärtsuhr, Buffer-Abzug, invalide Sample-Rate.
+- [x] **Nebenbefund behoben:** `data:playback`-Robolectric-Tests liefen gegen SDK 36 (Java-21-Pflicht), lokal ist Java 17 → `robolectric.properties` auf sdk=34 gesetzt, `CrossfadeControllerTest`/`MediaItemFactoryTest` laufen wieder grün.
+- [x] Verifiziert: `:domain:timer:test`, `:domain:playback:test`, `:data:timer:testDebugUnitTest` (25 Tests), `:data:playback:testDebugUnitTest`, `:core:testing:test`, `:app:compileDebugKotlin` — alle grün.
+
+**Nächster Schritt:** Testinfra Schritt 2 ist damit vollständig (5a MTU war bereits im vorherigen Commit verdrahtet). Übrig aus Schritt 6: Design-Doku-Konsolidierung (Punkt 4). Danach Umbauplan Punkte 4-6 (Accel-Kanal, Multi-Template, adaptive Refraktärzeit).

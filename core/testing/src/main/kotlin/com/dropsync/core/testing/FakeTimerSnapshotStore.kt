@@ -10,6 +10,10 @@ import com.dropsync.domain.timer.TimerSnapshotStore
 class FakeTimerSnapshotStore : TimerSnapshotStore {
     private var current: TimerSnapshot? = null
 
+    /** Zuletzt gespeichertes Snapshot (null, wenn leer). */
+    val snapshot: TimerSnapshot?
+        get() = current
+
     /** Anzahl der clear()-Aufrufe, um Bereinigung zu pruefen. */
     var clearCount = 0
         private set

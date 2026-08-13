@@ -6,6 +6,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.seed.ExerciseSeeder
 import com.dropsync.data.audio.EqPresetSeeder
 import com.dropsync.data.audio.OutputProfileController
+import com.dropsync.data.timer.TimerRecoveryStarter
 import com.dropsync.feature.player.RestMusicCoordinator
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
@@ -27,6 +28,8 @@ class DropSyncApplication : Application() {
 
     @Inject lateinit var restMusicCoordinator: RestMusicCoordinator
 
+    @Inject lateinit var timerRecoveryStarter: TimerRecoveryStarter
+
     @Inject lateinit var dispatchers: DispatcherProvider
 
     override fun onCreate() {
@@ -38,6 +41,15 @@ class DropSyncApplication : Application() {
         // TimerEngine und steuert Rest-Playlist bzw. Drop-Landung, sofern
         // in den Einstellungen aktiviert (Default aus = kein Eingriff).
         restMusicCoordinator.start()
+        // Kill-Fallback (Testinfra-Plan 5b): laufenden Resttimer nach einem
+        // Xiaomi-Kill rehydrieren und den Service neu starten.
+        CoroutineScope(SupervisorJob() + dispatchers.io).launch {
+            try {
+                timerRecoveryStarter.start()
+            } catch (e: Exception) {
+                Log.e("DropSyncApplication", "Timer-Recovery fehlgeschlagen", e)
+            }
+        }
         // Standarduebungen idempotent einspielen (Schritt 3.6); der Seed
         // ueberschreibt nie Benutzerdaten und darf bei jedem Start laufen.
         CoroutineScope(SupervisorJob() + dispatchers.io).launch {

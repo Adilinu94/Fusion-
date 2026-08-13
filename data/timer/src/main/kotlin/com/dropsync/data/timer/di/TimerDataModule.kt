@@ -8,6 +8,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.data.timer.AndroidCueOutput
 import com.dropsync.data.timer.CompletionTonePlayer
 import com.dropsync.data.timer.DataStoreMonotonicStateStore
+import com.dropsync.data.timer.DataStoreTimerSnapshotStore
 import com.dropsync.data.timer.DefaultDropRestRequestBus
 import com.dropsync.data.timer.DuckingController
 import com.dropsync.data.timer.HapticsAdapter
@@ -18,10 +19,13 @@ import com.dropsync.data.timer.TimerService
 import com.dropsync.data.timer.TtsSpeaker
 import com.dropsync.domain.playback.PlayerVolumeGate
 import com.dropsync.domain.timer.CueOutput
+import com.dropsync.domain.timer.DefaultRestTimerRecovery
 import com.dropsync.domain.timer.DropRestRequestBus
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
+import com.dropsync.domain.timer.RestTimerRecovery
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
+import com.dropsync.domain.timer.TimerSnapshotStore
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -105,4 +109,23 @@ object TimerDataModule {
                 context.preferencesDataStoreFile(DataStoreMonotonicStateStore.DATA_STORE_NAME)
             },
         )
+
+    /** Kill-Fallback (Testinfra-Plan Schritt 2, 5b): Snapshot als JSON. */
+    @Provides
+    @Singleton
+    fun provideTimerSnapshotStore(
+        @ApplicationContext context: Context,
+    ): TimerSnapshotStore =
+        DataStoreTimerSnapshotStore(
+            PreferenceDataStoreFactory.create {
+                context.preferencesDataStoreFile(DataStoreTimerSnapshotStore.DATA_STORE_NAME)
+            },
+        )
+
+    /** Kill-Fallback (5b): reine Rehydrier-Entscheidung. */
+    @Provides
+    @Singleton
+    fun provideRestTimerRecovery(
+        store: TimerSnapshotStore,
+    ): RestTimerRecovery = DefaultRestTimerRecovery(store)
 }

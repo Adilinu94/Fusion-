@@ -16,9 +16,11 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import com.dropsync.core.common.Clock
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.timer.TimerMode
+import com.dropsync.domain.timer.TimerSnapshotStore
 import com.dropsync.domain.timer.TimerState
 import com.dropsync.domain.timer.TimerStatus
 import dagger.hilt.android.AndroidEntryPoint
@@ -49,6 +51,15 @@ import javax.inject.Inject
 class TimerService : Service() {
     @Inject
     lateinit var timerEngine: TimerEngine
+
+    @Inject
+    lateinit var snapshotStore: TimerSnapshotStore
+
+    @Inject
+    lateinit var monotonicStateStore: MonotonicStateStore
+
+    @Inject
+    lateinit var clock: Clock
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var tickJob: Job? = null
@@ -114,6 +125,7 @@ class TimerService : Service() {
                 while (isActive) {
                     timerEngine.evaluate()
                     val state = timerEngine.state.value
+                    persistSnapshot(state)
                     updateNotification(state)
                     if (state.status !in VISIBLE_STATUSES) {
                         stopSelfIfIdle()
@@ -122,6 +134,29 @@ class TimerService : Service() {
                     delay(NOTIFY_TICK_MS)
                 }
             }
+    }
+
+    /**
+     * Kill-Fallback (Testinfra-Plan Schritt 2, 5b): laufende NORMAL/REST-Timer
+     * werden bei jeder Tick-Aenderung persistiert, damit ein Xiaomi-Kill den
+     * Countdown nicht verliert. Endzustaende leeren das Snapshot; der letzte
+     * monotone Zeitwert wird fuer die Reboot-Erkennung mitgeschrieben.
+     */
+    private fun persistSnapshot(state: TimerState) {
+        serviceScope.launch {
+            when {
+                state.status in VISIBLE_STATUSES -> {
+                    timerEngine.snapshot()?.let { snapshotStore.save(it) }
+                }
+
+                state.status == TimerStatus.COMPLETED || state.status == TimerStatus.CANCELLED -> {
+                    snapshotStore.clear()
+                }
+
+                else -> Unit
+            }
+            monotonicStateStore.setLastElapsedRealtimeMs(clock.elapsedRealtimeMs())
+        }
     }
 
     private fun promoteToForeground(state: TimerState) {

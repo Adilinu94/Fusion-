@@ -10,6 +10,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
+// Robolectric (sdk=34, siehe robolectric.properties) fuer die Media3-
+// Data-Klassen; SDK 34 laeuft mit Java 17.
 /** Gapless-/CUE-Regeln des Crossfade (Plan Phase 4, ADR-0007). */
 @RunWith(AndroidJUnit4::class)
 class CrossfadeControllerTest {

@@ -376,14 +376,14 @@ Kaputt-Zeile (Negativtest); CI-Job läuft grün; Fixtures vorhanden.
 
 **Ziel:** Punkt 5 als durchgerüstet statt ad-hoc.
 
-- [ ] **5a MTU:** `negotiateMtu` pure Funktion + Tests (Schritt 2) in Code;
+- [x] **5a MTU:** `negotiateMtu` pure Funktion + Tests (Schritt 2) in Code;
    Diagnose-Felder (`lastNegotiatedMtu`, `parseErrors`, `duplicateReads`)
    in einen Debug-Log/Debug-Screen (Abschnitt 11 "Diagnose").
-- [ ] **5b Xiaomi:** `RestTimerRecovery` bei App-Start (Rehydrierung +
+- [x] **5b Xiaomi:** `RestTimerRecovery` bei App-Start (Rehydrierung +
    Watchdog); Robolectric-Test für "Service gekillt → Recovery startet neu";
    Hinweis-UI (App-Lock/Autostart/Batterie) als Teil von Phase 10
    (Berechtigungen + First Start).
-- [ ] **5c Latenz:** `AudioTimestampReader` + Extrapolations-Unit-Test;
+- [x] **5c Latenz:** `AudioTimestampReader` + Extrapolations-Unit-Test;
    Route-Profil lädt beim `AudioDeviceCallback`-Wechsel (Phase 6); UI zeigt
    Toleranzband, nie fixen ms-Wert.
 - [ ] **Design-Doku (Punkt 4):** Abschnitt 9 und 12 kollidierende Pläne

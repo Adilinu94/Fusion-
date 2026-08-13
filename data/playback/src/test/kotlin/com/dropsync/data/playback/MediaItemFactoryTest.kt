@@ -8,6 +8,8 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 import org.junit.runner.RunWith
 
+// Robolectric (sdk=34, siehe robolectric.properties): Uri.parse braucht
+// die Sandbox, SDK 34 laeuft mit Java 17.
 @RunWith(AndroidJUnit4::class)
 class MediaItemFactoryTest {
     private val song =
