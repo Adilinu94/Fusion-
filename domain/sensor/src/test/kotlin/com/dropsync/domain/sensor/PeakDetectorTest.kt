@@ -87,4 +87,12 @@ class PeakDetectorTest {
         detector.updateLevels(spk = 1000.0, npk = 100.0)
         assertEquals(325.0, detector.currentThreshold, 1e-6)
     }
+
+    @Test
+    fun `updateLevels from calibration profile values changes threshold`() {
+        val detector = PeakDetector()
+        assertEquals(32.5, detector.currentThreshold, 1e-6)
+        detector.updateLevels(spk = 200.0, npk = 20.0)
+        assertEquals(65.0, detector.currentThreshold, 1e-6)
+    }
 }

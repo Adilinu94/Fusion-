@@ -17,7 +17,7 @@ data class ExerciseEngineConfig(
     val envelopeCutoffHz: Double = 3.0,
     val thresholdFactor: Double = 0.25,
     val templateThreshold: Double = 0.7,
-    val minQualityScore: Double = 0.4,
+    val minQualityScore: Double = 0.55,
     val expectedProminence: Double = 50.0,
     val expectedDurationSamples: Double = 50.0,
     val hasValidCalibration: Boolean = false,
@@ -158,6 +158,12 @@ class ExerciseEnginePipeline(
 
     /** Sets the rep template (from the calibration profile). */
     fun setTemplate(template: List<Double>) = repCounter.setTemplate(template)
+
+    /** Feeds the calibration levels (SPK/NPK) into the peak detector. */
+    fun updateLevels(
+        spk: Double? = null,
+        npk: Double? = null,
+    ) = repCounter.updateLevels(spk, npk)
 
     /** Adopts a new calibration axis + bias without resetting counts. */
     fun updateCalibration(

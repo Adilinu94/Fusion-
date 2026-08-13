@@ -479,7 +479,10 @@ class TrainViewModel
                         expectedDurationSamples = profile.expectedDurationSamples,
                         hasValidCalibration = true,
                     ),
-                ).also { it.setTemplate(profile.repTemplate) }
+                ).also { engine ->
+                    engine.setTemplate(profile.repTemplate)
+                    engine.updateLevels(profile.signalPeakLevel, profile.noisePeakLevel)
+                }
             countdownJob?.cancel()
             countdownJob =
                 viewModelScope.launch {
@@ -558,9 +561,10 @@ class TrainViewModel
 
         /**
          * (Re)creates the shadow pipeline for the selected exercise (step 6).
-         * With a stored calibration profile the engine gets its template; the
-         * rotation axis/bias stay neutral (the stored profile does not carry
-         * them) - shadow accuracy is bounded by this until a full profile.
+         * The engine is created with the same rotation axis/bias and level
+         * parameters as the live engine once the profile is loaded - the
+         * shadow diff is only meaningful when both engines project the gyro
+         * signal the same way (Umbauplan Punkt 1 + 2).
          */
         private fun resetShadowEngine() {
             shadowRepCount = 0
@@ -575,19 +579,29 @@ class TrainViewModel
                     shadowEngine = null
                     return
                 }
-            shadowEngine =
-                ExerciseEnginePipeline(
-                    ExerciseEngineConfig(
-                        rotationAxis = NEUTRAL_AXIS,
-                        gyroBias = NEUTRAL_BIAS,
-                    ),
-                )
+            shadowEngine = null
             viewModelScope.launch {
                 val result = calibrationProfileRepository.load(exercise.id, deviceId)
-                val profile = (result as? AppResult.Success)?.value ?: return@launch
-                shadowEngine?.let { engine ->
-                    engine.setTemplate(profile.repTemplate)
-                    Log.d(SHADOW_TAG, "shadow template set (${profile.repTemplate.size} samples)")
+                val profile = (result as? AppResult.Success)?.value
+                shadowEngine =
+                    ExerciseEnginePipeline(
+                        ExerciseEngineConfig(
+                            rotationAxis = profile?.rotationAxis ?: NEUTRAL_AXIS,
+                            gyroBias = profile?.gyroBias ?: NEUTRAL_BIAS,
+                            expectedProminence = profile?.expectedProminence ?: 50.0,
+                            expectedDurationSamples = profile?.expectedDurationSamples ?: 50.0,
+                            hasValidCalibration = profile != null,
+                        ),
+                    )
+                profile?.let {
+                    shadowEngine?.setTemplate(it.repTemplate)
+                    shadowEngine?.updateLevels(it.signalPeakLevel, it.noisePeakLevel)
+                    Log.d(
+                        SHADOW_TAG,
+                        "shadow engine configured: axis=${it.rotationAxis}, " +
+                            "template=${it.repTemplate.size} samples, " +
+                            "spk=${it.signalPeakLevel}, npk=${it.noisePeakLevel}",
+                    )
                 }
             }
         }

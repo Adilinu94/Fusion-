@@ -31,6 +31,15 @@ android {
         compose = true
     }
 
+    testOptions {
+        unitTests {
+            // android.util.Log (Shadow-Pfad in TrainViewModel) ist in
+            // JVM-Unit-Tests ein Stub; ohne diese Option wirft jeder
+            // Log.d-Aufruf "Method not mocked" und beendet den Collector.
+            isReturnDefaultValues = true
+        }
+    }
+
 }
 
 tasks.withType<Test>().configureEach {
@@ -39,6 +48,10 @@ tasks.withType<Test>().configureEach {
     // then splits the argument and fails with "main class Files". Configure the
     // property AFTER AGP (configureEach runs last) with a space-free value.
     systemProperty("java.library.path", "C:\\dev\\jbr17\\bin")
+    // Windows appends the system PATH to java.library.path anyway, which
+    // reintroduces the spaces. Give the test worker a minimal, space-free
+    // PATH so the unquoted argument survives the launcher.
+    environment("PATH", "C:\\dev\\jbr17\\bin;C:\\Windows\\System32;C:\\Windows")
 }
 
 dependencies {

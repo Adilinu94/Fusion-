@@ -25,18 +25,29 @@ import org.junit.Test
  * PeakDetector + RepCounter (inkl. Pending-Window-Erweiterung,
  * PhaseValidator, QualityScorer) verifiziert: liefert deterministisch
  * genau 2 gezaehlte Reps.
+ *
+ * WICHTIG (Korrektur 2026-08-13): die urspruengliche peakShape endete
+ * abrupt bei -100 und sprang auf 0 zurueck. Der OneEuro-Filter macht
+ * daraus einen langen negativen Tail, das Pending-Window schliesst erst
+ * ueber MAX_EXTRA_PHASE_SAMPLES (120), und der PhaseValidator lehnt das
+ * Fenster als asymmetrisch ab (pos=17, neg=122). Die urspruengliche
+ * Python-"Verifikation" hatte die Pending-Logik nicht nachgebildet.
+ * Neue Form: rein positives Dreieck (0 -> 60 -> 0 in je 15 Samples) -
+ * kein negativer Anteil, Pending schliesst sofort, deterministisch
+ * 2 Reps auch mit minScore=0.55 (Score ~0.72).
  */
 class ExerciseEnginePipelineIsolationTest {
-    // Identisch zur peakShape in RepPipelineTest.kt: 0 -> 200 in 10
-    // Schritten, 200 -> -100 in 14 Schritten - ein sauber erkennbarer Rep.
+    // Rein positives Dreieck: 0 -> 60 in 15 Schritten, 60 -> 0 in 15
+    // Schritten. Ein sauber erkennbarer Rep ohne negativen Signalanteil.
     private fun repExcursion(): List<Double> =
-        (0..10).map { 200.0 * it / 10.0 } + (1..14).map { 200.0 - 300.0 * it / 14.0 }
+        (1..15).map { 60.0 * it / 15.0 } + (1..15).map { 60.0 - 60.0 * it / 15.0 }
 
     // 60 ruhige Samples (> settleSamples=50 der SignalChain), zwei Reps mit
-    // je 40 ruhigen Samples Abstand (> Refraktaerzeit von 25 Samples bei
-    // 50 Hz). Numerisch verifiziert: exakt 2 gezaehlte Reps.
+    // je 60 ruhigen Samples Abstand (> Refraktaerzeit von 25 Samples bei
+    // 50 Hz), danach 40 ruhige Samples. Numerisch verifiziert
+    // (sim_search.py): exakt 2 gezaehlte Reps, auch mit minScore=0.55.
     private fun twoRepRawStream(): List<Double> =
-        List(60) { 0.0 } + repExcursion() + List(40) { 0.0 } + repExcursion() + List(40) { 0.0 }
+        List(60) { 0.0 } + repExcursion() + List(60) { 0.0 } + repExcursion() + List(40) { 0.0 }
 
     @Test
     fun `zwei Pipeline-Instanzen mit unterschiedlicher Achse teilen keinen Zustand`() {
@@ -89,5 +100,42 @@ class ExerciseEnginePipelineIsolationTest {
         live.reset()
         assertEquals(0, live.repCount.value)
         assertEquals("shadow darf von live.reset() nicht beruehrt werden", 2, shadow.repCount.value)
+    }
+
+    @Test
+    fun `updateLevels propagates to peak detector`() {
+        // Ohne updateLevels zaehlt der Stream deterministisch 2 Reps
+        // (theta=32.5). Nach updateLevels(1000, 100) ist theta=325, die
+        // Amplitude 60 liegt darunter - die Pipeline zaehlt 0 Reps. Das
+        // beweist die Durchreichung Pipeline -> RepCounter -> PeakDetector.
+        val engine =
+            ExerciseEnginePipeline(
+                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
+            )
+        twoRepRawStream().forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0)
+        }
+        assertEquals(2, engine.repCount.value)
+
+        engine.reset()
+        engine.updateLevels(spk = 1000.0, npk = 100.0)
+        twoRepRawStream().forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0)
+        }
+        assertEquals(
+            "nach updateLevels(1000, 100) ist theta=325 > Amplitude 60: kein Rep",
+            0,
+            engine.repCount.value,
+        )
+    }
+
+    @Test
+    fun `config default minQualityScore is 0_55`() {
+        // Umbauplan Punkt 3: Config-Default muss dem QualityScorer-Default
+        // (0.55) entsprechen - der Scorer-Default ist der aus der
+        // Dart-Vorlage validierte Wert.
+        val config =
+            ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0))
+        assertEquals(0.55, config.minQualityScore, 1e-9)
     }
 }

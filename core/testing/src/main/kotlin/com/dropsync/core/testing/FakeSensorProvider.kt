@@ -34,6 +34,10 @@ class FakeSensorProvider : SensorProvider {
         )
     }
 
+    fun emit(sample: SensorSample) {
+        _samples.tryEmit(sample)
+    }
+
     fun setConnectionState(state: SensorConnectionState) {
         _connectionState.value = state
     }

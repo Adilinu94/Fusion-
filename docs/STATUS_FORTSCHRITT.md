@@ -104,3 +104,16 @@ Session-Kennung als Referenz.
 - [!] **Nicht mit echtem `./gradlew test` verifiziert** (kein Gradle-Netzwerkzugriff in dieser Sandbox) — nur Code-Audit + Klammer-/Referenz-Abgleich per Hand. Vor dem nächsten Schritt lokal gegenprüfen.
 
 **Nächster Schritt:** `./gradlew test` lokal verifizieren (deckt jetzt auch diese Runde ab), danach echte JSONL-Persistenz für den Recorder oder der ViewModel-Level-Isolationstest.
+
+## G. Heutige Session (2026-08-13): Umbauplan SOFORT-Punkte 1-3 umgesetzt
+
+- [x] **Windows/Gradle-Testumgebung repariert.** Zwei Blocker gefunden und behoben:
+  - Der Test-Executor crashte mit `Hauptklasse Files konnte nicht gefunden werden`: Gradle 9.5 quotet `-Djava.library.path` nicht; der vollständige System-PATH (mit `C:\Program Files\...`) zerriss das Argument. Fix: echter PATH-freier Wert + minimaler Worker-PATH in `feature/workout/build.gradle.kts`. Zusätzlich zeigte die Junction `C:\dev\jbr17` auf Android Studios JBR (inzwischen JDK 25); sie wurde auf ein echtes Temurin JDK 17 umgebogen (`C:\Program Files\Eclipse Adoptium\jdk-17.0.20.8-hotspot`).
+  - `TrainViewModelTest` hing im `runTest`-Cleanup: der 250-ms-Ticker läuft im `viewModelScope` (nicht im `backgroundScope`) und lässt den Test-Scheduler nie idle werden. Fix: `withViewModel`-Helper in beiden ViewModel-Tests, der den Scope am Testende cancelt. Zusätzlich `isReturnDefaultValues = true` in `feature/workout/build.gradle.kts` (android.util.Log im Shadow-Collector).
+- [x] **Umbauplan Punkt 1:** `TrainViewModel.resetShadowEngine()` erstellt die Shadow-Engine jetzt mit Profil-Achse/Bias (und erwarteter Prominenz/Dauer) nach dem asynchronen Laden; ohne Profil weiter neutral.
+- [x] **Umbauplan Punkt 2a:** `CalibrationViewModel.confirmAndSave()` speichert `signalPeakLevel = theta + expectedProminence` (SPK) und `noisePeakLevel = theta * 0.5` (NPK) statt `theta`/`baseline` direkt.
+- [x] **Umbauplan Punkt 2b:** `updateLevels(spk, npk)`-Durchreichung über `ExerciseEnginePipeline` → `RepCounter` → `PeakDetector`; `startCountedSet()` und `resetShadowEngine()` rufen sie mit den Profilwerten auf.
+- [x] **Umbauplan Punkt 3:** `ExerciseEngineConfig.minQualityScore`-Default von 0.4 auf 0.55 angehoben (konsistent mit dem `QualityScorer`-Default).
+- [x] **Tests:** `ExerciseEnginePipelineIsolationTest` war nie grün — der alte `peakShape`-Stream (abrupt -100 → 0) ließ die Pending-Window-Erweiterung erst über das 120-Sample-Limit schließen, der PhaseValidator lehnte dann als asymmetrisch ab. Die "Python-Verifikation" im Kommentar hatte die Pending-Logik nicht nachgebildet. Neuer Stream (rein positives Dreieck) zählt deterministisch 2 Reps. Neu: `CalibrationControllerWizardTest` (synthetischer Voll-Durchlauf REST→REVIEW) und `CalibrationViewModelTest` (SPK/NPK-Invariante). Verifiziert mit echtem Gradle: `:domain:sensor:test`, `:core:testing:test`, `:feature:workout:testDebugUnitTest` — alle grün.
+
+**Nächster Schritt:** MITTELFRISTIGE Punkte 4-6 (Accel-Kanal, Multi-Template, adaptive Refraktärzeit) oder LANGFRISTIG Gate 11b. Die offenen Punkte aus Abschnitt F (JSONL-Persistenz, MTU-Negotiator) bleiben bestehen.

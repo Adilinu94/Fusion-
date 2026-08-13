@@ -183,6 +183,12 @@ class RepCounter(
 
     fun setTemplate(template: List<Double>) = templateMatcher.setTemplate(template)
 
+    /** Feeds the calibration levels (SPK/NPK) into the peak detector. */
+    fun updateLevels(
+        spk: Double? = null,
+        npk: Double? = null,
+    ) = peakDetector.updateLevels(spk, npk)
+
     val hasTemplate: Boolean
         get() = templateMatcher.hasTemplate
 
