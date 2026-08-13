@@ -25,6 +25,7 @@ class SignalChain(
     private val settleSamples: Int = 50,
     private val accelEnabled: Boolean = false,
     private val accelOneEuroMinCutoff: Double = 2.0,
+    private val orientationTracker: OrientationTracker? = null,
 ) {
     private var samplesSeen = 0
     private val oneEuro = OneEuroFilter(oneEuroMinCutoff, oneEuroBeta, sampleRateHz)
@@ -50,7 +51,18 @@ class SignalChain(
         val dx = gx - gyroBias[0]
         val dy = gy - gyroBias[1]
         val dz = gz - gyroBias[2]
-        val rawGp = dx * rotationAxis[0] + dy * rotationAxis[1] + dz * rotationAxis[2]
+        // Punkt 8: online axis tracking - der Madgwick-Filter dreht die
+        // kalibrierte Achse in das aktuelle Sensor-Koordinatensystem.
+        val tracker = orientationTracker
+        tracker?.update(ax, ay, az, gx, gy, gz)
+        val axis =
+            if (tracker == null) {
+                rotationAxis
+            } else {
+                val (rx, ry, rz) = tracker.rotateVector(rotationAxis[0], rotationAxis[1], rotationAxis[2])
+                doubleArrayOf(rx, ry, rz)
+            }
+        val rawGp = dx * axis[0] + dy * axis[1] + dz * axis[2]
         val filtered = oneEuro.process(rawGp)
         val env = envelope.process(abs(filtered))
         val accelDev = if (accelEnabled) abs(sqrt(ax * ax + ay * ay + az * az) - 1.0) else 0.0

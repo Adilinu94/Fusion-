@@ -387,6 +387,26 @@ class TrainViewModelTest {
             }
         }
 
+    @Test
+    fun `Shadow-Recorder Lifecycle startet im init und endet bei finishExercise und disconnect`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                // init -> startSession genau einmal.
+                assertEquals("init muss eine Recording-Session starten", 1, shadowSessionRecorder.started.size)
+                assertEquals(0, shadowSessionRecorder.ended)
+
+                vm.finishExercise()
+                assertEquals("finishExercise muss die Session beenden", 1, shadowSessionRecorder.ended)
+
+                vm.disconnectSensor()
+                assertEquals(
+                    "disconnectSensor muss die Session ebenfalls beenden",
+                    2,
+                    shadowSessionRecorder.ended,
+                )
+            }
+        }
+
     // --- Fakes ------------------------------------------------------------
     // Sensor/FlatSet/Workout/RestTimerPrefs/Clock/CalibrationProfile kommen
     // aus :core:testing (Testinfra-Umbau Schritt 2); nur der hier spezifische
@@ -394,9 +414,19 @@ class TrainViewModelTest {
 
     private class FakeShadowSessionRecorder : ShadowSessionRecorder {
         val recorded = mutableListOf<ShadowDiffEvent>()
+        var started: MutableList<String> = mutableListOf()
+        var ended: Int = 0
+
+        override fun startSession(sessionId: String) {
+            started += sessionId
+        }
 
         override fun recordSet(event: ShadowDiffEvent) {
             recorded += event
+        }
+
+        override fun endSession() {
+            ended++
         }
     }
 

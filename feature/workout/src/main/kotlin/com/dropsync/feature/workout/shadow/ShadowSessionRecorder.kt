@@ -18,7 +18,9 @@ package com.dropsync.feature.workout.shadow
  * [NoOpShadowSessionRecorder].
  */
 interface ShadowSessionRecorder {
+    fun startSession(sessionId: String)
     fun recordSet(event: ShadowDiffEvent)
+    fun endSession()
 }
 
 /**
@@ -54,5 +56,7 @@ data class ShadowDiffEvent(
  * without committing to unverified Android storage APIs in this slice.
  */
 class NoOpShadowSessionRecorder : ShadowSessionRecorder {
+    override fun startSession(sessionId: String) = Unit
     override fun recordSet(event: ShadowDiffEvent) = Unit
+    override fun endSession() = Unit
 }

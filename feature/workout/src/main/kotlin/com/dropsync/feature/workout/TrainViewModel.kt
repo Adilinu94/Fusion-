@@ -42,6 +42,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import java.util.UUID
 import javax.inject.Inject
 
 /**
@@ -140,6 +141,7 @@ class TrainViewModel
         /** Rule (design step 5): finish exercise cancels the timer at once. */
         fun finishExercise() {
             logShadowDiff("finishExercise")
+            shadowSessionRecorder.endSession()
             timerEngine.cancel(CancelReason.USER)
             timerEngine.reset()
             _selectedExercise.value = null
@@ -339,6 +341,7 @@ class TrainViewModel
         /** Disconnects the chip; the provider falls back to the fake. */
         fun disconnectSensor() {
             logShadowDiff("disconnect")
+            shadowSessionRecorder.endSession()
             viewModelScope.launch { sensorProvider.disconnect() }
         }
 
@@ -409,6 +412,9 @@ class TrainViewModel
 
         init {
             loadRecentSets()
+            // Shadow-Diff-Harness Schritt 2/3: eine Recording-Session pro
+            // ViewModel-Leben; der NoOp-Recorder in Tests ignoriert das.
+            shadowSessionRecorder.startSession(UUID.randomUUID().toString().take(8))
             // Same engine tick as TimerViewModel: evaluate() is idempotent,
             // the tick is never the completion source (design step 7.1).
             // The ticker is a separate flow so tests can drive it from

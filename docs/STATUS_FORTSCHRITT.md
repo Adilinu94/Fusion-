@@ -126,3 +126,13 @@ Session-Kennung als Referenz.
 - [x] Verifiziert mit echtem Gradle: `:domain:sensor:test`, `:feature:workout:testDebugUnitTest`, `:core:testing:test`, `:domain:timer:test`, `:domain:workout:test` — alle grün.
 
 **Nächster Schritt:** LANGFRISTIGE Punkte 7-9. Punkt 7 (Gate 11b) braucht zuerst die JSONL-Persistenz aus Abschnitt F; Punkte 8 (Madgwick) und 9 (RecoFit-Bootstrap) sind unabhängig davon.
+
+## I. Langfristige Punkte 7-9 umgesetzt (2026-08-13, Fortsetzung)
+
+- [x] **Punkt 7a (JSONL-Persistenz):** `ShadowSessionRecorder`-Interface um `startSession`/`endSession` erweitert; `JsonlShadowSessionRecorder` schreibt `session_start`/`set`/`session_end`-Zeilen nach `/Android/data/<pkg>/files/recordings/<session>.jsonl`. `ShadowRecorderModule` ist jetzt ein `@Binds`-Modul auf die echte Implementierung (Hilt-Transform `transformDebugClassesWithAsm` mit `--rerun-tasks` verifiziert). `TrainViewModel` startet eine Session im `init` und beendet sie in `finishExercise`/`disconnectSensor`; neuer Lifecycle-Test in `TrainViewModelTest` (Fake-Recorder zählt start/end).
+- [x] **Punkt 7b (Harness):** `tools/shadow_harness.py` liest JSONL+Manifest-Paare, wertet mit der D3-Wahrheits-Priorität (known_active_reps > edited confirmedReps > no truth) und produziert PASS/FAIL pro Szenario (Exact-Match 100%, MAE 0, min. 3 Sessions). `--smoke-test` generiert synthetische Fixtures und ist grün (inkl. no_truth-Pfad-Check). `tools/golden_shadow_corpus/README.md` dokumentiert Schema und Kurations-Workflow (7c).
+- [x] **Punkt 8 (Madgwick):** `OrientationTracker` (6 DOF, gyro+accel, Paper-Gleichungen mit korrigiertem Update-Vorzeichen) in `domain/sensor`; `SignalChain` kann ihn per Konstruktor-Injektion aktivieren und rotiert die kalibrierte Achse damit online nach (`ExerciseEngineConfig.orientationTrackingEnabled`, default false). Tests: Identität/Reset, Einheits-Quaternion unter Bewegung, exakte statische Rotationen, konsistente dynamische Konvergenz (90°/s um Y), Vektorlängen-Erhalt, SignalChain-Invarianz in Ruhe.
+- [x] **Punkt 9 (externe Korpora):** `tools/recofit_bootstrap.py` (RecoFit .mat → JSONL + Manifest, robuste Feldnamen-Varianten) und `tools/mmfit_bootstrap.py` (MM-Fit CSV/JSON → JSONL, multi-device) erstellt; beide kompatibel zum Harness. Kuration/Validierung (9c) braucht echte Datensatz-Downloads (bewusst außerhalb dieses Commits).
+- [x] Verifiziert: `:domain:sensor:test` (58 Tests), `:feature:workout:testDebugUnitTest`, Hilt-ASM-Transform mit `--rerun-tasks`, `python tools/shadow_harness.py --smoke-test` — alle grün.
+
+**Nächster Schritt:** Alle Punkte des Umbauplans sind implementiert. Offen bleibt die echte Hardware-/Korpus-Validierung (Abschnitt 11b, Punkte 7c/9c) und die offenen Punkte aus Abschnitt F (MTU-Negotiator).

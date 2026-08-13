@@ -25,6 +25,8 @@ data class ExerciseEngineConfig(
     val accelEnabled: Boolean = false,
     /** Punkt 5: Groesse des Template-Pools (Formdrift). */
     val templatePoolSize: Int = 5,
+    /** Punkt 8: Madgwick-Orientierungs-Tracking der kalibrierten Achse. */
+    val orientationTrackingEnabled: Boolean = false,
 ) {
     init {
         require(rotationAxis.size == 3) { "rotationAxis must have 3 components" }
@@ -70,6 +72,7 @@ class ExerciseEnginePipeline(
             oneEuroBeta = config.oneEuroBeta,
             envelopeCutoffHz = config.envelopeCutoffHz,
             accelEnabled = config.accelEnabled,
+            orientationTracker = if (config.orientationTrackingEnabled) OrientationTracker() else null,
         )
 
     private val qualityScorer =
