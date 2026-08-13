@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.chart.Waveform
+import com.dropsync.core.designsystem.chart.WaveformMapping
 import com.dropsync.core.designsystem.chart.WaveformPlaceholder
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
@@ -104,6 +105,7 @@ fun NowPlayingScreen(
 
     var menuOpen by remember { mutableStateOf(false) }
     var createMarkerAtMs by remember { mutableStateOf<Long?>(null) }
+    var deleteMarker by remember { mutableStateOf<SongMarker?>(null) }
     val shownPositionMs = livePosition ?: state.positionMs
 
     Scaffold(
@@ -186,7 +188,20 @@ fun NowPlayingScreen(
                 markers = markers,
                 onTogglePlayPause = viewModel::togglePlayPause,
                 onSeek = viewModel::seekTo,
-                onLongPressAt = { createMarkerAtMs = it },
+                onLongPressAt = { fraction ->
+                    // Phase 8: Long-Press nahe einem Marker-Tick loescht den
+                    // Marker (nach Bestaetigung), sonst setzen (Label-Dialog).
+                    val nearest =
+                        WaveformMapping.nearestMarkerIndex(
+                            fractions = markers.map { (it.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f) },
+                            fraction = fraction,
+                        )
+                    if (nearest >= 0) {
+                        deleteMarker = markers[nearest]
+                    } else {
+                        createMarkerAtMs = (fraction * state.durationMs).toLong()
+                    }
+                },
                 onMoveMarker = { fraction ->
                     val marker =
                         markers.minByOrNull {
@@ -208,6 +223,17 @@ fun NowPlayingScreen(
                 createMarkerAtMs = null
             },
             onDismiss = { createMarkerAtMs = null },
+        )
+    }
+
+    deleteMarker?.let { marker ->
+        DeleteMarkerDialog(
+            marker = marker,
+            onConfirm = {
+                viewModel.deleteMarker(marker.id)
+                deleteMarker = null
+            },
+            onDismiss = { deleteMarker = null },
         )
     }
 }
@@ -360,7 +386,7 @@ private fun WaveformProgress(
     markers: List<SongMarker>,
     onTogglePlayPause: () -> Unit,
     onSeek: (Long) -> Unit,
-    onLongPressAt: (Long) -> Unit,
+    onLongPressAt: (Float) -> Unit,
     onMoveMarker: (Float) -> Unit,
 ) {
     var scrubPositionMs by remember { mutableStateOf<Long?>(null) }
@@ -386,9 +412,7 @@ private fun WaveformProgress(
                         },
                         markerFractions =
                             markers.map { (it.positionMs.toFloat() / safeDuration).coerceIn(0f, 1f) },
-                        onLongPress = { fraction ->
-                            onLongPressAt((fraction * safeDuration).toLong())
-                        },
+                        onLongPress = { fraction -> onLongPressAt(fraction) },
                         onMoveMarker = onMoveMarker,
                         contentDescription = stringResource(R.string.now_playing_waveform),
                         modifier = Modifier.fillMaxSize(),
@@ -493,6 +517,43 @@ private fun CreateMarkerDialog(
         confirmButton = {
             TextButton(onClick = { onConfirm(label) }) {
                 Text(stringResource(R.string.now_playing_marker_add_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.now_playing_marker_cancel))
+            }
+        },
+    )
+}
+
+/**
+ * Bestaetigungsdialog zum Loeschen eines Markers (Phase 8): Long-Press
+ * nahe einem Tick fragt nach, bevor ein Marker verschwindet.
+ */
+@Composable
+private fun DeleteMarkerDialog(
+    marker: SongMarker,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.now_playing_marker_delete_title)) },
+        text = {
+            Text(
+                text =
+                    stringResource(
+                        R.string.now_playing_marker_delete_message,
+                        marker.label.ifEmpty { stringResource(R.string.now_playing_marker_default_label) },
+                        formatTimeMs(marker.positionMs),
+                    ),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.now_playing_marker_delete_confirm))
             }
         },
         dismissButton = {

@@ -26,10 +26,14 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // Waveform im Poweramp-Stil (Marker/Waveform-Plan Phase 3): eigene
 // Compose-Canvas-Zeichnung wie LineChart/BarChart, keine neue
@@ -82,6 +86,22 @@ object WaveformMapping {
         x: Float,
         width: Float,
     ): Float = if (width <= 0f) 0f else (x / width).coerceIn(0f, 1f)
+
+    /**
+     * Index des Markers nahe [fraction] innerhalb [slop], sonst -1.
+     * Grundlage fuer "Long-Press nahe Tick loescht statt zu setzen"
+     * (Phase 4/8) und den Marker-Drag-Start.
+     */
+    fun nearestMarkerIndex(
+        fractions: List<Float>,
+        fraction: Float,
+        slop: Float = 0.03f,
+    ): Int {
+        if (fractions.isEmpty()) return -1
+        val index =
+            fractions.indices.minByOrNull { abs(fractions[it] - fraction) } ?: return -1
+        return if (abs(fractions[index] - fraction) <= slop) index else -1
+    }
 }
 
 /** Anteil der Hoehe fuer die gespiegelte Reflexion unter der Grundlinie. */
@@ -150,10 +170,23 @@ fun Waveform(
         label = "waveform_progress",
     )
 
+    val shownFraction =
+        if (scrubFraction >= 0f) scrubFraction else animatedProgress.coerceIn(0f, 1f)
     val desc = contentDescription
     val semanticsModifier =
         if (desc != null) {
-            modifier.semantics { this.contentDescription = desc }
+            modifier.semantics {
+                this.contentDescription = desc
+                // A11y (Phase 8/9): Fortschritt als 0..100-Range + gesprochene
+                // Prozentzahl, damit TalkBack die Position ohne Slider mitbekommt.
+                this.progressBarRangeInfo =
+                    ProgressBarRangeInfo(
+                        current = (shownFraction * 100f).roundToInt().coerceIn(0, 100).toFloat(),
+                        range = 0f..100f,
+                        steps = 0,
+                    )
+                this.stateDescription = "${(shownFraction * 100f).roundToInt()}%"
+            }
         } else {
             modifier
         }
@@ -221,8 +254,6 @@ fun Waveform(
         val bars = WaveformMapping.mapToBars(buckets, size.width, mainHeight)
         if (bars.isEmpty()) return@Canvas
 
-        val shownFraction =
-            if (scrubFraction >= 0f) scrubFraction else animatedProgress.coerceIn(0f, 1f)
         val playedX = shownFraction * size.width
         val corner = CornerRadius(1.dp.toPx(), 1.dp.toPx())
         val baselineY = mainHeight
@@ -318,5 +349,46 @@ fun WaveformPlaceholder(
             size = Size(size.width, barHeight),
             cornerRadius = CornerRadius(3.dp.toPx(), 3.dp.toPx()),
         )
+    }
+}
+
+/**
+ * Nicht-interaktive Mini-Waveform fuer Listen (Library, Phase 8):
+ * reine Optik ohne Gesten/Ticker. [buckets] sind Min/Max-Paare in
+ * [-1..1]; [progressFraction] faerbt den gespielten Anteil Lime.
+ * Keine Analyse vorhanden -> Aufrufer zeigt nichts bzw. einen
+ * Platzhalter; die Zeile bleibt so schlank.
+ */
+@Composable
+fun MiniWaveform(
+    buckets: List<Pair<Float, Float>>,
+    progressFraction: Float,
+    modifier: Modifier = Modifier,
+    contentDescription: String? = null,
+) {
+    val playedColor = MaterialTheme.colorScheme.primary
+    val restColor = MaterialTheme.colorScheme.outlineVariant
+    val desc = contentDescription
+    val semanticsModifier =
+        if (desc != null) {
+            modifier.semantics { this.contentDescription = desc }
+        } else {
+            modifier
+        }
+    Canvas(modifier = semanticsModifier) {
+        if (buckets.isEmpty()) return@Canvas
+        val bars = WaveformMapping.mapToBars(buckets, size.width, size.height, gapFraction = 0.35f)
+        if (bars.isEmpty()) return@Canvas
+        val playedX = progressFraction.coerceIn(0f, 1f) * size.width
+        val corner = CornerRadius(1.dp.toPx(), 1.dp.toPx())
+        bars.forEach { bar ->
+            val played = bar.left + bar.width / 2f <= playedX
+            drawRoundRect(
+                color = if (played) playedColor else restColor,
+                topLeft = Offset(bar.left, bar.top),
+                size = Size(bar.width, bar.height),
+                cornerRadius = corner,
+            )
+        }
     }
 }

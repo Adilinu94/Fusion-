@@ -8,6 +8,7 @@ import com.dropsync.core.common.onSuccess
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.TrackAnalysisRepository
+import com.dropsync.domain.audio.WaveformBucket
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.Genre
@@ -23,6 +24,7 @@ import com.dropsync.domain.library.SmartShuffle
 import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.library.SongSort
 import com.dropsync.domain.playback.PlaybackRepository
+import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -43,6 +45,30 @@ import javax.inject.Inject
 
 /** Sichtbarer Zustand der Bibliothek (Schritt 12.3: Berechtigung -> Bibliothek -> Play). */
 enum class LibraryError { NONE, PERMISSION_MISSING, SCAN_FAILED }
+
+/** Fortschritt des laufenden Titels fuer die Library-Waveform (Phase 8). */
+data class CurrentProgress(
+    val songId: Long,
+    val fraction: Float,
+)
+
+/** Fortschritt des laufenden Titels aus dem Player-Zustand; null ohne Titel. */
+internal fun progressFromState(state: PlaybackState): CurrentProgress? {
+    val songId = state.currentSongId ?: return null
+    val fraction =
+        if (state.durationMs > 0) {
+            (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    return CurrentProgress(songId, fraction)
+}
+
+/** Normalisierte Min/Max-Paare fuer die Mini-Waveform; null ohne Buckets. */
+internal fun normalizeBuckets(buckets: List<WaveformBucket>): List<Pair<Float, Float>>? =
+    buckets
+        .takeIf { it.isNotEmpty() }
+        ?.map { bucket -> bucket.min / 127f to bucket.max / 127f }
 
 /** Auswaehlbare Bibliotheksansichten (Plan Phase 6, Punkt 2). */
 enum class LibraryView {
@@ -132,6 +158,25 @@ class LibraryViewModel
         /** Aktuelle Warteschlange (Kategorie "Warteschlange", Poweramp-Umbau). */
         val queue: StateFlow<List<QueueItem>> =
             playbackRepository.state.map { it.queue }.asState(emptyList())
+
+        /**
+         * Fortschritt des laufenden Titels fuer die Library-Waveform
+         * (Phase 8): songId + gespielter Anteil [0..1]; null ohne Titel.
+         */
+        val currentProgress: StateFlow<CurrentProgress?> =
+            playbackRepository.state.map(::progressFromState).asState(null)
+
+        /**
+         * Analyse-Waveform eines Songs als normalisierte Min/Max-Paare
+         * fuer die Mini-Waveform in Listen (Phase 8); null bis zur
+         * fertigen Analyse (oder dauerhaft ohne Cache-Eintrag). Es wird
+         * nur gelesen, nie angestossen — die Analyse stösst der
+         * PlayerViewModel beim Abspielen an (Import bleibt schnell).
+         */
+        fun waveformFor(songId: Long): Flow<List<Pair<Float, Float>>?> =
+            trackAnalysisRepository.observeAnalysis(songId).map { analysis ->
+                analysis?.waveformBuckets?.let(::normalizeBuckets)
+            }
 
         /** Position des laufenden Titels in der Warteschlange; -1 wenn leer. */
         val queueIndex: StateFlow<Int> =

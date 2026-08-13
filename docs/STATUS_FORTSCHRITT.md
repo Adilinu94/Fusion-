@@ -182,3 +182,13 @@ Session-Kennung als Referenz.
 - [x] Verifiziert: `:domain:timer`, `:domain:playback`, `:domain:audio`, `:data:timer` (25 Tests), `:data:audio`, `:data:playback`, `:feature:player`, `:feature:workout`, `:app:compileDebugKotlin`, `spotlessCheck` — alle grün.
 
 **Nächster Schritt:** Phase 8 (Waveform-Rendering/Scrubbing/Marker-UI auf Basis der Phase-5-Daten) und danach Phase 9 (Train-Hero-Politur). Bewusst noch offen aus Phase 6/7: echte Latenz-Messung (AudioTrack-Timestamp-Verdrahtung), Underrun-Monitoring/MISSED_UNDERRUN, Route-Wechsel → BEST_EFFORT-Hinweis (Profil ist da, UI-Text existiert).
+
+## N. Phase 8 umgesetzt (2026-08-13): Library-Waveform, Marker direkt auf der Waveform, A11y
+
+- [x] **Library-Waveform (Schritt 1/2):** `MiniWaveform` im Designsystem (nicht-interaktiv, Lime-Anteil = gespielter Fortschritt des laufenden Titels); `LibraryViewModel.currentProgress` + `waveformFor(songId)` (nur lesend aus dem Analyse-Cache, kein Anstoßen beim Scrollen); `SongColumn`/`SongRow` zeigen die Mini-Waveform rechts (84×24 dp), sobald die Analyse vorliegt; laufender Titel zeigt den Fortschritt. Verdrahtet in `SongCategoryScreen` und `CollectionSongScreen`; Grid/Kompakt/Playlist bleiben schlank (bewusst).
+- [x] **Marker direkt auf der Waveform (Schritt 3):** Long-Press nahe einem Tick (Slop 3 %) löscht den Marker nach Bestätigung statt einen neuen zu setzen (`WaveformMapping.nearestMarkerIndex`, `DeleteMarkerDialog`); Long-Press auf freier Fläche setzt weiterhin über den Label-Dialog. Drag nahe einem Tick verschiebt (bestand schon), Tap springt. Die Drop-Landung nutzt die verschobene Position automatisch (Coordinator liest die Marker-Position).
+- [x] **A11y:** Waveform meldet `progressBarRangeInfo` (0..100) + `stateDescription` (Prozent), damit TalkBack die Position ohne Slider vorliest; Beschreibungstext um die Lösch-Geste ergänzt (de/en).
+- [x] **Tests:** `nearestMarkerIndex` (Slop-Treffer/Fehlschlag/leer), `LibraryWaveformMathTest` (Fortschritt klemmt, Bucket-Normalisierung, leere Buckets → null) neu; bestehende Waveform-/Player-Tests unverändert grün.
+- [x] Verifiziert: `:feature:library`, `:core:designsystem`, `:feature:player`, `:domain:timer`, `:app:compileDebugKotlin`, `spotlessCheck` — alle grün.
+
+**Nächster Schritt:** Phase 9 (Train-Hero-Politur: Rep-Zahl groß, Waveform unter Hero, Gewicht-Reihe, +/- Pill, Timer-Pille, Mini-Player-Badges, Swipe-Pager, Leerzustände mit CTA, Verlaufs-Chart, Undo). Hinweis: 60fps-Scrubbing ist auf dem 256-Bucket-Canvas (einfache drawRoundRect-Schleife) strukturell unkritisch, aber bewusst nicht instrumentiert gemessen — das bleibt ein Punkt für die Hardware-Abnahme.

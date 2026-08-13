@@ -10,7 +10,7 @@
     <string name="now_playing_add_marker">Marker hier setzen</string>
     <string name="now_playing_empty">Gerade laeuft nichts.</string>
     <string name="now_playing_cover">Albumcover</string>
-    <string name="now_playing_waveform">Wellenform: Tippen springt, Ziehen zeigt Vorschau</string>
+    <string name="now_playing_waveform">Wellenform: Tippen springt, Ziehen zeigt Vorschau, Langdruck setzt oder loescht einen Marker</string>
     <string name="now_playing_waveform_loading">Wellenform wird analysiert</string>
     <string name="now_playing_marker_add_title">Marker setzen</string>
     <string name="now_playing_marker_add_position">Position: %1$s</string>

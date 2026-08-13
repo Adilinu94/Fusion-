@@ -79,4 +79,22 @@ class WaveformBucketMappingTest {
         assertEquals(1f, WaveformMapping.fractionAt(250f, 100f), 1e-6f)
         assertEquals(0f, WaveformMapping.fractionAt(50f, 0f), 1e-6f)
     }
+
+    @Test
+    fun `nearestMarkerIndex findet den naechsten Tick innerhalb des Slops`() {
+        val markers = listOf(0.2f, 0.5f, 0.8f)
+
+        assertEquals(1, WaveformMapping.nearestMarkerIndex(markers, 0.51f))
+        assertEquals(0, WaveformMapping.nearestMarkerIndex(markers, 0.2f))
+        assertEquals(2, WaveformMapping.nearestMarkerIndex(markers, 0.79f))
+    }
+
+    @Test
+    fun `nearestMarkerIndex ausserhalb des Slops liefert minus eins`() {
+        val markers = listOf(0.2f, 0.5f)
+
+        assertEquals(-1, WaveformMapping.nearestMarkerIndex(markers, 0.4f))
+        assertEquals(-1, WaveformMapping.nearestMarkerIndex(markers, 0.9f))
+        assertEquals(-1, WaveformMapping.nearestMarkerIndex(emptyList(), 0.5f))
+    }
 }

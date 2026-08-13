@@ -10,7 +10,7 @@
     <string name="now_playing_add_marker">Set marker here</string>
     <string name="now_playing_empty">Nothing is playing right now.</string>
     <string name="now_playing_cover">Album cover</string>
-    <string name="now_playing_waveform">Waveform: tap to jump, drag to preview</string>
+    <string name="now_playing_waveform">Waveform: tap to jump, drag to preview, long-press to set or delete a marker</string>
     <string name="now_playing_waveform_loading">Waveform is being analyzed</string>
     <string name="now_playing_marker_add_title">Set marker</string>
     <string name="now_playing_marker_add_position">Position: %1$s</string>

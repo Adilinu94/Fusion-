@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -35,6 +36,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,9 +50,12 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.chart.MiniWaveform
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.model.Song
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /** Anzeigetitel eines Songs (Titel-Tag, sonst Dateiname). */
@@ -81,6 +86,8 @@ internal fun SongColumn(
     selectedIds: Set<Long> = emptySet(),
     onLongPress: (Song) -> Unit = {},
     onToggleSelect: (Song) -> Unit = {},
+    waveformFor: (Long) -> Flow<List<Pair<Float, Float>>?> = { flowOf(null) },
+    currentProgress: CurrentProgress? = null,
 ) {
     if (songs.isEmpty()) {
         EmptyHint(contentPadding = contentPadding, modifier = modifier)
@@ -109,6 +116,8 @@ internal fun SongColumn(
                     onAddToPlaylist = { onAddToPlaylist(song) },
                     onLongPress = { onLongPress(song) },
                     onToggleSelect = { onToggleSelect(song) },
+                    waveformFor = waveformFor,
+                    currentProgress = currentProgress,
                 )
             }
         }
@@ -173,11 +182,17 @@ private fun SongRow(
     onAddToPlaylist: () -> Unit,
     onLongPress: () -> Unit,
     onToggleSelect: () -> Unit,
+    waveformFor: (Long) -> Flow<List<Pair<Float, Float>>?>,
+    currentProgress: CurrentProgress?,
 ) {
     val playLabel = stringResource(R.string.library_play_song, songTitle(song))
     val favLabel =
         stringResource(if (isFavorite) R.string.library_unfavorite else R.string.library_favorite)
     var menuOpen by remember { mutableStateOf(false) }
+    // Phase 8: Mini-Waveform je Zeile, nur lesend aus dem Analyse-Cache.
+    val buckets by
+        waveformFor(song.mediaStoreId).collectAsState(initial = null)
+    val isCurrent = currentProgress?.songId == song.mediaStoreId
     val meta =
         buildString {
             append(song.artist ?: stringResource(R.string.library_unknown_artist))
@@ -236,6 +251,19 @@ private fun SongRow(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        // Phase 8: Lime-Mini-Waveform des gespielten Anteils, wenn die
+        // Analyse vorliegt (nur im Nicht-Auswahlmodus, nie im Grid).
+        if (!selectionActive && !compact && buckets != null) {
+            MiniWaveform(
+                buckets = buckets.orEmpty(),
+                progressFraction = if (isCurrent) currentProgress?.fraction ?: 0f else 0f,
+                modifier =
+                    Modifier
+                        .width(84.dp)
+                        .height(24.dp)
+                        .padding(end = 8.dp),
             )
         }
         if (!selectionActive && showTrailingActions) {

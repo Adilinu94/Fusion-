@@ -47,6 +47,7 @@ internal fun SongCategoryScreen(
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val currentProgress by viewModel.currentProgress.collectAsStateWithLifecycle()
 
     var showOptions by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
@@ -134,6 +135,8 @@ internal fun SongCategoryScreen(
                         selectedIds = selectedIds,
                         onLongPress = { viewModel.startSelection(it.mediaStoreId) },
                         onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
+                        waveformFor = viewModel::waveformFor,
+                        currentProgress = currentProgress,
                     )
                 }
             }
