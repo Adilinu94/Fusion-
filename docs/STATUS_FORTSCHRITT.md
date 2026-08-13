@@ -48,8 +48,8 @@ Legende: `[ ]` offen · `[~]` in Arbeit · `[x]` erledigt · `[!]` blockiert / b
 ## B. Offene Punkte aus dem Plan-Review (Stand 2026-08-12)
 
 - [x] Datenbank-Verschlüsselung: FlowRep verschlüsselt lokal (`sqlite3mc`), die fusionierte App bewusst nicht (Adi-Entscheidung, 2026-08-09) — kein weiterer Handlungsbedarf, hier nur zur Nachvollziehbarkeit protokolliert.
-- [~] Instrumentierte Tests (`androidTest`): `TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md` löst das als vollständige Testpyramide statt nur `androidTest`-Grundgerüst (Robolectric wo möglich, `androidTest` nur wo zwingend). Erster Pilot gelandet (`TimerServiceForegroundTest`, `:data:timer`, Commit `0973c2c`). Für `:feature:workout` (die eigentlich sicherheitsrelevante Stelle, siehe Fund 1) noch nicht ausgerollt.
-- [~] Automatisierte Vergleichs-/Diff-Logik Shadow-vs-Live: `SHADOW_DIFF_HARNESS_PLAN.md` geschrieben und mit D3-Ground-Truth-Regel geschärft (Commit `0973c2c`), aber noch nicht implementiert — Recorder/DI/Kotlin-Tests aus Plan-Schritt 1-3 stehen aus.
+- [~] Instrumentierte Tests (`androidTest`): `TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md` löst das als vollständige Testpyramide statt nur `androidTest`-Grundgerüst (Robolectric wo möglich, `androidTest` nur wo zwingend). Pilot gelandet (`TimerServiceForegroundTest`), Testinfra Schritt 2 (5a/5b/5c) komplett umgesetzt (Robolectric-Hilt-Tests). Offen bleibt nur: instrumentierte Kern-Tests (Schritt 4: AudioTimestamp, Underrun, AudioFocus) + `androidTest`-Ausrollung für `:feature:workout`.
+- [x] Automatisierte Vergleichs-/Diff-Logik Shadow-vs-Live: umgesetzt als Punkt 7a (JSONL-Recorder + DI + `TrainViewModel`-Bindung, siehe Abschnitt I). Offen bleibt nur Corpus-Kuration und Hardware-Läufe (Punkte 7c/9c).
 - [!] **Fund 1 (Review, 2026-08-12):** `ExerciseEnginePipeline` zählt seit Phase 4 live (`liveEngine` in `TrainViewModel.startCountedSet()`), entgegen Abschnitt 11b. Per ADR-0014 formal als bewusste Abweichung dokumentiert (Session: Claude-814d9738, 2026-08-12) — kein offener Entscheidungsbedarf mehr, aber die 5 Freigabe-Szenarien aus Abschnitt 11b stehen weiterhin aus.
 
 ---
@@ -78,7 +78,7 @@ Session-Kennung als Referenz.
 - [x] erledigt (`aab0330`, 2026-08-10) – `SHADOW_DIFF_HARNESS_PLAN.md` geschrieben: schließt offenen Punkt B (alt) zur Diff-Logik. Wiederverwendet FlowRep-Muster (ShadowReportLine, unabhängiger CSV-Recorder), Kurationsworkflow als Erstklass-Bürger (Lehre aus FlowReps leerem `golden_csv_corpus`).
 - [x] erledigt (`078809a`, 2026-08-10) – `TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md` geschrieben: korrigiert Abschnitt 11's teils falsche Testschicht-Einordnung, definiert Testpyramide (Layer 1-4), deckt Abschnitt-9/12-Kollision im Hauptdesign auf.
 - [x] erledigt (`0973c2c`, 2026-08-11) – Beide Pläne geschärft: D3-Ground-Truth-Regel (nur aktiv editierte `confirmedReps` zählen), RecoFit-Corpus als Baseline vor erstem Hardware-Lauf, BLE-MTU-Praxiswissen (Samsung-Delay, Status-133-Retry, serielle GATT-Queue), CI-Branch-Fix (`main`→`master`, CI lief zuvor nie — verifiziert per GitHub-API, `total_count: 0` vor dem Fix), erster Robolectric-Test (`TimerServiceForegroundTest`).
-- [!] RecoFit-Caveat aus dem Review (2026-08-12) noch nicht in `SHADOW_DIFF_HARNESS_PLAN.md` ergänzt: ein grüner RecoFit-Lauf prüft nur die Pipeline-Mechanik, ist kein Ersatz für die 5-Szenarien-Hardwarefreigabe. Sollte vor dem RecoFit-Bootstrap (Plan-Schritt 5.5) noch als Zeile ergänzt werden.
+- [x] RecoFit-Caveat aus dem Review (2026-08-12) in `SHADOW_DIFF_HARNESS_PLAN.md` ergänzt (Plan-Schritt 5.5): ein grüner RecoFit-Lauf prüft nur die Pipeline-Mechanik, ist kein Ersatz für die 5-Szenarien-Hardwarefreigabe.
 
 ---
 
