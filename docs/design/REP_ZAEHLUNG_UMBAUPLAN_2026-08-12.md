@@ -12,7 +12,7 @@ schwächere KI jeden Punkt korrekt umsetzen kann.
 - `docs/design/SHADOW_DIFF_HARNESS_PLAN.md` → D2/D3/D4, §11b
 - `docs/design/TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md` → 5a/5b, Z. 205–226
 - `docs/STATUS_FORTSCHRITT.md` → Abschnitte E, F, ADR-0014
-- `docs/adr/ADR-0014-live-zaehlung-abweichung-shadow-dod.md`
+- `docs/adr/0014-neue-pipeline-zaehlt-live-ohne-11b-hardwarefreigabe.md`
 - `domain/sensor/.../ExerciseEnginePipeline.kt`
 - `domain/sensor/.../SignalChain.kt`
 - `domain/sensor/.../PeakDetector.kt`
@@ -198,53 +198,47 @@ class FakeCalibrationProfileRepository(
 dafür vorgesehen sind — sie werden aber nie gesetzt.
 
 Die Kalibrierung (`CalibrationController.finalize()`, Z. 201–245 in
-CalibrationController.kt) setzt `expectedProminence` und `expectedDurationSamples`,
-aber **nicht** `signalPeakLevel`/`noisePeakLevel`. Diese Felder sind im
-`CalibrationProfile` deklariert, aber haben keinen Setter-Pfad.
+CalibrationController.kt) berechnet `theta`, `baseline` und
+`expectedProminence` im `GuidedCalibrationResult`.
+
+**Korrektur (Review 2026-08-12):** Ein Setter-Pfad für `signalPeakLevel`/
+`noisePeakLevel` existiert bereits — anders als hier ursprünglich
+angenommen. `CalibrationViewModel.confirmAndSave()` (Z. 121–122) setzt
+beide Felder schon beim Speichern:
+```kotlin
+signalPeakLevel = result.theta,
+noisePeakLevel = result.baseline,
+```
+Das eigentliche Problem: hier werden die falschen Größen zugewiesen
+(`theta` direkt statt `theta + expectedProminence`, `baseline` statt
+`theta * 0.5`). `CalibrationController.finalize()`/`GuidedCalibrationResult`
+müssen dafür **nicht** geändert werden — `theta`, `baseline` und
+`expectedProminence` liegen dort bereits vor, `CalibrationViewModel` liest
+sie nur mit den falschen Zuordnungen aus.
 
 ### Lösung — zwei Teiländerungen
 
-#### 2a: `CalibrationProfile`-Felder beim Speichern setzen
+#### 2a: `CalibrationProfile`-Felder beim Speichern korrekt setzen
 
-In `CalibrationController.finalize()` (Z. 201–245) nach dem Bau des
-`GuidedCalibrationResult`:
+Einzige Änderung: `CalibrationViewModel.confirmAndSave()` (Z. 121–122).
+`GuidedCalibrationResult` liefert `theta`, `baseline` und
+`expectedProminence` bereits — **keine** neuen Felder auf
+`GuidedCalibrationResult`, **keine** Änderung an
+`CalibrationController.finalize()` nötig. `signalPeakLevel` =
+`theta + expectedProminence` (SPK ≈ Schwelle + Prominenz). `noisePeakLevel`
+= `theta * 0.5` (NPK ≈ halbe Schwelle, konservativ).
 
-Das `GuidedCalibrationResult` hat `expectedProminence` und `theta`.
-`signalPeakLevel` = `theta + expectedProminence` (SPK ≈ Schwelle + Prominenz).
-`noisePeakLevel` = `theta * 0.5` (NPK ≈ halbe Schwelle, konservativ).
-
-**Änderung in `CalibrationController.finalize()` (Z. 234–245):**
+**Vorher (Z. 121–122):**
 ```kotlin
-return GuidedCalibrationResult(
-    rotationAxis = axis.achse.toList(),
-    gyroBias = restS.gyroBias.toList(),
-    chosenSignal = cfg.signal,
-    theta = theta,
-    baseline = baseline,
-    expectedProminence = expectedProminence,
-    expectedDurationSamples = medT * sampleRateHz,
-    repTemplate = repTemplate,
-    qualityScore = quality,
-    // Neu: signalPeakLevel und noisePeakLevel
-    signalPeakLevel = theta + expectedProminence,  // SPK
-    noisePeakLevel = theta * 0.5,                   // NPK
-)
+signalPeakLevel = result.theta,
+noisePeakLevel = result.baseline,
 ```
 
-Das `GuidedCalibrationResult` braucht dann zwei neue Felder:
+**Nachher:**
 ```kotlin
-data class GuidedCalibrationResult(
-    // ... bestehende Felder ...
-    val signalPeakLevel: Double,
-    val noisePeakLevel: Double,
-)
+signalPeakLevel = result.theta + result.expectedProminence,  // SPK
+noisePeakLevel = result.theta * 0.5,                          // NPK
 ```
-
-**Und in `CalibrationProfileRepository` beim Speichern** (wo das
-`GuidedCalibrationResult` in ein `CalibrationProfile` umgewandelt wird):
-Die Felder `signalPeakLevel` und `noisePeakLevel` müssen aus dem Ergebnis
-übernommen werden. Die genaue Stelle suchen (wahrscheinlich im ViewModel oder
-Repository, das `GuidedCalibrationResult` → `CalibrationProfile` mapped).
 
 #### 2b: `updateLevels()` nach Pipeline-Start aufrufen
 
@@ -293,6 +287,9 @@ fun updateLevels(
 ```
 
 ### Tests für Punkt 2
+- `CalibrationViewModelTest`: Neuen Test `confirmAndSave leitet signalPeakLevel/noisePeakLevel korrekt aus theta+expectedProminence ab`
+  (bisher kein Test für diese Zuordnung — die 2a-Korrektur selbst war
+  ungetestet, deshalb ist der falsche Wert nie aufgefallen)
 - `PeakDetectorTest`: Neuen Test `updateLevels changes threshold`
   - Default: `spk=100, npk=10` → `theta = 10 + 0.25 * (100-10) = 32.5`
   - Nach `updateLevels(200.0, 20.0)`: `theta = 20 + 0.25 * (200-20) = 65.0`
@@ -659,6 +656,29 @@ bewusste Abweichung, aber das Gate bleibt formal offen.
 
 #### 7a: JSONL-Recorder (Shadow-Diff-Harness Schritt 2/3)
 
+**Korrektur (Review 2026-08-12):** `ShadowSessionRecorder` deklariert bisher
+nur `recordSet()`. `TrainViewModel` hält den Recorder als Interface-Typ
+(`shadowSessionRecorder: ShadowSessionRecorder`, Z. 63 — korrekt so, wegen
+Testbarkeit über `NoOpShadowSessionRecorder`). Ruft man `startSession()`/
+`endSession()` unten wie ursprünglich geplant nur auf der *konkreten*
+`JsonlShadowSessionRecorder`-Klasse auf, kompiliert der Aufruf aus
+`TrainViewModel` heraus nicht. Erst das Interface erweitern:
+
+**Änderung in `ShadowSessionRecorder.kt`:**
+```kotlin
+interface ShadowSessionRecorder {
+    fun recordSet(event: ShadowDiffEvent)
+    fun startSession(sessionId: String)
+    fun endSession()
+}
+
+class NoOpShadowSessionRecorder : ShadowSessionRecorder {
+    override fun recordSet(event: ShadowDiffEvent) = Unit
+    override fun startSession(sessionId: String) = Unit
+    override fun endSession() = Unit
+}
+```
+
 **Neue Datei:** `feature/workout/.../shadow/JsonlShadowSessionRecorder.kt`
 
 ```kotlin
@@ -683,7 +703,7 @@ class JsonlShadowSessionRecorder @Inject constructor(
     private var writer: FileWriter? = null
     private var sessionId: String? = null
 
-    fun startSession(sessionId: String) {
+    override fun startSession(sessionId: String) {
         this.sessionId = sessionId
         val dir = File(context.getExternalFilesDir(null), "recordings")
         dir.mkdirs()
@@ -698,7 +718,7 @@ class JsonlShadowSessionRecorder @Inject constructor(
         writer?.flush()
     }
 
-    fun endSession() {
+    override fun endSession() {
         val sid = sessionId ?: return
         writer?.write("{\"t\":\"session_end\",\"sessionId\":\"$sid\"}\n")
         writer?.flush()
@@ -709,23 +729,28 @@ class JsonlShadowSessionRecorder @Inject constructor(
 }
 ```
 
-**Binding in `ShadowRecorderModule.kt` ersetzen:**
+**Binding in `ShadowRecorderModule.kt` ersetzen** (`@Binds` statt `@Provides`
+— `JsonlShadowSessionRecorder` hat bereits einen `@Inject constructor`, der
+den `Context` selbst anfordert; eine manuelle `@Provides`-Funktion müsste
+den Context von Hand durchreichen, siehe der ursprüngliche, nicht
+kompilierende `/* context */`-Platzhalter unten):
 ```kotlin
 @Module
 @InstallIn(SingletonComponent::class)
-object ShadowRecorderModule {
-    @Provides
+abstract class ShadowRecorderModule {
+    @Binds
     @Singleton
-    fun provideShadowSessionRecorder(): ShadowSessionRecorder =
-        JsonlShadowSessionRecorder(/* context */)
+    abstract fun bindShadowSessionRecorder(impl: JsonlShadowSessionRecorder): ShadowSessionRecorder
     // Für Tests: NoOpShadowSessionRecorder via Hilt-Test-Modul
 }
 ```
+(`object` → `abstract class`, da `@Binds`-Funktionen abstrakt sein müssen.)
 
-**Anbindung in `TrainViewModel`:**
-- `init`-Block: `recorder.startSession(UUID.randomUUID().toString().take(8))`
-- `finishExercise()`: `recorder.endSession()`
-- `disconnect()`: `recorder.endSession()`
+**Anbindung in `TrainViewModel`** (Feldname `shadowSessionRecorder`, nicht
+`recorder` — siehe Z. 63):
+- `init`-Block: `shadowSessionRecorder.startSession(UUID.randomUUID().toString().take(8))`
+- `finishExercise()`: `shadowSessionRecorder.endSession()`
+- `disconnect()`: `shadowSessionRecorder.endSession()`
 
 #### 7b: `tools/shadow_harness.py` (Shadow-Diff-Harness Schritt 4)
 
@@ -1241,8 +1266,7 @@ python3 tools/shadow_harness.py \
 | `domain/sensor/.../ExerciseEnginePipeline.kt` | Neue `updateLevels()`-Durchreich-Methode |
 | `domain/sensor/.../RepCounter.kt` | Neue `updateLevels()`-Durchreich-Methode |
 | `domain/sensor/.../ExerciseEngineConfig` | `minQualityScore` = 0.55 |
-| `domain/sensor/.../calibration/CalibrationController.kt` | `GuidedCalibrationResult` um `signalPeakLevel`/`noisePeakLevel` erweitern |
-| `domain/sensor/.../calibration/CalibrationController.kt` | `finalize()`: SPK/NPK berechnen |
+| `feature/workout/.../CalibrationViewModel.kt` | `confirmAndSave()`: SPK/NPK korrekt aus `theta`/`expectedProminence` ableiten (Z. 121–122) |
 | `core/testing/.../FakeCalibrationProfileRepository.kt` | Konfigurierbarer Default-Profil-Constructor |
 
 ### Mittelfristig (Punkte 4–6)
@@ -1262,8 +1286,9 @@ python3 tools/shadow_harness.py \
 
 | Datei | Änderung |
 |---|---|
+| `feature/workout/.../shadow/ShadowSessionRecorder.kt` | Interface um `startSession()`/`endSession()` erweitern, `NoOpShadowSessionRecorder` nachziehen |
 | `feature/workout/.../shadow/JsonlShadowSessionRecorder.kt` | NEU: JSONL-Schreib-Recorder |
-| `feature/workout/.../shadow/di/ShadowRecorderModule.kt` | Binding auf JsonlShadowSessionRecorder umstellen |
+| `feature/workout/.../shadow/di/ShadowRecorderModule.kt` | `object`→`abstract class`, `@Provides`→`@Binds` auf JsonlShadowSessionRecorder |
 | `feature/workout/.../TrainViewModel.kt` | `init`/`finishExercise`/`disconnect` Recorder-Lifecycle |
 | `tools/shadow_harness.py` | NEU: Python-Auswertungs-Harness |
 | `tools/golden_shadow_corpus/` | NEU: Corpus-Verzeichnis (initial leer) |
