@@ -38,13 +38,19 @@ object MtuNegotiator {
     /** Ergebnis eines Verhandlungsschritts. */
     sealed class Decision {
         /** `requestMtu(REQUEST_MTU)` erneut senden (Versuch [attempt], 1-basiert). */
-        data class Request(val attempt: Int) : Decision()
+        data class Request(
+            val attempt: Int,
+        ) : Decision()
 
         /** Verhandlung erfolgreich; Writes auf [mtu] chunken. */
-        data class Negotiated(val mtu: Int) : Decision()
+        data class Negotiated(
+            val mtu: Int,
+        ) : Decision()
 
         /** Verhandlung endgueltig gescheitert; Fallback-MTU verwenden. */
-        data class UseFallback(val mtu: Int = FALLBACK_MTU) : Decision()
+        data class UseFallback(
+            val mtu: Int = FALLBACK_MTU,
+        ) : Decision()
     }
 
     /**

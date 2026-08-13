@@ -57,6 +57,9 @@
     <string name="settings_rest_music_rest_playlist_desc">During a rest, play a playlist labelled \"Rest / break\"; when the rest ends, start a track from a \"Work\" playlist.</string>
     <string name="settings_rest_music_drop_landing">Drop landing</string>
     <string name="settings_rest_music_drop_landing_desc">Like the rest playlist, plus timing a \"Work\" track so its drop lands exactly at the end of the rest.</string>
+    <string name="settings_rest_duck_title">Rest music volume: %1$d dB</string>
+    <string name="settings_rest_duck_desc">Lowers the music during rest periods. The countdown cue never ducks twice; the stronger value wins.</string>
+    <string name="settings_timing_hint">Timing adapts to your audio route. Bluetooth devices add their own delay; the drop landing accounts for it.</string>
     <string name="settings_extras_section">Workout extras</string>
     <string name="settings_get_ready_title">Get-ready countdown</string>
     <string name="settings_get_ready_desc">Play a short 3-2-1 lead-in (haptics + tone) before a rest timer starts.</string>

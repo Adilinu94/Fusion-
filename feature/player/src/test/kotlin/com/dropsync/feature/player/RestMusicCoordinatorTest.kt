@@ -9,6 +9,12 @@ import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.TestDispatcherProvider
+import com.dropsync.domain.audio.AudioEngineRepository
+import com.dropsync.domain.audio.AudioInfo
+import com.dropsync.domain.audio.BitPerfectSupport
+import com.dropsync.domain.audio.DspConfig
+import com.dropsync.domain.audio.EqBand
+import com.dropsync.domain.audio.EqPreset
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.Genre
@@ -20,11 +26,14 @@ import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.Playlist
 import com.dropsync.domain.library.PlaylistImportResult
 import com.dropsync.domain.library.ShuffleCandidate
+import com.dropsync.domain.playback.AudioRouteProfile
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.RepeatMode
+import com.dropsync.domain.playback.RestDuckingGate
 import com.dropsync.domain.playback.RestMusicSettingsRepository
+import com.dropsync.domain.playback.RouteProfileRepository
 import com.dropsync.domain.timer.NoOpCueOutput
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.timer.TimerMode
@@ -54,6 +63,7 @@ class RestMusicCoordinatorTest {
     private val playback = CoordinatorPlaybackRepository()
     private val browse = CoordinatorBrowseRepository()
     private val markers = CoordinatorMarkerRepository()
+    private val restDucking = CoordinatorRestDucking()
 
     private fun coordinator() =
         RestMusicCoordinator(
@@ -62,6 +72,9 @@ class RestMusicCoordinatorTest {
             playbackRepository = playback,
             browseRepository = browse,
             markerRepository = markers,
+            audioEngine = CoordinatorAudioEngine(),
+            routeProfiles = CoordinatorRouteProfiles(),
+            restDucking = restDucking,
             clock = clock,
             dispatchers = TestDispatcherProvider(dispatcher),
         )
@@ -166,6 +179,92 @@ class RestMusicCoordinatorTest {
                 listOf(listOf(10L) to true, listOf(20L) to true),
                 playback.setQueueCalls,
             )
+        }
+
+    @Test
+    fun `Rest-Ducking wird bei Pausenbeginn aktiviert und am Ende zurueckgenommen`() =
+        runTest(dispatcher) {
+            browse.playlistsByLabelMap[PlaylistLabel.REST] = listOf(playlist(1L))
+            browse.songsByPlaylist[1L] = listOf(song(10L))
+            settings.behaviorState.value = RestMusicBehavior.REST_PLAYLIST
+
+            coordinator().start()
+            engine.start(TimerMode.REST, durationMs = 30_000L)
+            dispatcher.scheduler.advanceUntilIdle()
+            assertTrue(
+                "Rest-Ducking muss bei Pausenbeginn aktiv sein",
+                restDucking.activations.lastOrNull() == true,
+            )
+
+            clock.advanceBy(30_000L)
+            engine.evaluate()
+            dispatcher.scheduler.advanceUntilIdle()
+            assertTrue(
+                "Rest-Ducking muss am Pausenende zurueckgenommen sein",
+                restDucking.activations.lastOrNull() == false,
+            )
+        }
+
+    @Test
+    fun `Latenz aus dem Route-Profil verschiebt die Landung`() =
+        runTest(dispatcher) {
+            // Phase 6: WorkStart = Go - Marker - Latenz. R = 30 s,
+            // D = 12 s, L = 200 ms -> Start nach 17.8 s statt 18 s.
+            browse.playlistsByLabelMap[PlaylistLabel.REST] = listOf(playlist(1L))
+            browse.songsByPlaylist[1L] = listOf(song(10L))
+            browse.playlistsByLabelMap[PlaylistLabel.WORK] = listOf(playlist(2L))
+            browse.songsByPlaylist[2L] = listOf(song(20L, durationMs = 200_000L))
+            markers.markersBySong[20L] = listOf(marker(id = 5L, positionMs = 12_000L, songId = 20L))
+            settings.behaviorState.value = RestMusicBehavior.DROP_LANDING
+            val routeProfiles = CoordinatorRouteProfiles().apply { latencyMs = 200L }
+
+            RestMusicCoordinator(
+                timerEngine = engine,
+                restMusicSettings = settings,
+                playbackRepository = playback,
+                browseRepository = browse,
+                markerRepository = markers,
+                audioEngine = CoordinatorAudioEngine(),
+                routeProfiles = routeProfiles,
+                restDucking = restDucking,
+                clock = clock,
+                dispatchers = TestDispatcherProvider(dispatcher),
+            ).start()
+            engine.start(TimerMode.REST, durationMs = 30_000L)
+            dispatcher.scheduler.runCurrent()
+
+            // Vor 17.8 s noch keine Landung.
+            dispatcher.scheduler.advanceTimeBy(17_000L)
+            dispatcher.scheduler.runCurrent()
+            assertTrue(playback.crossfadeCalls.isEmpty())
+
+            // Nach 17.8 s Landung von vorn (INTRO).
+            dispatcher.scheduler.advanceTimeBy(1_000L)
+            dispatcher.scheduler.runCurrent()
+            assertEquals(listOf(20L to 0L), playback.crossfadeCalls)
+        }
+
+    @Test
+    fun `DIRECT_TO_DROP springt beim Go direkt zur Drop-Position`() =
+        runTest(dispatcher) {
+            // Drop (60 s) liegt hinter der Restzeit (20 s): Rest-Musik
+            // laeuft die volle Restzeit, beim Go springt der Player direkt
+            // auf den Drop (startAtPositionMs = 60 s).
+            browse.playlistsByLabelMap[PlaylistLabel.REST] = listOf(playlist(1L))
+            browse.songsByPlaylist[1L] = listOf(song(10L))
+            browse.playlistsByLabelMap[PlaylistLabel.WORK] = listOf(playlist(2L))
+            browse.songsByPlaylist[2L] = listOf(song(20L, durationMs = 200_000L))
+            markers.markersBySong[20L] = listOf(marker(id = 5L, positionMs = 60_000L, songId = 20L))
+            settings.behaviorState.value = RestMusicBehavior.DROP_LANDING
+
+            coordinator().start()
+            engine.start(TimerMode.REST, durationMs = 20_000L)
+            dispatcher.scheduler.runCurrent()
+
+            dispatcher.scheduler.advanceTimeBy(20_001L)
+            dispatcher.scheduler.runCurrent()
+
+            assertEquals(listOf(20L to 60_000L), playback.crossfadeCalls)
         }
 
     private fun playlist(id: Long) = Playlist(id = id, name = "P$id", trackCount = 1)
@@ -381,4 +480,47 @@ private class CoordinatorMarkerRepository : MarkerRepository {
         markerId: Long,
         newPositionMs: Long,
     ): AppResult<Unit> = AppResult.success(Unit)
+}
+
+private class CoordinatorAudioEngine : AudioEngineRepository {
+    var config = DspConfig()
+
+    override val dspConfig: Flow<DspConfig> = MutableStateFlow(config)
+    override val audioInfo: Flow<AudioInfo?> = emptyFlow()
+    override val eqPresets: Flow<List<EqPreset>> = emptyFlow()
+    override val activeOutputProfileKey: Flow<String?> = emptyFlow()
+    override val bitPerfectSupport: Flow<BitPerfectSupport> = flowOf(BitPerfectSupport.UNAVAILABLE)
+
+    override suspend fun updateDspConfig(config: DspConfig) {
+        this.config = config
+    }
+
+    override suspend fun saveEqPreset(
+        name: String,
+        bands: List<EqBand>,
+    ): AppResult<Long> = AppResult.failure(AppError.Unknown("nicht Teil dieses Tests"))
+
+    override suspend fun deleteEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun applyEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
+}
+
+private class CoordinatorRouteProfiles : RouteProfileRepository {
+    var latencyMs: Long? = null
+
+    override val currentProfile: Flow<AudioRouteProfile?> = emptyFlow()
+
+    override suspend fun currentLatencyMs(): Long? = latencyMs
+
+    override suspend fun markStale() = Unit
+
+    override suspend fun upsert(profile: AudioRouteProfile) = Unit
+}
+
+private class CoordinatorRestDucking : RestDuckingGate {
+    val activations = mutableListOf<Boolean>()
+
+    override suspend fun setActive(active: Boolean) {
+        activations += active
+    }
 }

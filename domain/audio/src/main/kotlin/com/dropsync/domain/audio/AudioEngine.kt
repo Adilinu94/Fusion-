@@ -66,12 +66,20 @@ data class DspConfig(
      * Wirkt auf den Wiedergabepfad beim naechsten Service-Start.
      */
     val bitPerfectEnabled: Boolean = false,
+    /**
+     * Ducking der Pausenmusik in dB (Design Phase 7): -12..0, Default -8.
+     * Kombiniert mit dem Cue-Ducking ueber `min()` - es duckt nie doppelt,
+     * der staerkere Wert gewinnt.
+     */
+    val restDuckDb: Double = -8.0,
 ) {
     companion object {
         const val PREAMP_MIN_DB: Double = -12.0
         const val PREAMP_MAX_DB: Double = 12.0
         const val TONE_MIN_DB: Double = -15.0
         const val TONE_MAX_DB: Double = 15.0
+        const val REST_DUCK_MIN_DB: Double = -12.0
+        const val REST_DUCK_MAX_DB: Double = 0.0
 
         /** Erzwingt gueltige Wertebereiche (UI und Persistenz teilen sie). */
         fun sanitized(config: DspConfig): DspConfig =
@@ -100,6 +108,7 @@ data class DspConfig(
                     ),
                 dvcVolume = config.dvcVolume.coerceIn(0.0, 1.0),
                 crossfadeSeconds = config.crossfadeSeconds.coerceIn(0, CrossfadeCurves.MAX_SECONDS),
+                restDuckDb = config.restDuckDb.coerceIn(REST_DUCK_MIN_DB, REST_DUCK_MAX_DB),
             )
     }
 }

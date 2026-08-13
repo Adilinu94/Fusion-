@@ -47,6 +47,12 @@ class MasterDspProcessor : BaseAudioProcessor() {
     @Volatile
     private var duckingGain: Double = 1.0
 
+    // Rest-Ducking (Design Phase 7): Ducking der Pausenmusik in dB
+    // (Default -8). Kombiniert mit dem Cue-Ducking ueber min() - der
+    // staerkere Wert gewinnt, nie additiv.
+    @Volatile
+    private var restDuckingGain: Double = 1.0
+
     private var inputEncoding: PcmEncoding = PcmEncoding.PCM_16
     private var sampleRateHz = 0
     private var channelCount = 0
@@ -75,6 +81,15 @@ class MasterDspProcessor : BaseAudioProcessor() {
     /** Cue-Ducking-Gain (0..1) am Preamp-Knoten; wirkt sofort. */
     fun setDuckingGain(gain: Double) {
         duckingGain = gain.coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * Rest-Ducking-Gain (0..1, Design Phase 7); wirkt sofort. Die
+     * Rampe (Attack/Release) laeuft im [AudioPipeline]-Ticker, damit
+     * der Audiothread nur den Wert liest.
+     */
+    fun setRestDuckingGain(gain: Double) {
+        restDuckingGain = gain.coerceIn(0.0, 1.0)
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -117,9 +132,11 @@ class MasterDspProcessor : BaseAudioProcessor() {
         }
         val count = PcmCodec.decode(inputBuffer, inputEncoding, samples)
 
-        // Preamp-Knoten: Cue-Ducking zuerst, damit es mit Preamp/DVC
+        // Preamp-Knoten: Ducking zuerst, damit es mit Preamp/DVC
         // multiplikativ bleibt und nie mit der Nutzerlautstaerke kollidiert.
-        val ducking = duckingGain
+        // Phase 7: Rest- und Cue-Ducking kombinieren ueber min() (der
+        // staerkere gewinnt), nie doppelt.
+        val ducking = minOf(duckingGain, restDuckingGain)
         if (ducking != 1.0) {
             for (i in 0 until count) {
                 samples[i] *= ducking

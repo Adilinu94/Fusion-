@@ -17,37 +17,39 @@ import javax.inject.Singleton
  * double start simply appends/starts a fresh writer (last one wins).
  */
 @Singleton
-class JsonlShadowSessionRecorder @Inject constructor(
-    @ApplicationContext private val context: Context,
-) : ShadowSessionRecorder {
-    private var writer: FileWriter? = null
-    private var sessionId: String? = null
+class JsonlShadowSessionRecorder
+    @Inject
+    constructor(
+        @ApplicationContext private val context: Context,
+    ) : ShadowSessionRecorder {
+        private var writer: FileWriter? = null
+        private var sessionId: String? = null
 
-    override fun startSession(sessionId: String) {
-        endSession()
-        this.sessionId = sessionId
-        val dir = File(context.getExternalFilesDir(null), "recordings")
-        dir.mkdirs()
-        val file = File(dir, "$sessionId.jsonl")
-        val w = FileWriter(file, true)
-        writer = w
-        w.write("{\"t\":\"session_start\",\"sessionId\":\"$sessionId\"}\n")
-        w.flush()
-    }
+        override fun startSession(sessionId: String) {
+            endSession()
+            this.sessionId = sessionId
+            val dir = File(context.getExternalFilesDir(null), "recordings")
+            dir.mkdirs()
+            val file = File(dir, "$sessionId.jsonl")
+            val w = FileWriter(file, true)
+            writer = w
+            w.write("{\"t\":\"session_start\",\"sessionId\":\"$sessionId\"}\n")
+            w.flush()
+        }
 
-    override fun recordSet(event: ShadowDiffEvent) {
-        val w = writer ?: return
-        w.write(event.toJsonLine() + "\n")
-        w.flush()
-    }
+        override fun recordSet(event: ShadowDiffEvent) {
+            val w = writer ?: return
+            w.write(event.toJsonLine() + "\n")
+            w.flush()
+        }
 
-    override fun endSession() {
-        val sid = sessionId ?: return
-        val w = writer ?: return
-        w.write("{\"t\":\"session_end\",\"sessionId\":\"$sid\"}\n")
-        w.flush()
-        w.close()
-        writer = null
-        sessionId = null
+        override fun endSession() {
+            val sid = sessionId ?: return
+            val w = writer ?: return
+            w.write("{\"t\":\"session_end\",\"sessionId\":\"$sid\"}\n")
+            w.flush()
+            w.close()
+            writer = null
+            sessionId = null
+        }
     }
-}

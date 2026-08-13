@@ -17,7 +17,13 @@ interface CueOutput {
     /** Kurze, vordefinierte Haptik; No-Op ohne Geraetefaehigkeit (8.5). */
     fun haptic(cueSessionId: String)
 
-    /** Kurzer Abschluss-Signalton. */
+    /**
+     * Kurzer Countdown-Piep (Design Phase 7): vorgerenderter Clip statt
+     * ToneGenerator/TTS; fuer 3-2-1-Get-Ready und die letzten Sekunden.
+     */
+    fun countdownBeep(cueSessionId: String)
+
+    /** Abschlusston (Go): laengerer Beep als echtes Audio-Event. */
     fun tone(cueSessionId: String)
 
     /**
@@ -35,6 +41,8 @@ class NoOpCueOutput : CueOutput {
     ) = Unit
 
     override fun haptic(cueSessionId: String) = Unit
+
+    override fun countdownBeep(cueSessionId: String) = Unit
 
     override fun tone(cueSessionId: String) = Unit
 

@@ -26,15 +26,28 @@ import kotlinx.coroutines.flow.flowOf
  */
 class FakeWorkoutRepository : WorkoutRepository {
     override val activeSession: Flow<WorkoutSessionInfo?> = flowOf(null)
-    override fun observeExercises(locale: String): Flow<List<ExerciseInfo>> = flowOf(emptyList())
-    override fun observeSessionExercises(sessionId: Long, locale: String): Flow<List<SessionExerciseInfo>> =
-        flowOf(emptyList())
 
-    override suspend fun startSession(title: String?, fromRoutineId: Long?): AppResult<Long> = AppResult.Success(0L)
+    override fun observeExercises(locale: String): Flow<List<ExerciseInfo>> = flowOf(emptyList())
+
+    override fun observeSessionExercises(
+        sessionId: Long,
+        locale: String,
+    ): Flow<List<SessionExerciseInfo>> = flowOf(emptyList())
+
+    override suspend fun startSession(
+        title: String?,
+        fromRoutineId: Long?,
+    ): AppResult<Long> = AppResult.Success(0L)
+
     override suspend fun completeSession(sessionId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun discardSession(sessionId: Long): AppResult<Unit> = AppResult.Success(Unit)
-    override suspend fun addExercise(sessionId: Long, exerciseId: Long, supersetGroupId: Long?): AppResult<Long> =
-        AppResult.Success(0L)
+
+    override suspend fun addExercise(
+        sessionId: Long,
+        exerciseId: Long,
+        supersetGroupId: Long?,
+    ): AppResult<Long> = AppResult.Success(0L)
 
     override suspend fun completeCluster(
         sessionExerciseId: Long,
@@ -44,7 +57,9 @@ class FakeWorkoutRepository : WorkoutRepository {
     ): AppResult<Long> = AppResult.Success(0L)
 
     override suspend fun undoCompleteCluster(clusterId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun recomputeRecords(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun lastCompletedClusterPrefill(exerciseId: Long): AppResult<List<SegmentInput>> =
         AppResult.Success(emptyList())
 
@@ -59,14 +74,23 @@ class FakeWorkoutRepository : WorkoutRepository {
         AppResult.Success(emptyList())
 
     override fun observeExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> = flowOf(emptyList())
+
     override suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long> = AppResult.Success(0L)
-    override suspend fun getExerciseDetail(exerciseId: Long, locale: String): AppResult<ExerciseDetail> =
-        throw UnsupportedOperationException("not needed for this test")
+
+    override suspend fun getExerciseDetail(
+        exerciseId: Long,
+        locale: String,
+    ): AppResult<ExerciseDetail> = throw UnsupportedOperationException("not needed for this test")
 
     override suspend fun archiveExercise(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun getRestPref(exerciseId: Long): AppResult<RestPref?> = AppResult.Success(null)
-    override suspend fun setRestPref(exerciseId: Long, restSeconds: Int, restMode: RestMode): AppResult<Unit> =
-        AppResult.Success(Unit)
+
+    override suspend fun setRestPref(
+        exerciseId: Long,
+        restSeconds: Int,
+        restMode: RestMode,
+    ): AppResult<Unit> = AppResult.Success(Unit)
 
     override suspend fun swapSessionExercise(
         sessionExerciseId: Long,
@@ -75,7 +99,9 @@ class FakeWorkoutRepository : WorkoutRepository {
     ): AppResult<Unit> = AppResult.Success(Unit)
 
     override suspend fun repeatLastSession(): AppResult<Long> = AppResult.Success(0L)
+
     override fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>> = flowOf(emptyList())
+
     override suspend fun getSessionMusic(sessionId: Long): AppResult<List<PlayedTrackInfo>> =
         AppResult.Success(emptyList())
 }

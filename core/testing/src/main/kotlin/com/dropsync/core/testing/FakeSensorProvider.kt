@@ -47,8 +47,11 @@ class FakeSensorProvider : SensorProvider {
     }
 
     override suspend fun connect(deviceId: String?): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun disconnect() = Unit
+
     override suspend fun startStreaming() = Unit
+
     override suspend fun stopStreaming() = Unit
 }
 
@@ -65,8 +68,10 @@ class FakeCalibrationProfileRepository(
         profiles[profile.exerciseId to profile.deviceId] = profile
     }
 
-    override suspend fun load(exerciseId: Long, deviceId: String): AppResult<CalibrationProfile?> =
-        AppResult.Success(profiles[exerciseId to deviceId])
+    override suspend fun load(
+        exerciseId: Long,
+        deviceId: String,
+    ): AppResult<CalibrationProfile?> = AppResult.Success(profiles[exerciseId to deviceId])
 
     override suspend fun save(profile: CalibrationProfile): AppResult<Unit> {
         profiles[profile.exerciseId to profile.deviceId] = profile
@@ -74,7 +79,10 @@ class FakeCalibrationProfileRepository(
         return AppResult.Success(Unit)
     }
 
-    override suspend fun delete(exerciseId: Long, deviceId: String): AppResult<Unit> {
+    override suspend fun delete(
+        exerciseId: Long,
+        deviceId: String,
+    ): AppResult<Unit> {
         profiles.remove(exerciseId to deviceId)
         return AppResult.Success(Unit)
     }

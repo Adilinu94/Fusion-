@@ -299,6 +299,15 @@ class SettingsViewModel
             }
         }
 
+        /** Ducking der Pausenmusik in dB (Design Phase 7; -12..0). */
+        fun setRestDuckDb(db: Double) {
+            viewModelScope.launch {
+                val current = audioEngine.dspConfig.first()
+                val clamped = db.coerceIn(DspConfig.REST_DUCK_MIN_DB, DspConfig.REST_DUCK_MAX_DB)
+                audioEngine.updateDspConfig(current.copy(restDuckDb = clamped))
+            }
+        }
+
         fun dismissImportResult() {
             mutableImportState.value = ImportUiState.Idle
         }

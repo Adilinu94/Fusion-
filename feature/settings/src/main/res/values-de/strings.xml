@@ -57,6 +57,9 @@
     <string name="settings_rest_music_rest_playlist_desc">In der Pause laeuft eine Playlist mit dem Label \"Pause\"; am Pausenende startet ein Titel aus einer \"Training\"-Playlist.</string>
     <string name="settings_rest_music_drop_landing">Drop-Landung</string>
     <string name="settings_rest_music_drop_landing_desc">Wie die Pausen-Playlist, zusaetzlich wird ein \"Training\"-Titel so getimt, dass sein Drop genau das Pausenende trifft.</string>
+    <string name="settings_rest_duck_title">Pausenmusik-Lautstaerke: %1$d dB</string>
+    <string name="settings_rest_duck_desc">Senkt die Musik waehrend der Pause ab. Der Countdown-Hinweis duckt nie doppelt, der staerkere Wert gewinnt.</string>
+    <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geraete bringen eigene Verzoegerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
     <string name="settings_get_ready_title">Get-Ready-Countdown</string>
     <string name="settings_get_ready_desc">Spielt vor dem Start eines Pausen-Timers einen kurzen 3-2-1-Vorlauf (Haptik + Ton).</string>

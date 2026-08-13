@@ -14,10 +14,16 @@ class FakeFlatSetRepository : FlatSetRepository {
     val logged = mutableListOf<FlatSet>()
 
     override fun observeSetsForExercise(exerciseId: Long): Flow<List<FlatSet>> = flowOf(emptyList())
+
     override fun observeAllSets(): Flow<List<FlatSet>> = flowOf(emptyList())
+
     override suspend fun getLastSet(exerciseId: Long): AppResult<FlatSet?> = AppResult.Success(null)
 
-    override suspend fun logSet(exerciseId: Long, weightMilliKg: Long, reps: Int): AppResult<Long> {
+    override suspend fun logSet(
+        exerciseId: Long,
+        weightMilliKg: Long,
+        reps: Int,
+    ): AppResult<Long> {
         val set =
             FlatSet(
                 id = logged.size + 1L,
@@ -31,7 +37,10 @@ class FakeFlatSetRepository : FlatSetRepository {
     }
 
     override suspend fun deleteSet(setId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun getMaxVolumeForExercise(exerciseId: Long): AppResult<Long?> = AppResult.Success(null)
+
     override suspend fun getVolumeForDay(dayStart: Long): AppResult<Long?> = AppResult.Success(null)
+
     override suspend fun getRecentSets(limit: Int): AppResult<List<FlatSet>> = AppResult.Success(emptyList())
 }

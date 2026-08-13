@@ -10,9 +10,17 @@ import org.junit.Test
 
 /** Zeichnet keine Ausgaben auf; snapshot/restore pruefen nur den Zustand. */
 private class NoCueOutput : CueOutput {
-    override fun speak(cueSessionId: String, secondsRemaining: Int) = Unit
+    override fun speak(
+        cueSessionId: String,
+        secondsRemaining: Int,
+    ) = Unit
+
     override fun haptic(cueSessionId: String) = Unit
+
+    override fun countdownBeep(cueSessionId: String) = Unit
+
     override fun tone(cueSessionId: String) = Unit
+
     override fun stopAll(cueSessionId: String) = Unit
 }
 

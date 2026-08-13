@@ -82,6 +82,9 @@ class PlaybackService : MediaLibraryService() {
     @Inject
     lateinit var dspSettingsStore: DspSettingsStore
 
+    @Inject
+    lateinit var audioClock: Media3AudioClock
+
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     // Player-Zugriffe (Crossfade, BT-Resume) gehoeren auf den Main-Thread.
@@ -121,6 +124,9 @@ class PlaybackService : MediaLibraryService() {
                 .build()
         exoPlayer.addAnalyticsListener(AudioInfoListener(audioPipeline))
         player = exoPlayer
+        // AudioClock (Design Phase 6): Player binden, damit der Rest
+        // der App eine interpolierte hoerbare Position lesen kann.
+        audioClock.attach(exoPlayer)
         session =
             MediaLibrarySession
                 .Builder(
@@ -206,6 +212,7 @@ class PlaybackService : MediaLibraryService() {
         audioDeviceCallback = null
         crossfadeController?.release()
         crossfadeController = null
+        audioClock.detach()
         // Genau einmal freigeben (Abnahme Schritt 5).
         session?.release()
         session = null

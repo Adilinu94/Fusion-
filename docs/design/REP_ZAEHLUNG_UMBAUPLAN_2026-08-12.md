@@ -796,16 +796,16 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
     events = parse_jsonl(jsonl_path)
     scenario = manifest.get("scenario", "unknown")
     known_active_reps = manifest.get("known_active_reps", [])
-    
+
     set_events = [e for e in events if e.get("t") == "set"]
-    
+
     results = []
     for i, set_event in enumerate(set_events):
         confirmed = set_event.get("confirmedReps", 0)
         shadow = set_event.get("shadowReps", 0)
         delta = set_event.get("delta", shadow - confirmed)
         edited = set_event.get("confirmedRepsEdited", False)
-        
+
         # Wahrheits-Priorität (§7)
         if i < len(known_active_reps):
             truth = known_active_reps[i]
@@ -822,7 +822,7 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
                 "pass": None,
             })
             continue
-        
+
         results.append({
             "set_index": i,
             "delta": shadow - truth,
@@ -830,7 +830,7 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
             "truth_source": truth_source,
             "pass": abs(shadow - truth) <= DELTA_TOLERANCE_REPS,
         })
-    
+
     return {
         "scenario": scenario,
         "session": jsonl_path.stem,
@@ -845,7 +845,7 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
 def main():
     corpus_dir = None
     smoke_test = False
-    
+
     for arg in sys.argv[1:]:
         if arg == "--smoke-test":
             smoke_test = True
@@ -855,23 +855,23 @@ def main():
             idx = sys.argv.index(arg)
             if idx + 1 < len(sys.argv):
                 corpus_dir = sys.argv[idx + 1]
-    
+
     if smoke_test:
         # TODO: synthetische Fixtures generieren
         print("SMOKE TEST: nicht implementiert")
         sys.exit(0)
-    
+
     if not corpus_dir:
         print("Usage: shadow_harness.py --corpus-dir <path> [--smoke-test]", file=sys.stderr)
         sys.exit(1)
-    
+
     corpus_path = Path(corpus_dir)
     if not corpus_path.exists():
         print(f"Corpus nicht gefunden: {corpus_path}", file=sys.stderr)
         sys.exit(1)
-    
+
     sessions = defaultdict(list)
-    
+
     for meta_path in corpus_path.glob("*.jsonl.meta.json"):
         jsonl_path = meta_path.with_name(meta_path.stem.replace(".meta", ""))
         if not jsonl_path.exists():
@@ -879,26 +879,26 @@ def main():
         if not jsonl_path.exists():
             print(f"WARN: keine JSONL zu {meta_path.name}", file=sys.stderr)
             continue
-        
+
         manifest = parse_manifest(meta_path)
         result = evaluate_session(jsonl_path, manifest)
         sessions[result["scenario"]].append(result)
-    
+
     # Report
     all_pass = True
     print("=" * 60)
     print("SHADOW-DIFF-HARNESS REPORT")
     print("=" * 60)
-    
+
     for scenario, scenario_sessions in sorted(sessions.items()):
         print(f"\n--- Szenario: {scenario} ---")
         print(f"  Sessions: {len(scenario_sessions)}")
-        
+
         all_deltas = []
         total_sets = 0
         total_passed = 0
         total_failed = 0
-        
+
         for sess in scenario_sessions:
             print(f"  {sess['session']} (exercise={sess['exercise_id']}): "
                   f"{sess['n_passed']}/{sess['n_sets']} passed, "
@@ -909,17 +909,17 @@ def main():
             total_sets += sess["n_sets"]
             total_passed += sess["n_passed"]
             total_failed += sess["n_failed"]
-        
+
         if total_sets > 0:
             mae = sum(abs(d) for d in all_deltas) / len(all_deltas) if all_deltas else 0
             exact_match = total_passed / total_sets if total_sets > 0 else 0
             bias = sum(all_deltas) / len(all_deltas) if all_deltas else 0
-            
+
             print(f"  Exact-Match: {exact_match:.1%} (benötigt: {EXACT_MATCH_RATE_MIN:.0%})")
             print(f"  MAE: {mae:.2f} (max: {MAE_MAX})")
             print(f"  Bias: {bias:+.2f}")
             print(f"  Sessions: {len(scenario_sessions)} (min: {MIN_SESSIONS_PER_SCENARIO})")
-            
+
             scenario_pass = (
                 len(scenario_sessions) >= MIN_SESSIONS_PER_SCENARIO
                 and exact_match >= EXACT_MATCH_RATE_MIN
@@ -927,7 +927,7 @@ def main():
             )
             all_pass = all_pass and scenario_pass
             print(f"  => {'PASS' if scenario_pass else 'FAIL'}")
-    
+
     print("\n" + "=" * 60)
     print(f"GESAMT: {'PASS' if all_pass else 'FAIL'}")
     print("=" * 60)
@@ -1166,26 +1166,26 @@ except ImportError:
 def convert_mat_to_jsonl(mat_path: Path, output_dir: Path):
     """Konvertiert eine RecoFit-.mat-Datei in JSONL."""
     data = sio.loadmat(mat_path)
-    
+
     # RecoFit-Format: accel (Nx3), gyro (Nx3), rep_labels (Nx1)
     # timestamp wird synthetisch bei 50 Hz generiert
     accel = data.get("accel")
     gyro = data.get("gyro")
     labels = data.get("rep_labels")
-    
+
     if accel is None or gyro is None:
         print(f"WARN: {mat_path.name} hat kein accel/gyro")
         return
-    
+
     n = len(accel)
     session_id = mat_path.stem
-    
+
     events = []
     for i in range(n):
         ts = i * 20  # 50 Hz -> 20 ms
         ax, ay, az = accel[i] if accel.ndim > 1 else (accel[i], 0, 0)
         gx, gy, gz = gyro[i] if gyro.ndim > 1 else (gyro[i], 0, 0)
-        
+
         events.append({
             "t": "sample",
             "ts": ts,
@@ -1193,13 +1193,13 @@ def convert_mat_to_jsonl(mat_path: Path, output_dir: Path):
             "gx": float(gx), "gy": float(gy), "gz": float(gz),
             "workoutState": "counting" if labels and labels[i] > 0 else "idle",
         })
-    
+
     # Ausgabe
     output_path = output_dir / f"{session_id}.jsonl"
     with open(output_path, "w") as f:
         for e in events:
             f.write(json.dumps(e) + "\n")
-    
+
     # Manifest
     known_reps = int(np.sum(labels > 0)) if labels is not None else 0
     manifest = {
@@ -1213,7 +1213,7 @@ def convert_mat_to_jsonl(mat_path: Path, output_dir: Path):
     }
     with open(output_path.with_suffix(".jsonl.meta.json"), "w") as f:
         json.dump(manifest, f, indent=2)
-    
+
     print(f"  {session_id}: {n} Samples, {known_reps} Reps")
 
 def main():
@@ -1221,15 +1221,15 @@ def main():
     parser.add_argument("--input-dir", required=True, help="RecoFit .mat Verzeichnis")
     parser.add_argument("--output-dir", required=True, help="Zielverzeichnis für JSONL")
     args = parser.parse_args()
-    
+
     input_dir = Path(args.input_dir)
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    
+
     for mat_path in sorted(input_dir.glob("*.mat")):
         print(f"Konvertiere: {mat_path.name}")
         convert_mat_to_jsonl(mat_path, output_dir)
-    
+
     print(f"\nFertig. {len(list(output_dir.glob('*.jsonl')))} JSONL-Dateien in {output_dir}")
 
 if __name__ == "__main__":

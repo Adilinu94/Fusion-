@@ -166,6 +166,22 @@ fun SettingsScreen(
                 onSelect = { viewModel.setRestMusicBehavior(option) },
             )
         }
+        item {
+            // Phase 7: Duck-Regler fuer die Pausenmusik (-12..0 dB, Default -8).
+            RestDuckSection(
+                restDuckDb = dspConfig.restDuckDb,
+                onSetRestDuckDb = viewModel::setRestDuckDb,
+            )
+        }
+        item {
+            // Phase 6: dezenter Timing-Hinweis - die App verspricht keine
+            // Millisekunden, das Timing passt sich der Route an.
+            Text(
+                text = stringResource(R.string.settings_timing_hint),
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
         item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
             WorkoutExtrasSection(
@@ -661,6 +677,42 @@ private fun RestMusicBehavior.descRes(): Int =
         RestMusicBehavior.REST_PLAYLIST -> R.string.settings_rest_music_rest_playlist_desc
         RestMusicBehavior.DROP_LANDING -> R.string.settings_rest_music_drop_landing_desc
     }
+
+/**
+ * Duck-Regler fuer die Pausenmusik (Design Phase 7): -12..0 dB in
+ * 2-dB-Schritten, Default -8. Der Wert ist Teil der DSP-Konfiguration
+ * und wirkt als Preamp-Absenkung waehrend der Pause (nie doppelt mit
+ * dem Cue-Ducking, der staerkere Wert gewinnt).
+ */
+@Composable
+private fun RestDuckSection(
+    restDuckDb: Double,
+    onSetRestDuckDb: (Double) -> Unit,
+) {
+    val steps = listOf(0.0, -2.0, -4.0, -6.0, -8.0, -10.0, -12.0)
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            text = stringResource(R.string.settings_rest_duck_title, restDuckDb.roundToInt()),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = stringResource(R.string.settings_rest_duck_desc),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            steps.forEach { value ->
+                FilterChip(
+                    selected = restDuckDb == value,
+                    onClick = { onSetRestDuckDb(value) },
+                    label = { Text("${value.roundToInt()} dB") },
+                )
+            }
+        }
+    }
+}
 
 /**
  * Eine Auswahl des App-Designs (Darstellung): Radio-Knopf, Titel und

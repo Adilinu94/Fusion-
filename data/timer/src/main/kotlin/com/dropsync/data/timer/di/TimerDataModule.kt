@@ -7,6 +7,7 @@ import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.data.timer.AndroidCueOutput
 import com.dropsync.data.timer.CompletionTonePlayer
+import com.dropsync.data.timer.CountdownBeepPlayer
 import com.dropsync.data.timer.DataStoreMonotonicStateStore
 import com.dropsync.data.timer.DataStoreTimerSnapshotStore
 import com.dropsync.data.timer.DefaultDropRestRequestBus
@@ -67,6 +68,7 @@ object TimerDataModule {
             tts = speaker,
             haptics = HapticsAdapter(context),
             tonePlayer = CompletionTonePlayer(),
+            beepPlayer = CountdownBeepPlayer(),
             ducking = ducking,
             formatter = SpeechTextFormatter(Locale.getDefault()),
             scope = scope,
@@ -125,7 +127,5 @@ object TimerDataModule {
     /** Kill-Fallback (5b): reine Rehydrier-Entscheidung. */
     @Provides
     @Singleton
-    fun provideRestTimerRecovery(
-        store: TimerSnapshotStore,
-    ): RestTimerRecovery = DefaultRestTimerRecovery(store)
+    fun provideRestTimerRecovery(store: TimerSnapshotStore): RestTimerRecovery = DefaultRestTimerRecovery(store)
 }

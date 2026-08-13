@@ -70,7 +70,8 @@ class PeakDetector(
     fun updateExpectedDuration(durationSamples: Double) {
         expectedDurationSamples = durationSamples
         refractorySamples =
-            (durationSamples * refractoryDurationRatio).toInt()
+            (durationSamples * refractoryDurationRatio)
+                .toInt()
                 .coerceAtLeast(5)
                 .coerceAtMost(100)
     }

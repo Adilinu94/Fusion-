@@ -153,7 +153,9 @@ class TimerService : Service() {
                     snapshotStore.clear()
                 }
 
-                else -> Unit
+                else -> {
+                    Unit
+                }
             }
             monotonicStateStore.setLastElapsedRealtimeMs(clock.elapsedRealtimeMs())
         }

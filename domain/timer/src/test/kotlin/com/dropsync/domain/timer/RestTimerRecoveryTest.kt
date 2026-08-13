@@ -9,9 +9,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 private class SilentCueOutput : CueOutput {
-    override fun speak(cueSessionId: String, secondsRemaining: Int) = Unit
+    override fun speak(
+        cueSessionId: String,
+        secondsRemaining: Int,
+    ) = Unit
+
     override fun haptic(cueSessionId: String) = Unit
+
+    override fun countdownBeep(cueSessionId: String) = Unit
+
     override fun tone(cueSessionId: String) = Unit
+
     override fun stopAll(cueSessionId: String) = Unit
 }
 
@@ -44,37 +52,45 @@ class RestTimerRecoveryTest {
     }
 
     @Test
-    fun `kein snapshot bedeutet nichts zu tun`() = runTest {
-        assertFalse(recovery.recover(engine))
-        assertEquals(TimerStatus.IDLE, engine.state.value.status)
-    }
+    fun `kein snapshot bedeutet nichts zu tun`() =
+        runTest {
+            assertFalse(recovery.recover(engine))
+            assertEquals(TimerStatus.IDLE, engine.state.value.status)
+        }
 
     @Test
-    fun `vorhandenes snapshot rehydriert den timer und leert den store`() = runTest {
-        store.save(runningSnapshot())
-        assertTrue(recovery.recover(engine))
-        assertEquals(TimerStatus.RUNNING, engine.state.value.status)
-        // Store wurde bereinigt: zweiter Aufruf findet nichts mehr.
-        assertFalse(recovery.recover(TimerEngine(clock, SilentCueOutput()) { "x" }))
-    }
+    fun `vorhandenes snapshot rehydriert den timer und leert den store`() =
+        runTest {
+            store.save(runningSnapshot())
+            assertTrue(recovery.recover(engine))
+            assertEquals(TimerStatus.RUNNING, engine.state.value.status)
+            // Store wurde bereinigt: zweiter Aufruf findet nichts mehr.
+            assertFalse(recovery.recover(TimerEngine(clock, SilentCueOutput()) { "x" }))
+        }
 
     @Test
-    fun `dropsync snapshot wird verworfen und nicht rehydriert`() = runTest {
-        val dropsync =
-            runningSnapshot().copy(
-                session = runningSnapshot().session.copy(mode = TimerMode.DROPSYNC),
+    fun `dropsync snapshot wird verworfen und nicht rehydriert`() =
+        runTest {
+            val dropsync =
+                runningSnapshot().copy(
+                    session = runningSnapshot().session.copy(mode = TimerMode.DROPSYNC),
+                )
+            store.save(dropsync)
+            assertFalse(recovery.recover(engine))
+            assertEquals(TimerStatus.IDLE, engine.state.value.status)
+            assertTrue(store.clearCount >= 1) // veralteter Zustand bereinigt
+        }
+
+    @Test
+    fun `recovery bei laufender sitzung lehnt ab`() =
+        runTest {
+            engine.start(TimerMode.NORMAL, durationMs = 10_000)
+            store.save(runningSnapshot())
+            assertFalse(recovery.recover(engine)) // Konflikt: Engine nicht IDLE
+            assertEquals(
+                TimerMode.NORMAL,
+                engine.state.value.session!!
+                    .mode,
             )
-        store.save(dropsync)
-        assertFalse(recovery.recover(engine))
-        assertEquals(TimerStatus.IDLE, engine.state.value.status)
-        assertTrue(store.clearCount >= 1) // veralteter Zustand bereinigt
-    }
-
-    @Test
-    fun `recovery bei laufender sitzung lehnt ab`() = runTest {
-        engine.start(TimerMode.NORMAL, durationMs = 10_000)
-        store.save(runningSnapshot())
-        assertFalse(recovery.recover(engine)) // Konflikt: Engine nicht IDLE
-        assertEquals(TimerMode.NORMAL, engine.state.value.session!!.mode)
-    }
+        }
 }

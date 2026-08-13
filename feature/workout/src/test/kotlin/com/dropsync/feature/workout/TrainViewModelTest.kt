@@ -1,7 +1,7 @@
 package com.dropsync.feature.workout
 
-import app.cash.turbine.test
 import androidx.lifecycle.viewModelScope
+import app.cash.turbine.test
 import com.dropsync.core.testing.FakeCalibrationProfileRepository
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.FakeFlatSetRepository
@@ -88,16 +88,17 @@ class TrainViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(): TrainViewModel = TrainViewModel(
-        workoutRepository = workoutRepository,
-        flatSetRepository = flatSetRepository,
-        timerEngine = timerEngine,
-        restTimerServiceStarter = RestTimerServiceStarter { },
-        sensorProvider = sensorProvider,
-        calibrationProfileRepository = calibrationProfileRepository,
-        restTimerPreferences = FakeRestTimerPreferencesRepository(),
-        shadowSessionRecorder = shadowSessionRecorder,
-    )
+    private fun viewModel(): TrainViewModel =
+        TrainViewModel(
+            workoutRepository = workoutRepository,
+            flatSetRepository = flatSetRepository,
+            timerEngine = timerEngine,
+            restTimerServiceStarter = RestTimerServiceStarter { },
+            sensorProvider = sensorProvider,
+            calibrationProfileRepository = calibrationProfileRepository,
+            restTimerPreferences = FakeRestTimerPreferencesRepository(),
+            shadowSessionRecorder = shadowSessionRecorder,
+        )
 
     /**
      * Erzeugt ein ViewModel und cancelt dessen Scope am Testende. Ohne das
@@ -105,9 +106,7 @@ class TrainViewModelTest {
      * in TrainViewModel.init laeuft im viewModelScope (nicht im
      * TestScope.backgroundScope) und produziert endlos neue Tasks.
      */
-    private suspend fun kotlinx.coroutines.test.TestScope.withViewModel(
-        block: suspend (TrainViewModel) -> Unit,
-    ) {
+    private suspend fun kotlinx.coroutines.test.TestScope.withViewModel(block: suspend (TrainViewModel) -> Unit) {
         val vm = viewModel()
         try {
             block(vm)
@@ -121,9 +120,7 @@ class TrainViewModelTest {
      * FakeSensorProvider puffert nur 64 Samples (extraBufferCapacity); ohne
      * das Chunking wuerden laengere Streams ueberlaufen und Samples verlieren.
      */
-    private fun kotlinx.coroutines.test.TestScope.emitStream(
-        samples: List<com.dropsync.domain.sensor.SensorSample>,
-    ) {
+    private fun kotlinx.coroutines.test.TestScope.emitStream(samples: List<com.dropsync.domain.sensor.SensorSample>) {
         samples.chunked(32).forEach { chunk ->
             chunk.forEach { sensorProvider.emit(it) }
             testScheduler.runCurrent()
@@ -431,9 +428,17 @@ class TrainViewModelTest {
     }
 
     private class NoOpCueOutput : CueOutput {
-        override fun speak(cueSessionId: String, secondsRemaining: Int) = Unit
+        override fun speak(
+            cueSessionId: String,
+            secondsRemaining: Int,
+        ) = Unit
+
         override fun haptic(cueSessionId: String) = Unit
+
+        override fun countdownBeep(cueSessionId: String) = Unit
+
         override fun tone(cueSessionId: String) = Unit
+
         override fun stopAll(cueSessionId: String) = Unit
     }
 }

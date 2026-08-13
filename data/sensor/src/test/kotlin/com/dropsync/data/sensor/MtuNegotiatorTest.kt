@@ -85,8 +85,10 @@ class MtuNegotiatorTest {
     fun `request mtu bleibt unterhalb der hyperos off-by-one grenze`() {
         // HyperOS MTU-517 Bug (Produktions-Praxis): der angefragte Wert
         // muss deutlich unter 517 bleiben, 512 waere riskant.
-        assertTrue("512 trifft die HyperOS-Grenze, $MtuNegotiator.REQUEST_MTU ist sicher",
-            MtuNegotiator.REQUEST_MTU < 517)
+        assertTrue(
+            "512 trifft die HyperOS-Grenze, $MtuNegotiator.REQUEST_MTU ist sicher",
+            MtuNegotiator.REQUEST_MTU < 517,
+        )
     }
 
     @Test

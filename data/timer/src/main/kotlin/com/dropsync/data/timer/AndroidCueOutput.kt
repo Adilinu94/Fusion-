@@ -57,6 +57,7 @@ class AndroidCueOutput(
     private val tts: TtsSpeaker,
     private val haptics: HapticsAdapter,
     private val tonePlayer: CompletionTonePlayer,
+    private val beepPlayer: CountdownBeepPlayer,
     private val ducking: DuckingController,
     private val formatter: SpeechTextFormatter,
     private val scope: CoroutineScope,
@@ -87,9 +88,16 @@ class AndroidCueOutput(
         if (settings.hapticsEnabled) haptics.tick()
     }
 
+    override fun countdownBeep(cueSessionId: String) {
+        // Phase 7: kurzer vorgerenderter Beep statt ToneGenerator.
+        if (settings.completionToneEnabled) beepPlayer.shortBeep()
+    }
+
     override fun tone(cueSessionId: String) {
         if (settings.hapticsEnabled) haptics.completion()
-        if (settings.completionToneEnabled) tonePlayer.play()
+        // Phase 7: langer Go-Beep als echtes Audio-Event; der alte
+        // ToneGenerator ist der Fallback ohne vorgerenderten Clip.
+        if (settings.completionToneEnabled) beepPlayer.goBeep()
     }
 
     override fun stopAll(cueSessionId: String) {

@@ -337,7 +337,15 @@ class TimerEngine(
         if (!deliveredCueIds.add(cueId)) return
         if (cue.speak) cueOutput.speak(session.id, (cue.thresholdMs / 1000).toInt())
         if (cue.haptic) cueOutput.haptic(session.id)
-        if (cue.tone) cueOutput.tone(session.id)
+        if (cue.tone) {
+            // Phase 7: Countdown-Beeps (kurz) fuer 3-2-1 und die letzten
+            // Sekunden, der lange Go-Beep nur fuer den Abschluss (0).
+            if (cue.thresholdMs == 0L) {
+                cueOutput.tone(session.id)
+            } else {
+                cueOutput.countdownBeep(session.id)
+            }
+        }
     }
 
     private fun transitionTo(target: TimerStatus) {
@@ -361,23 +369,27 @@ class TimerEngine(
         val session = current.session ?: return null
         if (session.mode == TimerMode.DROPSYNC) return null
         return when (current.status) {
-            TimerStatus.RUNNING ->
+            TimerStatus.RUNNING -> {
                 TimerSnapshot(
                     session = session,
                     status = TimerStatus.RUNNING,
                     endElapsedRealtimeMs = endElapsedRealtimeMs,
                     pausedRemainingMs = null,
                 )
+            }
 
-            TimerStatus.PAUSED ->
+            TimerStatus.PAUSED -> {
                 TimerSnapshot(
                     session = session,
                     status = TimerStatus.PAUSED,
                     endElapsedRealtimeMs = null,
                     pausedRemainingMs = pausedRemainingMs,
                 )
+            }
 
-            else -> null
+            else -> {
+                null
+            }
         }
     }
 
@@ -432,7 +444,9 @@ class TimerEngine(
                 true
             }
 
-            else -> false
+            else -> {
+                false
+            }
         }
     }
 

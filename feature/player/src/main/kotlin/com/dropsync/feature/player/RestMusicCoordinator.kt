@@ -6,10 +6,15 @@ import com.dropsync.core.common.getOrNull
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.MarkerRepository
+import com.dropsync.domain.playback.PlaybackGeneration
 import com.dropsync.domain.playback.PlaybackRepository
+import com.dropsync.domain.playback.RestDuckingGate
 import com.dropsync.domain.playback.RestMusicSettingsRepository
+import com.dropsync.domain.playback.RouteProfileRepository
+import com.dropsync.domain.timer.DropLandingPlan
 import com.dropsync.domain.timer.DropLandingPlanner
 import com.dropsync.domain.timer.DropLandingResult
 import com.dropsync.domain.timer.TimerEngine
@@ -53,6 +58,9 @@ class RestMusicCoordinator
         private val playbackRepository: PlaybackRepository,
         private val browseRepository: LibraryBrowseRepository,
         private val markerRepository: MarkerRepository,
+        private val audioEngine: AudioEngineRepository,
+        private val routeProfiles: RouteProfileRepository,
+        private val restDucking: RestDuckingGate,
         private val clock: Clock,
         dispatchers: DispatcherProvider,
     ) {
@@ -69,6 +77,13 @@ class RestMusicCoordinator
         private var landed = false
 
         private var landingJob: Job? = null
+
+        /**
+         * Generation-Token (Design Phase 6): Skip, Satzwechsel und
+         * Route-Wechsel erhoehen die Generation; laufende Landungen
+         * vergleichen und verwerfen veraltete Events.
+         */
+        private var generation = PlaybackGeneration.INITIAL
 
         /** Startet die Beobachtung genau einmal (App-Start). */
         fun start() {
@@ -111,6 +126,8 @@ class RestMusicCoordinator
                     activeSessionId = null
                     controlling = false
                     landed = false
+                    // Pausenende/Abbruch: Rest-Ducking zuruecknehmen (Phase 7).
+                    restDucking.setActive(false)
                     // Natuerliches Pausenende ohne bereits erfolgte Landung:
                     // Work-Titel starten. Bei Abbruch/Pause nie erzwingen.
                     if (completed && wasControlling && !hadLanded) startWorkTitle()
@@ -129,8 +146,14 @@ class RestMusicCoordinator
                 // erneut versuchen; wir uebernehmen die Queue aber nicht.
                 return
             }
+            // Satzwechsel: Generation erhoehen, damit laufende Landungen
+            // veralteter Sitzungen nie mehr feuern (Design Phase 6).
+            generation = generation.next()
+            val sessionGeneration = generation
             playbackRepository.setQueue(restSongs, startIndex = 0, playWhenReady = true)
             controlling = true
+            // Phase 7: Pausenmusik ducken (Rampe, dB aus DSP-Konfiguration).
+            restDucking.setActive(true)
             if (behavior != RestMusicBehavior.DROP_LANDING) return
 
             val startedAt = session.startedElapsedRealtimeMs ?: return
@@ -138,9 +161,19 @@ class RestMusicCoordinator
                 (startedAt + session.durationMs - clock.elapsedRealtimeMs())
                     .coerceAtLeast(0)
             val (candidates, songsById) = workCandidates()
+            // Crossfade-Dauer aus der DSP-Konfiguration (Design Phase 6.1);
+            // Latenz aus dem Route-Profil (WorkStart = Go - Marker - Latenz).
+            val crossfadeMs = (audioEngine.dspConfig.first().crossfadeSeconds * 1000L)
+            val latencyMs = routeProfiles.currentLatencyMs() ?: 0L
             val plan =
-                (DropLandingPlanner.plan(remaining, candidates) as? DropLandingResult.Scheduled)
-                    ?.plan ?: return
+                (
+                    DropLandingPlanner.plan(
+                        remaining,
+                        candidates,
+                        latencyMs = latencyMs,
+                        crossfadeMs = crossfadeMs,
+                    ) as? DropLandingResult.Scheduled
+                )?.plan ?: return
             // Ohne brauchbaren Work-Drop faellt DROP_LANDING auf
             // REST_PLAYLIST zurueck: Work-Titel dann erst am Pausenende.
             val workSong = songsById[plan.songId] ?: return
@@ -148,20 +181,39 @@ class RestMusicCoordinator
             landingJob =
                 scope.launch {
                     delay(plan.startAfterDelayMs)
-                    // Automatik nur, wenn die Sitzung noch aktiv ist und der
-                    // Nutzer nicht manuell pausiert hat (Nutzer hat Vorrang).
+                    // Automatik nur, wenn die Sitzung noch aktiv ist, die
+                    // Generation noch gueltig ist (Skip/Route-Wechsel) und
+                    // der Nutzer nicht manuell pausiert hat (Nutzer hat Vorrang).
                     if (activeSessionId != sessionId) return@launch
+                    if (generation != sessionGeneration) return@launch
                     val snapshot = playbackRepository.snapshotNow().getOrNull()
                     if (snapshot != null && !snapshot.isPlaying) {
                         // Manueller Eingriff (Pause/Medientaste): Automatik
                         // ganz abgeben, damit auch am Pausenende nichts
                         // erzwungen wird (Hardware-/Touch-Control, F4).
                         controlling = false
+                        restDucking.setActive(false)
                         return@launch
                     }
-                    playbackRepository.crossfadeTo(workSong, plan.startAtPositionMs)
+                    executeLanding(plan, workSong)
                     landed = true
+                    // Work-Titel laeuft: Rest-Ducking zuruecknehmen.
+                    restDucking.setActive(false)
                 }
+        }
+
+        /**
+         * Fuehrt den Plan aus (Design Phase 6):
+         * - INTRO: Crossfade auf den Work-Titel von vorn (startAtPositionMs=0);
+         *   der Crossfade endet vor dem Drop.
+         * - DIRECT_TO_DROP: Rest-Musik laeuft die volle Restzeit; beim Go
+         *   springt der Player per Crossfade direkt auf die Drop-Position.
+         */
+        private suspend fun executeLanding(
+            plan: DropLandingPlan,
+            workSong: Song,
+        ) {
+            playbackRepository.crossfadeTo(workSong, plan.startAtPositionMs)
         }
 
         private suspend fun startWorkTitle() {
@@ -203,11 +255,12 @@ class RestMusicCoordinator
                 .distinctBy { it.mediaStoreId }
         }
 
-        private fun abort() {
+        private suspend fun abort() {
             landingJob?.cancel()
             landingJob = null
             activeSessionId = null
             controlling = false
             landed = false
+            restDucking.setActive(false)
         }
     }

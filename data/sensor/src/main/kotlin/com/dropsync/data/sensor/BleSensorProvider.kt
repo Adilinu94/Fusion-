@@ -451,6 +451,7 @@ class BleSensorProvider
             private const val FIRMWARE_STREAM_DELAY_MS = 600L
             private const val DEVICE_EVENT_POLL_MS = 250L
             private const val POLL_ERROR_BACKOFF_MS = 50L
+
             /** MTU-Timeout: kein onMtuChanged -> Retry (Samsung silent failure). */
             private const val MTU_TIMEOUT_MS = 1_000L
         }

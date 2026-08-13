@@ -27,8 +27,7 @@ class TimerRecoveryStarterTest {
     private val monotonic = FakeMonotonicStateStore()
     private var serviceStarts = 0
 
-    private fun newEngine(): TimerEngine =
-        TimerEngine(clock, NoOpCueOutput()) { "restored" }
+    private fun newEngine(): TimerEngine = TimerEngine(clock, NoOpCueOutput()) { "restored" }
 
     private fun newStarter(engine: TimerEngine): TimerRecoveryStarter =
         TimerRecoveryStarter(
@@ -57,56 +56,61 @@ class TimerRecoveryStarterTest {
         )
 
     @Test
-    fun `reboot verwirft snapshot und startet keinen service`() = runTest {
-        store.save(runningSnapshot())
-        monotonic.stored = clock.elapsedRealtimeMs() + 5_000 // Ruecksprung simuliert
+    fun `reboot verwirft snapshot und startet keinen service`() =
+        runTest {
+            store.save(runningSnapshot())
+            monotonic.stored = clock.elapsedRealtimeMs() + 5_000 // Ruecksprung simuliert
 
-        newStarter(newEngine()).start()
+            newStarter(newEngine()).start()
 
-        assertNull("Snapshot wurde nach Reboot nicht verworfen", store.snapshot)
-        assertEquals(0, serviceStarts)
-    }
-
-    @Test
-    fun `fehlender monotoner wert verwirft snapshot`() = runTest {
-        store.save(runningSnapshot())
-        monotonic.stored = null
-
-        newStarter(newEngine()).start()
-
-        assertNull(store.snapshot)
-        assertEquals(0, serviceStarts)
-        assertEquals(clock.elapsedRealtimeMs(), monotonic.stored)
-    }
+            assertNull("Snapshot wurde nach Reboot nicht verworfen", store.snapshot)
+            assertEquals(0, serviceStarts)
+        }
 
     @Test
-    fun `snapshot rehydriert engine und startet service neu`() = runTest {
-        store.save(runningSnapshot())
-        monotonic.stored = clock.elapsedRealtimeMs() - 10_000
+    fun `fehlender monotoner wert verwirft snapshot`() =
+        runTest {
+            store.save(runningSnapshot())
+            monotonic.stored = null
 
-        val engine = newEngine()
-        newStarter(engine).start()
+            newStarter(newEngine()).start()
 
-        assertEquals(TimerStatus.RUNNING, engine.state.value.status)
-        assertEquals(1, serviceStarts)
-        assertNull("Snapshot wurde verbraucht", store.snapshot)
-    }
-
-    @Test
-    fun `kein snapshot startet keinen service`() = runTest {
-        monotonic.stored = clock.elapsedRealtimeMs() - 10_000
-
-        newStarter(newEngine()).start()
-
-        assertEquals(0, serviceStarts)
-        assertEquals(TimerStatus.IDLE, newEngine().state.value.status)
-    }
+            assertNull(store.snapshot)
+            assertEquals(0, serviceStarts)
+            assertEquals(clock.elapsedRealtimeMs(), monotonic.stored)
+        }
 
     @Test
-    fun `monotoner wert wird nach jedem start aktualisiert`() = runTest {
-        val engine = newEngine()
-        newStarter(engine).start()
-        assertEquals(clock.elapsedRealtimeMs(), monotonic.stored)
-        assertTrue(monotonic.stored!! >= 50_000)
-    }
+    fun `snapshot rehydriert engine und startet service neu`() =
+        runTest {
+            store.save(runningSnapshot())
+            monotonic.stored = clock.elapsedRealtimeMs() - 10_000
+
+            val engine = newEngine()
+            newStarter(engine).start()
+
+            assertEquals(TimerStatus.RUNNING, engine.state.value.status)
+            assertEquals(1, serviceStarts)
+            assertNull("Snapshot wurde verbraucht", store.snapshot)
+        }
+
+    @Test
+    fun `kein snapshot startet keinen service`() =
+        runTest {
+            monotonic.stored = clock.elapsedRealtimeMs() - 10_000
+
+            newStarter(newEngine()).start()
+
+            assertEquals(0, serviceStarts)
+            assertEquals(TimerStatus.IDLE, newEngine().state.value.status)
+        }
+
+    @Test
+    fun `monotoner wert wird nach jedem start aktualisiert`() =
+        runTest {
+            val engine = newEngine()
+            newStarter(engine).start()
+            assertEquals(clock.elapsedRealtimeMs(), monotonic.stored)
+            assertTrue(monotonic.stored!! >= 50_000)
+        }
 }

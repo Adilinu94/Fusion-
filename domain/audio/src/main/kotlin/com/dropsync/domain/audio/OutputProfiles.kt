@@ -74,6 +74,7 @@ object DspConfigCodec {
             "mixPreset" to sanitized.mixPreset.name,
             "useSystemEffects" to sanitized.useSystemEffects.toString(),
             "bitPerfect" to sanitized.bitPerfectEnabled.toString(),
+            "restDuckDb" to sanitized.restDuckDb.toString(),
         ).joinToString(ENTRY_SEPARATOR) { (key, value) -> "$key$KV_SEPARATOR$value" }
     }
 
@@ -127,6 +128,8 @@ object DspConfigCodec {
                     values.bool("useSystemEffects", defaults.useSystemEffects) ?: return null,
                 bitPerfectEnabled =
                     values.bool("bitPerfect", defaults.bitPerfectEnabled) ?: return null,
+                restDuckDb =
+                    values.double("restDuckDb", defaults.restDuckDb) ?: return null,
             ),
         )
     }

@@ -46,47 +46,59 @@ class TimerSnapshotStoreTest : RobolectricTestCase() {
         )
 
     @Test
-    fun `save und load liefern identisches snapshot`() = runTest {
-        val dir = java.nio.file.Files.createTempDirectory("snaptest").toFile()
-        val store = store(dir)
-        val original = sampleSnapshot()
+    fun `save und load liefern identisches snapshot`() =
+        runTest {
+            val dir =
+                java.nio.file.Files
+                    .createTempDirectory("snaptest")
+                    .toFile()
+            val store = store(dir)
+            val original = sampleSnapshot()
 
-        store.save(original)
-        val loaded = store.load()
+            store.save(original)
+            val loaded = store.load()
 
-        assertEquals(original.session.id, loaded!!.session.id)
-        assertEquals(original.session.mode, loaded.session.mode)
-        assertEquals(original.session.durationMs, loaded.session.durationMs)
-        assertEquals(original.session.startedElapsedRealtimeMs, loaded.session.startedElapsedRealtimeMs)
-        assertEquals(original.session.plannedCues, loaded.session.plannedCues)
-        assertEquals(original.status, loaded.status)
-        assertEquals(original.endElapsedRealtimeMs, loaded.endElapsedRealtimeMs)
-        assertEquals(original.pausedRemainingMs, loaded.pausedRemainingMs)
-    }
-
-    @Test
-    fun `pausiertes snapshot behaelt pausedRemainingMs`() = runTest {
-        val dir = java.nio.file.Files.createTempDirectory("snaptest").toFile()
-        val store = store(dir)
-        val paused =
-            sampleSnapshot().copy(
-                status = TimerStatus.PAUSED,
-                endElapsedRealtimeMs = null,
-                pausedRemainingMs = 45_000,
-            )
-        store.save(paused)
-        val loaded = store.load()!!
-        assertEquals(TimerStatus.PAUSED, loaded.status)
-        assertEquals(45_000L, loaded.pausedRemainingMs)
-        assertNull(loaded.endElapsedRealtimeMs)
-    }
+            assertEquals(original.session.id, loaded!!.session.id)
+            assertEquals(original.session.mode, loaded.session.mode)
+            assertEquals(original.session.durationMs, loaded.session.durationMs)
+            assertEquals(original.session.startedElapsedRealtimeMs, loaded.session.startedElapsedRealtimeMs)
+            assertEquals(original.session.plannedCues, loaded.session.plannedCues)
+            assertEquals(original.status, loaded.status)
+            assertEquals(original.endElapsedRealtimeMs, loaded.endElapsedRealtimeMs)
+            assertEquals(original.pausedRemainingMs, loaded.pausedRemainingMs)
+        }
 
     @Test
-    fun `clear entfernt das snapshot`() = runTest {
-        val dir = java.nio.file.Files.createTempDirectory("snaptest").toFile()
-        val store = store(dir)
-        store.save(sampleSnapshot())
-        store.clear()
-        assertNull(store.load())
-    }
+    fun `pausiertes snapshot behaelt pausedRemainingMs`() =
+        runTest {
+            val dir =
+                java.nio.file.Files
+                    .createTempDirectory("snaptest")
+                    .toFile()
+            val store = store(dir)
+            val paused =
+                sampleSnapshot().copy(
+                    status = TimerStatus.PAUSED,
+                    endElapsedRealtimeMs = null,
+                    pausedRemainingMs = 45_000,
+                )
+            store.save(paused)
+            val loaded = store.load()!!
+            assertEquals(TimerStatus.PAUSED, loaded.status)
+            assertEquals(45_000L, loaded.pausedRemainingMs)
+            assertNull(loaded.endElapsedRealtimeMs)
+        }
+
+    @Test
+    fun `clear entfernt das snapshot`() =
+        runTest {
+            val dir =
+                java.nio.file.Files
+                    .createTempDirectory("snaptest")
+                    .toFile()
+            val store = store(dir)
+            store.save(sampleSnapshot())
+            store.clear()
+            assertNull(store.load())
+        }
 }

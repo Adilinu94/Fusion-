@@ -39,7 +39,6 @@ android {
             isReturnDefaultValues = true
         }
     }
-
 }
 
 tasks.withType<Test>().configureEach {

@@ -2,11 +2,13 @@ package com.dropsync.data.audio
 
 import androidx.media3.common.audio.AudioProcessor
 import com.dropsync.domain.audio.AudioInfo
+import com.dropsync.domain.audio.AudioMath
 import com.dropsync.domain.audio.DitherMode
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.StereoMatrix
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -113,6 +115,45 @@ class AudioPipeline
             masterProcessor.setDuckingGain(sanitized)
         }
 
+        // Phase 7: Rest-Ducking (dB -> Gain) mit linearer Rampe. Der
+        // Ticker (100 ms) setzt den Zielwert im Audiothread; der
+        // MasterDspProcessor kombiniert ihn per min() mit dem Cue-Ducking.
+        private var restDuckJob: Job? = null
+        private var restDuckCurrent: Double = 1.0
+
+        /** Ducking der Pausenmusik in dB (Phase 7); 0 = aus. */
+        fun setRestDuckDb(db: Double) {
+            val sanitized = db.coerceIn(REST_DUCK_MIN_DB, REST_DUCK_MAX_DB)
+            val target = if (sanitized >= 0.0) 1.0 else AudioMath.dbToLinear(sanitized)
+            restDuckJob?.cancel()
+            restDuckJob =
+                scope.launch {
+                    rampDuck(
+                        from = restDuckCurrent,
+                        target = target,
+                        attack = sanitized < 0.0,
+                    )
+                }
+        }
+
+        private suspend fun rampDuck(
+            from: Double,
+            target: Double,
+            attack: Boolean,
+        ) {
+            val stepMs = 20L
+            val steps = if (attack) 2 else 8
+            for (i in 1..steps) {
+                val t = i.toDouble() / steps
+                val value = from + (target - from) * t
+                restDuckCurrent = value
+                masterProcessor.setRestDuckingGain(value)
+                kotlinx.coroutines.delay(stepMs)
+            }
+            restDuckCurrent = target
+            masterProcessor.setRestDuckingGain(target)
+        }
+
         fun onSourceFormatChanged(info: SourceFormatInfo) {
             mutableSourceFormat.value = info
         }
@@ -153,4 +194,9 @@ class AudioPipeline
                 config.resampler.targetRateHz == null &&
                 config.ditherMode == DitherMode.TPDF &&
                 !config.dvcEnabled
+
+        companion object {
+            private const val REST_DUCK_MIN_DB = -12.0
+            private const val REST_DUCK_MAX_DB = 0.0
+        }
     }

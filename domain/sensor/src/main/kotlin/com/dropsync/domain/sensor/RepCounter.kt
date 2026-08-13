@@ -135,8 +135,7 @@ class RepCounter(
      * Punkt 6: Pending-Fenster-Grenze dynamisch aus der erwarteten
      * Rep-Dauer (2x, begrenzt auf 60-300 Samples), statt fix 120.
      */
-    private fun maxExtraPhaseSamples(): Int =
-        (peakDetector.expectedDurationSamples * 2.0).toInt().coerceIn(60, 300)
+    private fun maxExtraPhaseSamples(): Int = (peakDetector.expectedDurationSamples * 2.0).toInt().coerceIn(60, 300)
 
     private fun finalizePending(): RepResult {
         val peak = pendingPeak!!

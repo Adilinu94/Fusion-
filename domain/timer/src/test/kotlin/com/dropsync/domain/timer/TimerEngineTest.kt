@@ -12,6 +12,7 @@ import org.junit.Test
 private class RecordingCueOutput : CueOutput {
     val spoken = mutableListOf<Pair<String, Int>>()
     val haptics = mutableListOf<String>()
+    val beeps = mutableListOf<String>()
     val tones = mutableListOf<String>()
     val stops = mutableListOf<String>()
 
@@ -24,6 +25,10 @@ private class RecordingCueOutput : CueOutput {
 
     override fun haptic(cueSessionId: String) {
         haptics += cueSessionId
+    }
+
+    override fun countdownBeep(cueSessionId: String) {
+        beeps += cueSessionId
     }
 
     override fun tone(cueSessionId: String) {
@@ -219,9 +224,9 @@ class TimerEngineTest {
 
         assertEquals(TimerStatus.RUNNING, engine.state.value.status)
         assertEquals(60_000, engine.state.value.remainingMs)
-        // 3-2-1 gab Haptik + Ton (kein Sprechen der Vorbereitung).
+        // 3-2-1 gab Haptik + Countdown-Beep (Phase 7, kein Sprechen).
         assertTrue(cues.haptics.isNotEmpty())
-        assertTrue(cues.tones.isNotEmpty())
+        assertTrue(cues.beeps.isNotEmpty())
         assertTrue(cues.spoken.isEmpty())
     }
 
