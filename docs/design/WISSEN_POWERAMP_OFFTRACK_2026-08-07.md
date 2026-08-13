@@ -1209,6 +1209,48 @@ Decoder B ─┘
 
 Das folgt eher dem Offtrack-/Poweramp-Muster. Es sollte erst nach Messung als Native-/Custom-Audio-Engine umgesetzt werden.
 
+### Bauplan für die spätere native Engine (Triage-Befunde 2026-08-13)
+
+Die zweite Durchsuchung von `D:\rev-tools\poweramp_offline_triage` (native ELF-Strings von `libpowerampcore.so`, Smali, DEX-Keyword-Report) hat konkrete Bausteine für den Zeitpunkt dokumentiert, an dem eine eigene Engine wirklich gemessen wird. Der komplette Audio-Hotpath liegt bei Poweramp bewusst in `libpowerampcore.so` und NICHT im DEX, das DEX orchestriert nur. Was dort gefunden wurde:
+
+**DSP-Thread und Puffer-Architektur (aus den nativen Log-Strings):**
+
+```text
+%s output_buf_ms=%d dsp_bufs=%d dsp_postfade_blocks=%d dsp_prefetch_bufs=%d flags=0x%x sample_rate=%d sample_fmt=%d vis_latency_ms=%d
+%s bad config_blob_msg (buf_ms=%d dsp_bufs=%d dsp_prefetch_bufs=%d), using default safe output config
+%s() AudioManager.getProperty(OUTPUT_FRAMES_PER_BUFFER) java exception
+%s() AudioTrack.getMinBufferSize() java exception
+Poweramp DSP Thread
+Poweramp Decoder Thread
+```
+
+Übertragbar:
+- Ein eigener **DSP-Thread**, getrennt vom Decoder-Thread und vom UI, mit konfigurierbaren Puffern (`buf_ms`, Anzahl Puffer, Prefetch-Blöcke, Postfade-Blöcke).
+- **Sicherer Fallback:** Wenn die Puffer-Konfiguration ungültig ist, wird eine konservative Default-Konfiguration verwendet, nie abgestürzt.
+- **Geräte-Abfragen defensiv:** `AudioManager.getProperty(...)` und `AudioTrack.getMinBufferSize()` werden bei Poweramp mit Exception-Fallback aufgerufen (seine Logs zeigen `java exception` als normalen Pfad). Dasselbe Muster nutzen wir bereits für `getBluetoothCodecStatus()`.
+- **DSP-Thread-Start mit Timeout:** `dsp_thread failed to start within %d sec` belegt einen überwachten Start statt blindem Vertrauen.
+
+**Output-Varianten (AAudio, OpenSL ES, AudioTrack):**
+
+Die Strings listen alle drei Output-Pfade samt ihrer Builder-/Callback-Funktionen (AAudioStream_setDataCallback, AAudioStream_setPerformanceMode, AudioTrack.ctor, AudioFX). Übertragbar: Die Output-Schicht ist ein austauschbares Plugin hinter einer gemeinsamen Grenze, mit AAudio als bevorzugtem Low-Latency-Pfad und AudioTrack als Fallback. Erst bauen, wenn eine Messung zeigt, dass Media3-AudioSink zu viel Latenz oder Underruns erzeugt.
+
+**Resampler und Dither als eigene Plugin-Stufe:**
+
+`resampler_type`, `resampler_cutoff`, `audio_resampler#dither`, SWResampler sowie die OpenMPT-Dither-Kette (Dither_None / Dither_Simple / Dither_ModPlug) belegen: Resampling ist eine isolierte, austauschbare Stufe mit eigener Qualitäts-/Performance-Konfiguration. Übertragbar: Qualität (Cutoff, Dither) wird explizit konfiguriert statt stillschweigend festgelegt.
+
+**Offload-Fähigkeiten werden geprüft, nicht angenommen:**
+
+`AUDIO_OUTPUT_FLAG_DIRECT_PCM`, `FLAG_SUPPORTS_PCM_24_OFFLOAD`, `audio.offload.pcm.24bit.enable` zeigen, dass Poweramp die Plattform-Fähigkeiten zur Laufzeit abfragt. Übertragbar: Kein hartes Annehmen von Offload, Fähigkeiten abfragen und Fallback bereithalten.
+
+**Priorisierung späterer Arbeit (erst messen, dann bauen):**
+
+1. Erst Metriken sammeln: AudioTrack-Underruns, Latenz je Route, Jank in der UI während Crossfade/Seek.
+2. Wenn die Messung schlecht ist: minimalen nativen PCM-Mixer bauen (zwei Decoder → ein AudioSink), ohne EQ/DSP.
+3. Danach erst: DSP-Stufen (EQ, Dither, Resampler) als austauschbare Plugins ergänzen.
+4. AAudio-Pfad erst, wenn die Latenzmessung unter Media3-AudioSink zu hoch ist.
+
+Der MVP bleibt bei zwei Media3-Decks (diese Entscheidung ist durch die Triage bestätigt, nicht widerlegt).
+
 ### Nicht als Mixer missverstehen
 
 - `MergingMediaSource` mischt nicht automatisch zwei unabhängig laufende Songs.
