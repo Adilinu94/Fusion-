@@ -29,6 +29,12 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
+        // Testinfra-Plan Schritt 4 (instrumentierte Kern-Tests): eigene
+        // Test-App, damit Hilt-Tests ohne Produktions-Application laufen.
+        testApplicationId = "com.dropsync.app.debug.test"
+        testInstrumentationRunnerArguments["customTestApplicationClass"] =
+            "com.dropsync.app.HiltTestApplication"
+
         // Version 1 liefert Deutsch und Englisch (Bauplan Schritt 12.7).
         androidResources.localeFilters += listOf("de", "en")
     }
@@ -109,8 +115,15 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit4)
+    androidTestImplementation(libs.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kspAndroidTest(libs.hilt.compiler)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // Media3 fuer instrumentierte Audio-Tests (AudioFocus): der Produktivcode
+    // liegt in :data:playback, die Tests brauchen ExoPlayer direkt.
+    androidTestImplementation(libs.androidx.media3.exoplayer)
+    androidTestImplementation(libs.androidx.media3.common)
 }

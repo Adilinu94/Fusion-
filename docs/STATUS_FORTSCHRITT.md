@@ -216,3 +216,17 @@ Anlass: `D:\rev-tools\poweramp_offline_triage` tief durchsucht (native ELF-Strin
 - [x] **Bereits erfüllt (nur geprüft):** Scanner-Muster `setThreadPriority(LOWEST)` + `SystemClock.sleep` entspricht unserem WorkManager-Ansatz (lässt das System die Priorität steuern); MediaSession-Baum getrennt vom DSP (unsere `:data:playback`-Grenze); LazyList mit stabilen Keys (`mediaStoreId`) überall in der Library; Analyse-Cache versioniert mit Datei-Fingerprint.
 - [x] **Tests:** `neue songs laufen gebatcht in genau einem anstoss` (data:library); bestehende Import-/Player-/DB-Tests grün.
 - [x] Verifiziert: `:data:audio`, `:data:playback`, `:data:library`, `:feature:player`, `:core:database`, `:app:compileDebugKotlin` — alle grün.
+
+## Q. Instrumentierte Kern-Tests umgesetzt (2026-08-14): Teil F des Hardware-Testplans
+
+Anlass: Hardware-Testplan Teil F (Testinfra-Plan Schritt 4) — die
+"Kein einziger instrumentierter Test"-Lücke schließen. Auf dem
+Medium_Phone-Emulator (Android 16) verifiziert.
+
+- [x] **Testinfra eingerichtet:** `hilt-android-testing` + `kspAndroidTest` + `testApplicationId` + `customTestApplicationClass` in `app/build.gradle.kts`; `HiltTestApplication` in `app/src/androidTest/` **bewusst OHNE `@HiltAndroidApp`** — Hilt erlaubt nur eine Root pro Modul, die Produktions-`DropSyncApplication` ist die Root (vorher `InvalidRootsException`). Media3 als `androidTestImplementation` ergänzt.
+- [x] **`AudioTimestampExtrapolationInstrumentedTest`** (2 Tests, grün): echter `AudioTrack` + `AudioTrackTimestampReader`, Warm-up-Gate (vor `play()` kein valider Timestamp), Delta-Monotonie. Exakte Frame-Deltas sind auf dem Emulator nicht garantiert (grobe Treiber-Bursts) → robust: Uhr geht vorwärts, Position wächst monoton, Extrapolator läuft vorwärts. D8-Falle: Testmethoden mit Backtick-Leerzeichen (z. B. `fehlerhafte konfiguration`) erzeugen Klassennamen mit Leerzeichen → `Space characters in SimpleName` → auf ASCII-Unterstrich umbenannt.
+- [x] **`AudioFocusPermanentLossInstrumentedTest`** (1 Test, grün): ExoPlayer identisch zur App (`setAudioAttributes(attrs, true)`), permanenter LOSS via `AudioManager.requestAudioFocus` stoppt die Wiedergabe. ExoPlayer-Falle: Zugriff nur auf dem Main-Thread (Erzeugung + Zustandslesungen über `runOnMainSync`/Listener), sonst `Player is accessed on the wrong thread`.
+- [x] **`BleScanConnectInstrumentedTest`** (2 Tests, per `@Ignore`): Scan → Connect → MTU → STREAMING auf echtem M5; CI-sicher deaktiviert.
+- [x] **Underrun-Test bewusst NICHT angelegt:** `AudioInfoListener` hat kein Underrun-Monitoring (`onAudioSinkError`/`onAudioTrackUnderrun` fehlen). Erst Feature bauen (Hardware-Testplan B6 prüft den Bedarf), dann Test. Im Testplan dokumentiert.
+- [x] **Nebenbefund:** physisches Gerät (`55j7xkiffixsyhxg`) war parallel an ADB → `INSTALL_FAILED_USER_RESTRICTED`; via `-s emulator-5554` + `settings put global verifier_verify_adb_installs 0` gelöst. `connectedDebugAndroidTest` läuft jetzt stabil.
+- [x] Verifiziert: `:app:connectedDebugAndroidTest` auf Medium_Phone (Android 16) — BUILD SUCCESSFUL, 3/3 Audio-Tests grün. `docs/HARDWARE_TESTPLAN.md` Teil F aktualisiert.

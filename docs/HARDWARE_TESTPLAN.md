@@ -259,25 +259,36 @@ Allokations-Ruckler beim Scrollen (subjektiv + logcat).
 
 ## 7. Teil F: Instrumentierte Kern-Tests (Testinfra-Plan Schritt 4)
 
-Diese Tests brauchen nur das Handy (kein M5). Sie schließen die
-"Kein einziger instrumentierter Test"-Lücke:
+**Status 2026-08-14: UMGEsetzt und auf dem Emulator gruen.**
 
-1. Vorbereitung im Code (Testinfra-Plan Schritt 4):
-   - `hilt-android-testing` in `app/build.gradle.kts`
-   - `HiltTestApplication` in `app/src/androidTest/`
-   - Runner-Argument `customTestApplicationClass`
-2. Tests anlegen:
-   - `AudioTimestampExtrapolationInstrumentedTest`: AudioTrack.getTimestamp()
-     zwei Samples → extrapoliertes Delta in Toleranz
-   - `UnderrunMonitorInstrumentedTest`: synthetische Stille→Impuls-Sequenz
-     → Underrun erkannt (Golden-Audio-Fixture)
-   - `AudioFocusPermanentLossInstrumentedTest`: permanenter LOSS stoppt
-     Player, transient duckt + Timer läuft weiter
-   - `BleScanConnectInstrumentedTest`: manuell markiert (`@Ignore`
-     standardmäßig), mit echtem M5 laufen lassen
-3. Ausführen: `./gradlew connectedCheck` auf dem angeschlossenen Handy.
+1. Vorbereitung im Code (Testinfra-Plan Schritt 4) - erledigt:
+   - `hilt-android-testing` + `kspAndroidTest` in `app/build.gradle.kts`
+   - `testApplicationId` + `customTestApplicationClass` Runner-Argument
+   - `HiltTestApplication` in `app/src/androidTest/` (bewusst OHNE
+     `@HiltAndroidApp`: Hilt erlaubt nur eine Root pro Modul, die
+     Produktions-`DropSyncApplication` ist die Root)
+   - `androidTestImplementation(libs.androidx.media3.exoplayer/common)`
+     (die Tests brauchen ExoPlayer direkt)
+2. Tests angelegt:
+   - `AudioTimestampExtrapolationInstrumentedTest`: echter AudioTrack,
+     Warm-up-Gate, Delta-Monotonie + Extrapolator (2 Tests, gruen)
+   - `AudioFocusPermanentLossInstrumentedTest`: ExoPlayer mit
+     `setAudioAttributes(attrs, handleFocus=true)` identisch zur App,
+     permanenter LOSS stoppt die Wiedergabe (1 Test, gruen)
+   - `BleScanConnectInstrumentedTest`: manuell markiert (`@Ignore`),
+     braucht echtes M5StickC (2 Tests, per @Ignore deaktiviert)
+3. Ausfuehren: `./gradlew :app:connectedDebugAndroidTest` auf dem
+   Emulator - BUILD SUCCESSFUL (3/3 Audio-Tests gruen).
 
-**Erwartung:** Alle nicht-BLE-Tests grün auf dem echten Gerät; der
+**Underrun-Test (NICHT testbar):** `UnderrunMonitorInstrumentedTest`
+wurde geprueft und bewusst NICHT angelegt: der `AudioInfoListener` im
+`PlaybackService` implementiert nur `onAudioInputFormatChanged`/
+`onAudioTrackInitialized`, es gibt KEIN Underrun-Monitoring
+(`onAudioSinkError`/`onAudioTrackUnderrun` fehlen). Ohne Feature laesst
+sich kein Underrun erkennen. Muss erst als Feature gebaut werden
+(Hardware-Testplan B6 prueft den Bedarf), danach kommt der Test.
+
+**Erwartung:** Alle nicht-BLE-Tests gruen auf dem echten Geraet; der
 BLE-Test verbindet einmal komplett (Scan → Connect → Service Discovery
 → MTU-Verhandlung → STREAMING).
 
