@@ -230,3 +230,54 @@ Medium_Phone-Emulator (Android 16) verifiziert.
 - [x] **Underrun-Test bewusst NICHT angelegt:** `AudioInfoListener` hat kein Underrun-Monitoring (`onAudioSinkError`/`onAudioTrackUnderrun` fehlen). Erst Feature bauen (Hardware-Testplan B6 prüft den Bedarf), dann Test. Im Testplan dokumentiert.
 - [x] **Nebenbefund:** physisches Gerät (`55j7xkiffixsyhxg`) war parallel an ADB → `INSTALL_FAILED_USER_RESTRICTED`; via `-s emulator-5554` + `settings put global verifier_verify_adb_installs 0` gelöst. `connectedDebugAndroidTest` läuft jetzt stabil.
 - [x] Verifiziert: `:app:connectedDebugAndroidTest` auf Medium_Phone (Android 16) — BUILD SUCCESSFUL, 3/3 Audio-Tests grün. `docs/HARDWARE_TESTPLAN.md` Teil F aktualisiert.
+
+## R. Emulator-UI-Tests Teil D/E (2026-08-14): First-Start, Theme, A11y, Import
+
+Anlass: Hardware-Testplan Teile D und E auf dem Medium_Phone-Emulator
+(Android 16) durchgeführt.
+
+- [x] **E1 First-Start-Berechtigungsfluss:** Frische Installation startet
+  mit Systemdialog `POST_NOTIFICATIONS` (Train-Tab, ohne eigenes
+  Rationale - die App fragt direkt beim ersten Öffnen). Nach "Don't
+  allow" läuft die App normal weiter (kein Crash). Music-Tab zeigt bei
+  fehlender Audio-Berechtigung den Fehlerzustand "Access to your music /
+  DropSync plays music stored on this device. Grant access" mit CTA
+  statt leerem Screen (Anforderung erfüllt, LibraryScreen hat den
+  Rationale-Flow). Nach Grant: Library mit allen Kategorien (All Songs,
+  Folders, Albums, Artists, Genres, Playlists, Queue, Favorites,
+  Recently Added).
+- [x] **D3 Erst-Import 28 Tracks:** 3 synthetische WAVs gepusht +
+  Emulator-Vorab-MP3s (28 Tracks, 1:19:10, inkl. FLAC). Import ohne
+  UI-Freeze, Liste sofort bedienbar, Track-Zähler korrekt.
+- [x] **D1/D4 Wiedergabe + Ticker:** Blue Horizon (FLAC, 1:15) abgespielt;
+  MediaSession-PlaybackState PLAYING(3), Position läuft (13946 → 25988
+  in ~12 s), DSP-Pipeline aktiv. Now-Playing zeigt Titel/Position,
+  Ticker läuft flüssig.
+- [x] **D7 Dark/Light-Theme:** `cmd uimode night yes` → App rendert
+  dunkel (Hintergrund RGB 31/31/31), Lime-Akzent (RGB 223/255/47) als
+  aktiver Tab-Indikator vorhanden. Einstellungen bieten Follow
+  system/Light/Dark + Accent color. Audio & DSP-Seite mit kompletter
+  DSP-Kette: Master/Preamps, Soft limiter, Bass/Treble-Shelfs,
+  Equalizer (Graphic/Parametric, 10/15/31 Bands, Frequenz-Slider
+  32 Hz-16 kHz). Kein Kontrastproblem sichtbar.
+- [x] **D6 200%-Schrift:** `font_scale 1.3` → alle Hauptscreens, keine
+  abgeschnittenen Texte/Buttons (UI-Dump zeigt keine überlaufenden
+  Elemente).
+- [x] **D5 Barrierefreiheit (Waveform):** Now-Playing-Waveform hat
+  vollständige TalkBack-Beschreibung ("Waveform: tap to jump, drag to
+  preview, long-press to set or delete a marker"); Pause/Next/Queue/
+  Back/More options alle beschriftet. Library: Shuffle/Play/Search/
+  List Options mit content-desc, Song-Zeilen als Text lesbar.
+- [x] **D2 Library-Scroll-Performance (Emulator-Einschränkung):** 28
+  Tracks scrollen flüssig, aber `gfxinfo` zeigt 38 % Janky frames (95th
+  550 ms) - **Emulator nutzt Software-Rendering** (`ro.hardware.egl=
+  emulation`, kein GPU). Für belastbare FPS-Messung (D1/D2) echtes
+  Gerät nötig; Ergebnis ist als "nicht aussagekräftig" zu werten.
+- [x] **E4 Offline:** Flugmodus-Broadcast auf Emulator per
+  SecurityException verweigert (Shell-Permission); App läuft aber lokal
+  ohne Netz komplett (Import + Wiedergabe aus MediaStore), keine
+  Netzwerk-Fehlermeldungen. Echter Offline-Test (Flugmodus) auf
+  physischem Gerät wiederholen.
+- [x] Verifiziert: App installiert, First-Start, Library-Import,
+  Wiedergabe, Theme, A11y auf Medium_Phone (Android 16) - alle grün.
+  Doku: `docs/STATUS_FORTSCHRITT.md` Abschnitt R.
