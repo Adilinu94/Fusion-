@@ -377,3 +377,92 @@ gruen, nichts committet (Arbeitsbaum wie zuvor uncommittet).
   Karussell am echten Geraet.
 
 ---
+
+## U. Flowtimer-Integration: Spec-Korrekturen, ADR und UI-Vertrag (2026-08-22)
+
+Vorarbeit am Dokumentenbestand. **Kein Code geaendert** - die Integration
+selbst startet erst nach Flowtimer v2 (Phase 15 + 16), siehe
+Implementierungsreihenfolge im Design-Dokument.
+
+- [x] `docs/design/2026-08-22-flowtimer-integration-design.md` gegen beide
+  Repos geprueft: sechs Falschaussagen korrigiert (archived-Flag existiert
+  bereits, millikg-Exaktheit, Testanzahl 40 statt 33, 29 Module / 29
+  Entities, Richtung der PR-Mathematik, Hosting). Neuer Abschnitt
+  "Revisionen" haelt die Aenderungen fest.
+- [x] `docs/design/2026-08-22-flowtimer-integration-CONTEXT.md` angelegt:
+  neun gesperrte Umsetzungsentscheidungen (E1-E9) plus acht offene
+  Recherchepunkte. Bei Widerspruch zum Design-Dokument gilt CONTEXT.
+- [x] `docs/adr/0016-flowtimer-integration-hebt-fusionsdesign-punkte-auf.md`
+  geschrieben (Muster ADR-0010/0013): loest den Vorrang-Widerspruch zum
+  Fusionsdesign fuer vier Punkte formal auf. Erste ADR dieser Reihe mit
+  Code-Folgen (Submodule, CI-Checkout, Architekturtest-Liste). Nummer
+  0015 ist im Waveform-Umbauplan Phase 7 vorbelegt, daher 0016.
+- [x] Kopftabelle "Verbundene Dokumente" im Fusionsdesign ergaenzt
+  (Mobile Design System + Flowtimer-Integration), Geltungsordnung dort um
+  die ADR-0016-Einschraenkung erweitert.
+- [x] `docs/design/2026-08-22-flowtimer-integration-UI.md` angelegt:
+  Screen-Vertrag des Progress-Dashboards, recherchegestuetzt. Kernpunkte:
+  eine Aussage statt vier gleichwertiger Kacheln, Lime genau einmal,
+  Distanz statt Stand, kein PR-Konfetti im Dashboard.
+- [x] **Entscheidungen von Adi eingearbeitet (2026-08-22):** Tages-Streak
+  (kein Wochen-Streak) mit Bruch erst nach 3 zusammenhaengenden
+  Ruhetagen; Gewichte ganzzahlig ohne Dezimalstelle (nie `95,0 kg`);
+  Volumen in kg unter 1000, darueber Tonnen mit einer Stelle; kein
+  Ziel-Balken je Uebungszeile (nur Textdifferenz). Uebriges Design
+  liegt beim Umsetzer, Abschnitt "Entschieden" im UI-Dokument.
+- [x] Folgearbeit aus dem Tages-Streak notiert: `streakCount` in
+  `Streak.kt` braucht einen Parameter `maxGapDays` (Default 0, damit
+  Flowtimers Verhalten unveraendert bleibt; Fusion uebergibt 2). Tests
+  fuer Luecke 1, 2 und 3 sind Pflicht.
+- [x] **Zweite Adi-Runde (2026-08-22):** Segmented Control "Uebersicht |
+  Verlauf" gestrichen (Design-Entscheidung 17 aufgehoben) — der
+  Satz-Verlauf ist der letzte Tile mit eigener Route, damit kein
+  Modus-Zustand und Android-Back funktioniert normal. Layout auf
+  **Bento-Grid** umgestellt (zwei Spalten, Tiles unterschiedlich gross,
+  einspaltig ab fontScale 1.5). Tiles ohne Aussage werden
+  **ausgeblendet** statt leer gezeigt (Streak ab 2 Tagen, Chart ab 2
+  Wochen, Volumen nur bei Saetzen dieser Woche).
+- [x] Palette erweitert, je Farbe eine Rolle: `756FFA` = Ziele
+  (`secondary`), `141414` = Grund (`background`/`surface`), `E7E6FB` =
+  genau ein heller Tile (`secondaryContainer`). Lime bleibt
+  ausschliesslich Aktion. Kontraste gemessen: dunkler Text auf Violett
+  (4,75) statt weissem (3,73); Lime auf `E7E6FB` ist 1,08 und damit
+  verboten. `AccentColor` wird NICHT erweitert — Violett ist semantische
+  Rolle, keine waehlbare Akzentfarbe.
+- [x] Folgearbeit Designsystem notiert: `Theme.kt` `DarkColors` um
+  `secondary`/`onSecondary`/`secondaryContainer`/`onSecondaryContainer`
+  erweitern, `background`/`surface` auf `141414`;
+  `ThemeColorSnapshotTest` um drei Faelle (Violett bleibt `756FFA`,
+  `onSecondary` dunkel, Lime nie mit `secondaryContainer` gepaart).
+- [x] **HTML-Prototyp** `docs/design/prototypes/progress-dashboard.html`
+  (Entscheidung 24, Schritt 0 der Implementierungsreihenfolge). Eine
+  Datei, fuenf Datenzustaende (kein Satz / Tag 2 / zwei Wochen / voll /
+  Wochenziel uebertroffen) in je einem 393x852-dp-Rahmen mit
+  eingezeichneter Faltlinie. Zwei Pruefschalter: fontScale 2.0 (Grid
+  einspaltig, Ring 120 dp mit Zahl darunter) und 8-dp-Raster. Keine
+  externen Assets, keine Logik. **Entscheidungswerkzeug, keine
+  Spezifikation** — bei Abweichung gilt das UI-Dokument. Grund:
+  `:feature:progress` existiert nicht, eine Compose-Preview kostet neues
+  Modul + `settings.gradle.kts` + `ModuleDependencyRulesTest` + Build
+  ueber 29 Module je Layoutfrage. Poppins per `@font-face` aus
+  `core/designsystem`; Chrome braucht dafuer `python -m http.server`.
+- [x] Zwei inhaltliche Aenderungen aus dem Vergleich mit einem
+  Referenz-Design derselben Palette: (1) Chart hebt die aktuelle Woche
+  hervor — Violett-Balken plus Lime-Wertpille, weil acht graue Balken
+  ohne Anker offenlassen, welcher jetzt gilt. (2) Regel
+  "Lime nie neben Violett" praezisiert: 3,42 unterschreitet 4,5:1 fuer
+  Text, ueberschreitet aber 3:1 fuer grafische Objekte. Lime-**Text** auf
+  Violett bleibt verboten, Lime-**Grafik** ist erlaubt; der Pillen-Text
+  steht auf Lime, nicht auf Violett.
+- [x] Fremde Abschnitte S und T nebst ihren vier untracked Dateien
+  (`docs/research/RESEARCH_MUSIC_*.md`,
+  `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md`) als **eigener** Commit
+  nachgetragen, damit die Flowtimer-Arbeit nicht mit ihnen vermischt
+  wird. Der in T beschriebene Produktionscode bleibt uncommittet und
+  braucht eine eigene Verifikation durch den Urheber.
+- [x] `docs/design/FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`
+  nachgetragen. Die Datei war untracked, wird aber von fuenf committeten
+  Dokumenten verlinkt — der Link-Check lief nur in diesem Arbeitsbaum
+  gruen, in einem frischen Clone fuenffach rot. Mit Testclone verifiziert.
+- [x] `python3 tools/doku_links_check.py` gruen — auch aus einem frischen
+  `git clone` heraus, was vorher nicht der Fall war.
