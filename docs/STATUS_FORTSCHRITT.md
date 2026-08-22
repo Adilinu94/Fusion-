@@ -281,3 +281,99 @@ Anlass: Hardware-Testplan Teile D und E auf dem Medium_Phone-Emulator
 - [x] Verifiziert: App installiert, First-Start, Library-Import,
   Wiedergabe, Theme, A11y auf Medium_Phone (Android 16) - alle grün.
   Doku: `docs/STATUS_FORTSCHRITT.md` Abschnitt R.
+
+## S. Musik-Recherche 2026 + Waveform-Performance-Umbauplan (2026-08-21, Session: ZCode-4d9f2a7b)
+
+Anlass: Recherche "Music-Funktion verbessern (technisch + UI/UX), Best
+Practices 2026" und vertiefte Analyse der Waveform-Generierung
+("schleppend"). Kein Produktionscode geaendert — nur Doku.
+
+- [x] Zwei Research-Dokumente mit Quellenzitaten je Aussage erstellt:
+  `docs/research/RESEARCH_MUSIC_UIUX_2026.md` (M3 Expressive, YTM/Spotify/
+  Apple-Redesigns 2025-26, Now-Playing/Queue/Mini-Player, Fitness-Hybrid,
+  36 DropSync-Empfehlungen + Quick Wins) und
+  `docs/research/RESEARCH_MUSIC_TECHNIK_2026.md` (Media3 1.11, AudioStack,
+  BT/LE-Audio, FGS-Regeln 14-16, Compose-Performance, Waveform, Testing).
+- [x] Flaschenhals-Analyse der Analyse-Pipeline (fuenf Befunde, mit
+  file:line belegt): All-or-nothing-Analyse (Interface verspricht
+  Nur-Waveform-Pfad, `AnalysisProfile` existiert unbenutzt),
+  Per-Sample-Schleife, Chroma-Detailkosten (Modulo je Sample, cos je
+  Fenster), WorkManager-Dispatch-Latenz im UI-Pfad, kein Prewarming/
+  keine Prioritaet. Rendering explizit KEIN Problem (bereits
+  allokerungsfrei).
+- [x] Umbauplan `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md` (Root, analog zu den
+  anderen Ausbauplaenen) geschrieben: Ziel/metrisch, 7 Phasen (0 Messung
+  + Baseline, 1 Block-API/Float, 2 Profile + zwei Stufen +
+  MIGRATION_8_9, 3 In-Process-Prioritaet, 4 Queue-Prewarming, 5 optional
+  Decode-Overlap, 6 optional FFmpeg-JNI, 7 Doku + ADR-0015),
+  Grundregel "Ausgaben aendern sich nicht => kein ANALYZER_VERSION-Bump =>
+  kein Re-Analyse-Sturm", Verifikation und Eskalationen.
+- [ ] Naechster Schritt gemaess Plan: Phase 0 (Messinfrastruktur +
+  Baseline), danach Phase 1-4 als ein Umsetzungsblock.
+
+## T. Musik-UI/UX-Mittelfrist-Paket umgesetzt (2026-08-22, Session: ZCode-4d9f2a7b, Fortsetzung)
+
+Anlass: /goal mit den Mittelfrist-Punkten aus der Recherche (Abschnitt
+S). Umsetzung als ein Block; Builds/Tests/Lint der beruehrten Module
+gruen, nichts committet (Arbeitsbaum wie zuvor uncommittet).
+
+- [x] **Expressive ohne Alpha:** Kein `MaterialExpressiveTheme` —
+  material3 1.5.0 ist laut Material-Blog erst mit dessen Stable-Release
+  oeffentlich, aktuell nur alpha/beta; Projektregel verbietet Alpha
+  (Quellen in `Theme.kt`-Kommentar dokumentiert). Umgesetzt stattdessen:
+  Play/Pause-Shape-Morph Kreis<->Squircle (Feder) im Now-Playing,
+  Icon-Puls im Mini-Player, Sheet-Routen-Transition (Slide-up/Fade,
+  Feder) fuer `now_playing` in `DropSyncApp`, Cover-Hero-Pop-in.
+- [x] **YTM-Layout:** Cover-Karussell 0.40 der Hoehe (240-420 dp statt
+  0.52/320-520), Abstande straffen — Controls daumenerreichbar im
+  oberen Drittel.
+- [x] **Swipe-down-dismiss:** `SwipeDismissBox` am Cover (vertikales
+  Ziehen, 140-dp-Schwelle, Feder-Rueckstellung, Fade am Fortschritt);
+  horizontale Pager-Wische unberuehrt.
+- [x] **Artwork-adaptives Theming:** `ArtworkColors.kt` (feature/player)
+  — dominante/vibrierendste Deckfarbe per 4-Bit-Histogramm aus dem
+  gecachten 512er-Cover (nutzt denselben CoverArtLoader-Cache wie der
+  Blur-Hintergrund; bewusst KEINE neue Palette-Abhaengigkeit, Plan-Regel
+  "keine neue Dependency"). Pure Funktion `colorsFromPixels` ist
+  JVM-testbar angelegt. Scrim/Text/Akzent/Play-Button im Now-Playing
+  adaptiv statt festem `Color.White`.
+- [x] **Aktions-Carousel + Quick-EQ:** `PlayerActionRow` (EQ, Tempo,
+  Marker, Mix an/aus mit Sekunden, Queue mit Anzahl) + `QuickEqSheet`
+  mit eigenen vertikalen Band-Slidern (48-dp-Flaeche, 0,5-dB-Raster,
+  Haptik am Nulldurchgang, Tap+Drag) — schreibt live ueber
+  `AudioEngineRepository` in die DSP-Kette.
+- [x] **Tempo/BPM-Lock:** `PlaybackState.playbackSpeed` +
+  `setPlaybackSpeed` (impl: `Player.setPlaybackSpeed`, begrenzt
+  0.5-2.0x wg. media3-Issue #1101, `EVENT_PLAYBACK_PARAMETERS_CHANGED`
+  im Listener) + `TempoSheet` (0,05-Raster, Presets, BPM-Lock: Ziel-
+  Kadenz 60-200, Oktav-Faltung gegen Track-BPM via `trackBpm`,
+  automatisches Nachziehen bei Titelwechseln; manuelle Wahl hebt den
+  Lock). Restzeit-Anzeige im Player tempo-korrigiert. PlayerViewModel
+  injiziert zusaetzlich `AudioEngineRepository`.
+- [x] **Marker Beat-Snap/A11y:** `MarkerSnapping` (250-ms-Fenster aufs
+  Beat-Raster bei analysiertem BPM, Haptik beim Einrasten beim Setzen
+  UND Verschieben; `MarkerSnappingTest` 6 Faelle), Trefferzone ~24 dp
+  (Slop 0.06 statt 0.03, per Parameter an `Waveform`), 3-dp-Ticks,
+  TalkBack-Beschreibung nennt Marker-Anzahl
+  (`now_playing_waveform_with_markers`, DE+EN).
+- [x] **Shared-Element (Ersatzloesung):** Echte
+  `SharedTransitionLayout`-Elemente MiniPlayer->NowPlaying sind mit der
+  heutigen Shell nicht erreichbar (Mini-Player sitzt im Scaffold-
+  bottomBar ausserhalb des NavHost; der AnimatedVisibilityScope der
+  Route erreicht ihn nicht). Umgesetzt: Sheet-Transition + Cover-Pop-in
+  (visuell aequivale Hero-Wirkung). **Folgearbeit:** Player als
+  Overlay/Bottom-Sheet in der Shell statt NavRoute — dann echte Shared
+  Elements moeglich.
+- [x] Verifikation: `:feature:player:testDebugUnitTest` (28 gruen, incl.
+  neuer `MarkerSnappingTest`), `:data:playback`,
+  `:data:workout`, `:core:designsystem` Unit-Tests gruen;
+  `:app:assembleDebug` gruen; lintDebug der beruehrten Module ohne
+  Befunde. Interface-Erweiterung `setPlaybackSpeed` in allen drei
+  Test-Fakes nachgezogen (PlayerViewModelTest, RestMusicCoordinatorTest,
+  WorkoutRepositoryImplTest).
+- [ ] Geraeteabnahme offen: Time-Stretch-Qualitaet der Plattform bei
+  0.5-2.0x (Sonic/AudioTrack-PlaybackParams), Haptik, adaptive
+  Kontraste auf hellen Covern, Swipe-dismiss im Zusammenspiel mit dem
+  Karussell am echten Geraet.
+
+---
