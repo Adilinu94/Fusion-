@@ -134,6 +134,57 @@ Formatierung über `Locale.getDefault()`, nicht `Locale.ROOT`. Der heutige
 `HistoryScreen.kt:199` nutzt `Locale.ROOT` und zeigt deutschen Nutzern
 `12.4` statt `12,4` — wird beim Umzug korrigiert.
 
+<a name="e4d"></a>
+### E4d — Bento-Layout, Ausblenden, erweiterte Palette
+
+**Layout:** Bento-Grid, zwei Spalten, Tiles bewusst unterschiedlich groß
+(`LazyVerticalStaggeredGrid`, breite Tiles via
+`StaggeredGridItemSpan.FullLine`). Bei `fontScale > 1.5` einspaltig — das
+ist der Punkt, an dem ein Bento-Layout bricht, und der Grund für ein
+Lazy-Grid statt fester `Row`-Anordnung.
+
+**Ausblenden statt leer zeigen:** Ein Tile ohne Aussage existiert nicht.
+Streak erst ab 2 Tagen, Chart erst ab 2 Wochen mit Sätzen, Volumen-Tile
+nur bei Sätzen in dieser Woche, PR-Zeile nur bei PR in den letzten 7
+Tagen. Nur der Aussage-Tile (Ring) bleibt immer sichtbar, solange
+überhaupt Sätze existieren. Nachrücken über `animateItem()`.
+
+**Segmented Control gestrichen** — Entscheidung 17 des Design-Dokuments
+ist aufgehoben. Der Satz-Verlauf ist der letzte Tile mit
+`Alle Sätze anzeigen` → eigene Route innerhalb `:feature:progress`. Damit
+kein Modus-Zustand, keine `SavedStateHandle`-Verdrahtung, und
+Android-Back funktioniert normal.
+
+**Palette — je Farbe eine Rolle:**
+
+| Farbe | Rolle im ColorScheme | Aufgabe |
+|---|---|---|
+| `DFFF2F` | `primary` (unverändert) | Die eine Aktion / aktiver Fortschritt |
+| `756FFA` | `secondary` (war `BrandWhite`) | Ziele — Punkte, Häkchen, Erst-Aufblitzen |
+| `141414` | `background`, `surface` (war `101010`) | Grund unter den Tiles |
+| `E7E6FB` | `secondaryContainer` (neu) | Genau ein heller Tile pro Screen |
+
+`onSecondary` = `141414`, `onSecondaryContainer` = `141414`.
+`surfaceContainer`/`High` (`1D1D1D`/`252525`), `outline`, `onSurfaceVariant`
+bleiben unverändert. `AccentColor` (`LIME | BLUE`) wird **nicht**
+erweitert — Violett ist eine feste semantische Rolle, keine wählbare
+Akzentfarbe.
+
+**Drei Kontrastregeln, gemessen mit der Formel aus
+`ThemeColorSnapshotTest`:**
+
+1. Auf Violett steht **dunkler** Text `141414` (4,75), nicht weißer (3,73).
+2. Lime auf `E7E6FB` ist **verboten** (1,08). Auf dem hellen Tile wird
+   Betonung über Schriftgewicht gelöst, nicht über Farbe.
+3. Violett und Lime stehen nie direkt nebeneinander (3,42) — zwischen
+   ihnen liegt Grund oder ein dunkler Tile.
+
+Der Test bekommt drei neue Fälle, wichtigster: Lime wird nie mit
+`secondaryContainer` gepaart.
+
+Details, Tile-Reihenfolge und Sichtbarkeitstabelle in
+[`2026-08-22-flowtimer-integration-UI.md`](2026-08-22-flowtimer-integration-UI.md).
+
 <a name="e5"></a>
 ### E5 — Der ungenutzte Session-Pfad bleibt unangetastet liegen
 
@@ -273,6 +324,12 @@ Nicht entschieden, weil es Umsetzungsdetails sind:
 | Fehlervertrag | `core/common` — `AppResult`/`AppError` |
 | Architekturregeln | `core/testing/src/test/kotlin/com/dropsync/core/testing/ModuleDependencyRulesTest.kt` |
 | Migrationen | `core/database/src/main/kotlin/com/dropsync/core/database/Migrations.kt`, `MigrationTest.kt` |
+| Farbrollen + Snapshot-Test | `core/designsystem/src/main/kotlin/com/dropsync/core/designsystem/theme/Theme.kt` (Zeile 71 ff. `DarkColors`), `src/test/.../ThemeColorSnapshotTest.kt` (Kontrastformel bereits vorhanden) |
+| Ring, fertig verwendbar | `core/designsystem/.../component/ProgressRing.kt` (Feder-Animation, Center-Slot) |
+| Chart, fertig verwendbar | `core/designsystem/.../chart/Charts.kt` — `BarChart` (Canvas, animiert, `contentDescription`); nur die Grundlinien-Markierung fehlt |
+| Zahl-Animation | `core/designsystem/.../component/CountUpText.kt` |
+| Tile-Container | `core/designsystem/.../component/FlowRepComponents.kt` — `FlowRepSurface`, `FlowRepMetricCard`, `FlowRepSectionHeader` |
+| Form-Tokens | `core/designsystem/.../theme/Spacing.kt` — `radiusCard` 20dp, `radiusHero` 28dp, `space12`/`space16`/`space24` |
 
 <a name="refs"></a>
 ## Pflichtlektüre für nachfolgende Sessions

@@ -52,11 +52,13 @@ Keine Funktion irgendeines Repos geht verloren:
 | 14 | Ziel-Semantik | **Satz-basiert, beide Bedingungen:** Ziel erreicht, wenn ein einzelner Satz `gewicht >= zielGewicht` **und** `reps >= zielReps` erfüllt. Maßgeblich ist der beste Satz, nicht der letzte |
 | 15 | Wochenstart | **Montag** (ISO-8601) für alle Wochen-Metriken (Ring, Chart) |
 | 16 | Übung löschen | **Archivieren** (Soft-Delete): Übung wird ausgeblendet, Sätze/Historie bleiben, wiederherstellbar — Flag existiert bereits, siehe [Revisionen](#revisionen) |
-| 17 | Verlaufsliste | **Umschaltung im Progress-Tab** („Übersicht | Verlauf"); Shell bleibt 4 Tabs |
+| 17 | Verlaufsliste | **Aufgehoben.** Kein Segmented Control — der Verlauf ist der letzte Tile des Dashboards, kein zweiter Modus. Shell bleibt 4 Tabs. Siehe [`…-UI.md`](2026-08-22-flowtimer-integration-UI.md) |
 | 18 | Workout-Definition | **Ein Kalendertag mit mindestens einem Satz = ein Workout.** Tagesgrenze lokale Mitternacht. Keine Session-Tabelle, keine Start/Stop-Knöpfe |
 | 19 | Kern-Einheit | Öffentliche Schnittstelle in **Kilogramm als `Double`**; jede Kern-Funktion rundet Gewichts-Eingaben am Eingang auf 3 Dezimalstellen |
 | 20 | Streak | **Tages-Streak:** Trainingstage in Folge, bricht erst nach **3 zusammenhängenden Ruhetagen**. Zwei Ruhetage sind frei — das 48–72-h-Fenster des Krafttrainings darf den Zähler nicht brechen |
 | 21 | Zahlenformate | Gewichte ganzzahlig ohne Dezimalstelle (`95 kg`, nie `95,0 kg`); krumme Werte mit einer Stelle; Volumen unter 1000 kg in kg, darüber in Tonnen mit einer Stelle. Formatierung über `Locale.getDefault()` |
+| 22 | Layout | **Bento-Grid**, zwei Spalten, Tiles bewusst unterschiedlich groß. Tiles ohne Aussage werden **ausgeblendet**, nicht leer gezeigt. Bei `fontScale > 1.5` einspaltig |
+| 23 | Palette | Zusätzlich zu Lime: `756FFA` = **Ziele** (`secondary`), `141414` = **Grund** (`background`), `E7E6FB` = **ein heller Tile** (`secondaryContainer`). Lime bleibt ausschließlich Aktion. Theme-Änderung inklusive drei neuer `ThemeColorSnapshotTest`-Fälle |
 
 <a name="revisionen"></a>
 ## Revisionen gegenüber der Erstfassung
@@ -121,11 +123,11 @@ Der vollständige Screen-Vertrag steht in
 [`2026-08-22-flowtimer-integration-UI.md`](2026-08-22-flowtimer-integration-UI.md).
 Kurzfassung:
 
-- **Verlauf-Tab wird Progress-Dashboard** mit Umschaltung „Übersicht | Verlauf".
+- **Verlauf-Tab wird Progress-Dashboard** als Bento-Grid; der Satz-Verlauf ist dessen letzter Tile, kein zweiter Modus (Entscheidung 17 aufgehoben).
 - `HistoryScreen` zieht von `:app` nach **`:feature:progress`** (Architektur-Regeln: Features importieren sich nicht gegenseitig, DB nur im Datenlayer). Dabei: der Screen hat heute **keine** `stringResource`-Aufrufe — alle Texte stehen fest auf Deutsch im Code und müssen nach `values/` + `values-de/`. `HistoryUiStateTest` zieht mit um.
-- **Ziele:** Pflege in der ExerciseLibrary (Zielgewicht + Ziel-Reps als Felder im Bearbeiten-Dialog); Anzeige des Status lesend im Dashboard. Kein Vorschlags-Chip, keine Auto-Änderung von Satzgewichten im TrainScreen.
+- **Ziele:** Pflege in der ExerciseLibrary (Zielgewicht + Ziel-Reps als Felder im Bearbeiten-Dialog); Anzeige des Status lesend im Dashboard. Die Übungszeile im Dashboard öffnet den Ziel-Dialog der ExerciseLibrary direkt — Pflege bleibt dort, nur der Weg wird kurz. Kein Vorschlags-Chip, keine Auto-Änderung von Satzgewichten im TrainScreen.
 - **Übungsverwaltung:** Fusions `ExerciseLibrary` + Muscle-Slugs bleiben; CRUD wird vervollständigt (anlegen/bearbeiten/**archivieren**/wiederherstellen, deutsche Muskelgruppen). Kein zweites Übungsmodell.
-- **Design:** verbindlich ist [`FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`](FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md) — Poppins, Dark-first, Lime nur als eine Hauptaktion oder aktiver Fortschritt pro Kontext. Strings zweisprachig.
+- **Designsystem-Erweiterung:** `Theme.kt` bekommt `background`/`surface` = `141414`, `secondary` = `756FFA`, `onSecondary` = `141414`, `secondaryContainer` = `E7E6FB`, `onSecondaryContainer` = `141414`. `AccentColor` (`LIME | BLUE`) wird **nicht** erweitert — Violett ist eine feste semantische Rolle, keine wählbare Akzentfarbe. Verbindlich bleibt [`FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`](FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md) — Poppins, Dark-first, Lime nur als eine Hauptaktion pro Kontext. Strings zweisprachig.
 
 ### 7. Fehlerbehandlung
 
@@ -140,6 +142,7 @@ Kurzfassung:
   - Eingangs-Rundung auf 3 Dezimalstellen, inklusive `bestFor`-Vergleich mit zwei Werten, die als Double ungleich, als Gramm aber gleich sind.
   - Zahlenformatierung: ganzzahlig ohne Dezimalstelle, krummer Wert mit einer, Volumen-Schwellwert bei 1000 kg.
 - Fusion: DAO-/Repository-Tests (Robolectric), MigrationTest v8→v9, ViewModel-Tests, Emulator-Smoke-Test fürs Dashboard.
+- `core/designsystem`: `ThemeColorSnapshotTest` um drei Fälle erweitert — Violett bleibt `756FFA`, `onSecondary` ist dunkel (nicht weiß, Kontrast 4,75 statt 3,73), und Lime wird nie mit `secondaryContainer` gepaart (Kontrast 1,08 wäre unlesbar).
 - Non-Regression: bestehende Test-Suiten bleiben vollständig grün (insbesondere Musikplayer/TimerEngine/BLE).
 
 ## Non-Goals
@@ -159,6 +162,6 @@ Kurzfassung:
 3. Privates `training-core`-Repo auf GitHub anlegen; Fusions `WorkoutMath`/`PrCalculator` hineinziehen, Flowtimers `Streak`/`WeekAgg`/`TargetMath` ergänzen, `bestFor` darauf abbilden. Flowtimer auf Submodule umstellen, alle Flowtimer-Tests grün.
 4. Fusion: Submodule einbinden (CI-Checkout mit Deploy-Key), DB v9 (`TargetEntity`) + `TargetRepository`/`ProgressRepository`.
 5. Fusion: Mathematik-Umzug abschließen (`domain/workout` konsumiert den Kern).
-6. Fusion: Progress-Dashboard (`:feature:progress`, Übersicht | Verlauf) nach [`2026-08-22-flowtimer-integration-UI.md`](2026-08-22-flowtimer-integration-UI.md).
+6. Fusion: `core/designsystem` erweitern (`141414`/`756FFA`/`E7E6FB`, drei neue Snapshot-Test-Fälle), danach das Progress-Dashboard (`:feature:progress`, Bento-Grid) nach [`2026-08-22-flowtimer-integration-UI.md`](2026-08-22-flowtimer-integration-UI.md).
 7. Fusion: Ziele-Pflege in der ExerciseLibrary + Übungs-CRUD (Archivieren/Wiederherstellen).
 8. Arbeit läuft auf `fusion/training-core`; jeder Schritt ein eigener Commit, Merge nach `master` erst mit grüner CI.

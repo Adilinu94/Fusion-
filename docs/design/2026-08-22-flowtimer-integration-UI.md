@@ -71,60 +71,226 @@ Funktion, die 4 Tests hat — die Tests müssen um Fälle für Lücke 1, 2 und
 3 erweitert werden, die bestehenden bleiben grün, wenn der Default 0 ist
 und Fusion 2 übergibt. Flowtimers Verhalten ändert sich damit nicht.
 
-<a name="aufbau"></a>
-## Aufbau: eine Aussage, drei Belege
+<a name="palette"></a>
+## Palette — vier Farben mit je einer Aufgabe
+
+Neu hinzu: `756FFA` (Violett), `141414` (Grund), `E7E6FB` (Helllila).
+Zusammen mit Lime sind das vier Träger. Damit vier Farben nicht zu Chaos
+werden, hat jede genau **eine** Rolle:
+
+| Farbe | Token-Rolle | Aufgabe | Nie verwenden für |
+|---|---|---|---|
+| `DFFF2F` Lime | `primary` | Die **eine** Hauptaktion oder der aktive Fortschritt pro Screen | Flächen, Fließtext, mehr als ein Element |
+| `756FFA` Violett | `secondary` | **Ziele.** Zielring, Ziel-Fortschritt, Ziel-erreicht-Marke | Aktionen, Buttons, Navigation |
+| `141414` | `background` | App-Grund unter allen Tiles | Tile-Fläche (verschwindet gegen den Grund) |
+| `E7E6FB` Helllila | `secondaryContainer` | Genau **ein** heller Tile pro Screen — der Aussage-Tile | Mehrere Tiles, Text auf dunkel |
+
+**Die semantische Trennung ist der Kern:** Lime heißt „tu das jetzt",
+Violett heißt „das ist dein Ziel". Ein Nutzer lernt das in einer Sitzung,
+und danach ist jeder Screen ohne Legende lesbar. Ohne diese Trennung sind
+es nur zwei bunte Farben, und das Designsystem-Verbot „mehrere
+gleichwertige Lime-CTAs" wird zu „mehrere gleichwertige bunte Flächen".
+
+<a name="kontrast"></a>
+### Gemessene Kontraste — was erlaubt ist
+
+Alle Werte nach WCAG 2.x, gerechnet mit derselben Formel wie
+`ThemeColorSnapshotTest`:
+
+| Vordergrund auf Hintergrund | Ratio | Erlaubt für |
+|---|---|---|
+| Lime auf `141414` | 16,21 | alles |
+| `E7E6FB` auf `141414` | 15,01 | alles |
+| Weiß `F7FBFF` auf `141414` | 17,72 | alles |
+| Grau `B7B7B7` auf `141414` | 9,19 | alles |
+| **Violett `756FFA` auf `141414`** | **4,75** | Text ab 14sp, Grafik ✓ |
+| **`141414` auf Violett-Fläche** | **4,75** | Text ✓ — **das ist `onSecondary`** |
+| Weiß auf Violett-Fläche | 3,73 | nur ≥ 24sp oder ≥ 19sp bold |
+| `E7E6FB` auf Violett-Fläche | 3,16 | nur ≥ 24sp oder ≥ 19sp bold |
+| `141414` auf `E7E6FB`-Fläche | 15,01 | alles ✓ — **das ist `onSecondaryContainer`** |
+| Violett auf `E7E6FB`-Fläche | 3,16 | nur große Zahlen, keine Labels |
+| Lime auf `E7E6FB`-Fläche | **1,08** | **verboten** |
+| Violett neben Lime | 3,42 | nie direkt benachbart |
+
+Drei harte Regeln daraus:
+
+1. **Auf Violett steht dunkler Text (`141414`), nicht weißer.** Weiß auf
+   `756FFA` erreicht nur 3,73 und fällt bei Body-Text durch. Das ist
+   dieselbe Logik, die im Designsystem schon für Lime gilt
+   (`onPrimary = 101010`).
+2. **Lime berührt `E7E6FB` nie.** 1,08 ist praktisch unsichtbar. Wenn der
+   helle Tile eine Aktion braucht, ist sie `141414` auf `E7E6FB`.
+3. **Violett und Lime stehen nie direkt nebeneinander** (3,42). Zwischen
+   ihnen liegt immer Grund oder ein dunkler Tile.
+
+<a name="theme"></a>
+### Was das am Theme ändert
+
+`Theme.kt` belegt heute `secondary = BrandWhite` — ein ungenutzter Slot,
+der weder im Designsystem noch im Code eine Rolle spielt. Violett zieht
+dort ein:
 
 ```text
-Fortschritt                              ← Headline 28sp
-
-[ Übersicht | Verlauf ]                   ← Segmented Control, direkt unter Titel
-
-        ╭─────────────────╮
-        │       2         │               ← Display 48sp, tabellarisch, Count-Up
-        │   von 3 Wochen- │               ← Meta 14sp
-        │     trainings   │
-        ╰─────────────────╯               ← ProgressRing, Lime, 220dp
-     Noch ein Training diese Woche        ← Body 16sp, Lime NUR wenn 1 fehlt
-     12 Trainingstage in Folge            ← Meta 14sp, onSurfaceVariant
-
-  ─────────────────────────────────       ← Hairline, space32 Abstand
-
-  ▁▃▅▂▆▇▅█                                ← 8 Wochen, Balkenhöhe = Volumen
-  KW28            KW35                    ← Label 12sp, nur erste und letzte
-  Volumen pro Woche · 12,4 t diese Woche
-
-  ─────────────────────────────────
-
-  ÜBUNGEN MIT ZIEL          2 von 5 erreicht   ← SectionHeader + Zähler
-
-  Bankdrücken                  10 kg fehlen
-  Kniebeuge          2 Wiederholungen fehlen
-  Rudern                     Ziel erreicht ✓   ← Text + Icon, nicht nur Farbe
-  Kreuzheben                  noch kein Satz
-
-  Ziel für eine Übung setzen                   ← nur wenn Übungen ohne Ziel existieren
+background          141010 → 141414      (Grund unter den Tiles)
+surface             101010 → 141414
+secondary           F7FBFF → 756FFA      (Ziele)
+onSecondary         101010 → 141414      (dunkler Text auf Violett)
+secondaryContainer  (neu)  → E7E6FB      (der helle Aussage-Tile)
+onSecondaryContainer (neu) → 141414
+surfaceContainer     1D1D1D bleibt        (dunkle Tiles)
+surfaceContainerHigh 252525 bleibt        (Tile-Hervorhebung)
+primary             DFFF2F bleibt         (Aktion)
 ```
 
-Kein Balken pro Übungszeile — die Zahl trägt die Information, ein Balken
-daneben wiederholt sie nur und bringt zehn zappelnde Elemente in eine
-Liste, die ruhig sein soll.
+`surfaceVariant`, `outline`, `onSurfaceVariant` bleiben unangetastet.
+`AccentColor` (heute `LIME | BLUE`) wird **nicht** erweitert — Violett ist
+keine wählbare Akzentfarbe, sondern eine feste semantische Rolle.
+
+`ThemeColorSnapshotTest` braucht drei neue Fälle: Violett bleibt
+`756FFA`, `onSecondary` ist dunkel (nicht weiß), und Lime auf
+`secondaryContainer` wird **nie** gepaart. Der letzte Test ist der
+wichtigste — er verhindert die eine Kombination, die unlesbar ist.
+
+<a name="bento"></a>
+## Bento-Layout
+
+Ein Bento-Grid funktioniert nur, wenn die Tiles **unterschiedlich groß**
+sind. Gleich große Kacheln sind eine Kartenwand mit runden Ecken — genau
+das, was das Designsystem verbietet. Größe ist hier die Hierarchie:
+
+```text
+┌─────────────────────────────────────┐
+│  Fortschritt                        │  Headline, kein Tile
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│                                     │
+│           ╭────────╮                │  TILE 1 — 2 Spalten
+│           │   2    │                │  E7E6FB, radiusHero 28dp
+│           ╰────────╯                │  Ring Lime auf hell
+│      von 3 Trainings                │
+│   Noch ein Training diese Woche     │  Text 141414
+│                                     │
+└─────────────────────────────────────┘
+
+┌───────────────────┐ ┌───────────────┐
+│  12               │ │  12,4 t       │  TILE 2 + 3 — je 1 Spalte
+│  Tage in Folge    │ │  diese Woche  │  1D1D1D, radiusCard 20dp
+└───────────────────┘ └───────────────┘
+
+┌─────────────────────────────────────┐
+│  ▁▃▅▂▆▇▅█                           │  TILE 4 — 2 Spalten, flach
+│  KW28              KW35             │  1D1D1D
+└─────────────────────────────────────┘
+
+┌─────────────────────────────────────┐
+│  ZIELE            2 von 5 erreicht  │  TILE 5 — 2 Spalten, wächst
+│                                     │  1D1D1D
+│  Bankdrücken         10 kg fehlen   │
+│  ●●●●●●●●○○                         │  Violett-Punkte statt Balken
+│  Kniebeuge      2 Wdh. fehlen       │
+│  Rudern             erreicht ✓      │  Häkchen Violett
+└─────────────────────────────────────┘
+```
+
+**Grid-Regeln:**
+
+- Zwei Spalten, `space12` Abstand zwischen Tiles, `space16` Seitenrand.
+  `LazyVerticalStaggeredGrid` mit `StaggeredGridCells.Fixed(2)`; breite
+  Tiles nutzen `StaggeredGridItemSpan.FullLine`.
+- **Genau ein heller Tile pro Screen.** Der Aussage-Tile ist hell, alles
+  andere dunkel. Zwei helle Tiles und die Hierarchie ist weg.
+- Radius nach Größe: `radiusHero` (28dp) für den Aussage-Tile,
+  `radiusCard` (20dp) für alle anderen. Der Radius signalisiert Rang.
+- Kein Tile ist leer. Wenn es nichts zu zeigen hat, ist es nicht da
+  (siehe [Ausblenden](#ausblenden)).
+- Tiles haben `space24` Innenabstand, keine Hairline und keinen Schatten.
+  Sie trennen sich durch Flächenhelligkeit gegen `141414`, nicht durch
+  Rahmen — Ratio 1,09 ist bewusst subtil und genau richtig für Tiles.
+- Der Ziele-Tile ist der einzige, der mit dem Inhalt wächst. Alle anderen
+  haben feste Höhe, damit die Anordnung beim Datenwechsel nicht springt.
+
+Ziel-Fortschritt pro Übung sind **zehn Punkte** in Violett, nicht ein
+Balken. Punkte sind auf 6 Zoll klar zählbar, tragen die Zehnerteilung
+ohne Achse und wirken bei zehn Zeilen ruhiger als zehn Balken. Ein
+gefüllter Punkt = 10 % der Restdistanz geschlossen.
+
+<a name="ausblenden"></a>
+## Ein- und Ausblenden
+
+Grundsatz: **Ein Tile ohne Aussage existiert nicht.** Kein leerer
+Platzhalter, keine graue Kachel mit „keine Daten", keine Überschrift ohne
+Inhalt.
+
+| Tile | Sichtbar wenn | Sonst |
+|---|---|---|
+| Aussage (Ring) | mindestens ein Satz existiert | ganzer Screen wird Leerzustand |
+| Streak | Streak ≥ 2 Tage | weg — „1 Tag in Folge" ist keine Serie |
+| Volumen diese Woche | diese Woche ≥ 1 Satz | weg |
+| Chart | ≥ 2 Wochen mit Sätzen | weg — ein Balken ist kein Trend |
+| Ziele | ≥ 1 Ziel gesetzt | eine Zeile: `Ziel setzen` → ExerciseLibrary |
+| PR-Zeile | PR in den letzten 7 Tagen | weg |
+
+Die Tiles rücken dabei nach — deshalb ein Grid und keine feste
+Anordnung. Ein neuer Nutzer sieht am zweiten Trainingstag zwei Tiles, nach
+zwei Wochen vier, nach dem ersten Ziel fünf. Der Screen wächst mit den
+Daten mit, statt von Anfang an leere Fächer zu zeigen.
+
+**Übergang:** `animateItem()` im Grid plus `AnimatedVisibility` mit
+`fadeIn + scaleIn(0.96f)` beim Erscheinen, 200 ms. Ein Tile, das zum
+ersten Mal auftaucht (erster Streak, erstes Ziel), erscheint mit einem
+kurzen Violett-Aufblitzen des Randes — das ist der einzige Ort, an dem der
+Screen etwas feiert. Bei reduzierter Systemanimation: sofort da, kein
+Blitz.
+
+**Was nicht ausgeblendet wird:** der Aussage-Tile. Solange Sätze
+existieren, ist der Ring da — auch bei 0 von 3
+(siehe [R3](#r3)). Sonst verschwindet die Antwort auf die eine Frage, die
+der Screen beantworten soll.
+
+<a name="aufbau"></a>
+## Reihenfolge der Tiles
+
+```text
+1  Aussage-Ring          hell, 2 Spalten, immer
+2  Streak                dunkel, 1 Spalte
+3  Volumen diese Woche   dunkel, 1 Spalte
+4  Chart 8 Wochen        dunkel, 2 Spalten
+5  PR-Zeile              keine Kachel, nur Text
+6  Ziele                 dunkel, 2 Spalten, wächst
+7  Letzte Sätze          dunkel, 2 Spalten, LazyColumn-Fortsetzung
+```
+
+Reihenfolge nach Zeithorizont: jetzt (Ring), diese Woche (Streak,
+Volumen), letzte Wochen (Chart), langfristig (Ziele), Rohdaten (Sätze).
+Wer scrollt, geht in der Zeit zurück — das braucht keine Erklärung.
+
+**Kein Segmented Control.** „Letzte Sätze" ist Tile 7, nicht ein zweiter
+Modus. Ein Screen, eine Scroll-Richtung, kein Zustand, der einen
+Prozess-Tod überleben muss (siehe [Verlauf](#verlauf)).
 
 <a name="regeln"></a>
 ## Die Regeln dahinter
 
 <a name="r1"></a>
-### R1 — Lime erscheint genau einmal
+### R1 — Lime handelt, Violett zielt
 
-Der Ring ist der einzige Lime-Träger. Chart-Balken sind
-`onSurfaceVariant`, Ziel-Häkchen sind `onSurface` plus Icon, die
-Ziel-Differenzen sind `onSurfaceVariant`. Sobald ein zweites Element
-leuchtet, verliert der Ring seine Bedeutung. Das ist nicht Geschmack,
-sondern Entscheidung des Designsystems: „Lime erscheint pro Kontext nur
-als Hauptaktion oder aktiver Fortschritt."
+Lime erscheint pro Screen genau einmal: als Ring auf dem hellen
+Aussage-Tile. Violett trägt alles, was mit **Zielen** zu tun hat —
+Ziel-Punkte, Ziel-Häkchen, das Aufblitzen beim ersten erreichten Ziel.
+Kein Element trägt beide Farben, und sie berühren sich nie (Kontrast
+untereinander nur 3,42).
 
-Einzige Ausnahme: die Zeile unter dem Ring wird Lime, **wenn genau ein
-Training fehlt**. Das ist der Goal-Gradient-Moment — Motivation steigt mit
-der Nähe zum Ziel, und dieser eine Zustand verdient die Farbe.
+Dunkle Tiles bleiben farblos: Zahlen in `onSurface`, Beschriftungen in
+`onSurfaceVariant`, Chart-Balken in `onSurfaceVariant`. Farbe ist die
+Ausnahme, nicht die Grundausstattung — bei fünf Tiles auf einem Screen
+wäre alles andere Chaos.
+
+Einzige Lime-Ausnahme: die Zeile unter dem Ring wird Lime, **wenn genau
+ein Training fehlt**. Das ist der Goal-Gradient-Moment — Motivation steigt
+mit der Nähe zum Ziel, und dieser eine Zustand verdient die Farbe. Auf dem
+hellen Tile `E7E6FB` ist Lime aber unlesbar (1,08); dort wird die Zeile
+stattdessen `141414` **bold**. Gewicht statt Farbe.
 
 <a name="r2"></a>
 ### R2 — Zahlen benennen die Distanz, nicht den Stand
@@ -245,9 +411,34 @@ gehört in den Kern (`TargetMath`), nicht ins ViewModel — Flowtimers
 `targetPct` ist die Grundlage und muss dafür auf zwei Dimensionen
 erweitert werden.
 
-Über der Liste bleibt der Ziel-Zähler: `2 von 5 Zielen erreicht`. Das ist
+Im Tile-Kopf steht der Ziel-Zähler: `ZIELE   2 von 5 erreicht`. Das ist
 die einzige Zahl im unteren Screen-Drittel und beantwortet die Frage
 „lohnt sich das Scrollen?", ohne dass gescrollt werden muss.
+
+Fortschritt pro Zeile sind **zehn Punkte in Violett**, kein Balken:
+
+```text
+Bankdrücken                10 kg fehlen
+●●●●●●●●○○
+```
+
+Ein gefüllter Punkt entspricht 10 % geschlossener Restdistanz. Punkte
+sind auf 6 Zoll zählbar, tragen die Zehnerteilung ohne Achse und wirken
+bei zehn Zeilen deutlich ruhiger als zehn Balken. Erreichte Ziele zeigen
+statt Punkten ein Violett-Häkchen plus das Wort `erreicht` — Farbe ist
+nie der einzige Kanal.
+
+<a name="r5b"></a>
+### R5b — Die Übungszeile öffnet den Ziel-Dialog
+
+Jede Zeile ist antippbar und öffnet direkt den Bearbeiten-Dialog der
+ExerciseLibrary bei der Ziel-Sektion. Ein Tap statt vier. Entscheidung 13
+bleibt unangetastet: gepflegt wird weiterhin in der ExerciseLibrary, der
+TrainScreen bleibt frei — nur der Weg dorthin wird kurz.
+
+Ohne das ist die realistische Nutzung: man sieht „10 kg fehlen", denkt
+„das Ziel ist zu niedrig", und ändert es nie, weil der Weg dorthin zu
+lang ist.
 
 <a name="r6"></a>
 ### R6 — Der PR wird nicht hier gefeiert
@@ -288,27 +479,36 @@ gesetzt. Dann erscheinen Ring, Streak und Chart normal; an der Stelle der
 ExerciseLibrary. Kein leerer Abschnitt, keine Überschrift ohne Inhalt.
 
 <a name="a11y"></a>
-## Barrierefreiheit — fünf Punkte, die konkret brechen können
+## Barrierefreiheit — sieben Punkte, die konkret brechen können
 
 1. **Der Ring bei 200 % Schriftgröße.** Eine 48sp-Zahl in einem 220dp-Ring
    passt bei doppelter Systemschrift nicht mehr hinein. Ab
    `fontScale > 1.5` wandert die Zahl unter den Ring und der Ring
    schrumpft auf 120dp. Der Ring ist `dp`, die Zahl ist `sp` — sie
    skalieren unterschiedlich, das muss abgefangen werden.
-2. **`stateDescription` am Ring**, nicht nur `contentDescription`:
+2. **Das Bento-Grid bei 200 % Schriftgröße.** Zwei einspaltige Tiles
+   nebeneinander sind bei doppelter Schrift zu schmal für „Tage in Folge".
+   Ab `fontScale > 1.5` wird das Grid **einspaltig** — jeder Tile nimmt
+   die volle Breite. Das ist der Punkt, an dem ein Bento-Layout am
+   ehesten bricht, und der einzige Grund, `LazyVerticalStaggeredGrid`
+   statt einer festen `Row`-Anordnung zu nehmen.
+3. **`stateDescription` am Ring**, nicht nur `contentDescription`:
    „2 von 3 Wochentrainings, ein Training fehlt". TalkBack liest den
    Zustand, nicht die Grafik.
-3. **Der Chart braucht eine Textalternative.** Acht Balken sind für
+4. **Der Chart braucht eine Textalternative.** Acht Balken sind für
    TalkBack unbrauchbar. `contentDescription` des Charts nennt Trend und
    aktuelle Woche: „Volumen der letzten acht Wochen, steigend,
    diese Woche 12,4 Tonnen." Einzelwerte über den Tap-Dialog.
-4. **Ziel erreicht braucht Text und Icon**, nie nur ein grünes Häkchen —
-   Designsystem: „Farbe wird nie als einziger Statuskanal genutzt." Und
-   Lime ist ohnehin keine Erfolgsfarbe.
-5. **Jede Übungszeile ist ein TalkBack-Element** via `mergeDescendants`,
-   nicht drei (Name, Differenz, Balken). Der heutige `HistoryScreen`
+5. **Zehn Ziel-Punkte sind für TalkBack ein Element**, nicht zehn. Die
+   Zeile liest sich als „Bankdrücken, 10 Kilogramm fehlen, 80 Prozent" —
+   die Punkte selbst werden nicht angesagt.
+6. **Ziel erreicht braucht Text und Icon**, nie nur ein Violett-Häkchen —
+   Designsystem: „Farbe wird nie als einziger Statuskanal genutzt."
+7. **Jede Übungszeile ist ein TalkBack-Element** via `mergeDescendants`,
+   nicht drei (Name, Differenz, Punkte). Der heutige `HistoryScreen`
    macht das für Satzzeilen schon so (Verbesserungsplan 6.2) — dasselbe
-   Muster gilt hier.
+   Muster gilt hier. Die Zeile trägt zusätzlich die Rolle „Button", weil
+   sie den Ziel-Dialog öffnet ([R5b](#r5b)).
 
 Offener Befund: `Theme.kt:89` definiert `error`, aber die vom
 Designsystem geforderten Rollen `warning` und `info` fehlen im
@@ -322,33 +522,41 @@ Text und Icon), aber es sollte nachgetragen werden.
 |---|---|---|
 | Ring | Feder, `StiffnessLow`, bereits in `ProgressRing.kt:41` | Fortschritt soll ankommen, nicht springen |
 | Ringzahl | `CountUpText`, 600 ms | Die Zahl ist das Ergebnis; Hochzählen macht sie zum Moment |
-| Balken | Höhe 0 → Zielwert, einmal beim Erscheinen | Bereits in `BarChart` vorhanden |
-| Übungsbalken | keine | Zehn gleichzeitig animierte Balken sind Unruhe, kein Feedback |
+| Chart-Balken | Höhe 0 → Zielwert, einmal beim Erscheinen | Bereits in `BarChart` vorhanden |
+| Ziel-Punkte | keine | Zehn Zeilen × zehn Punkte animiert wären Flimmern |
 | Streak-Zahl | keine | Der Streak ändert sich um 1, nicht um 40 — Count-Up wäre Theater |
-| Tab-Wechsel Übersicht/Verlauf | Crossfade ≤ 200 ms | Kein Slide — es ist ein Filter, kein Ortswechsel |
+| Tile erscheint neu | `fadeIn + scaleIn(0.96f)`, 200 ms, plus `animateItem()` fürs Nachrücken | Ein Tile, das aufpoppt, muss erklärt werden — Bewegung tut das |
+| Erstes Tile überhaupt | zusätzlich kurzes Violett-Aufblitzen des Randes, 300 ms, einmalig | Der einzige Feiermoment auf diesem Screen |
 
 Bei reduzierter Systemanimation: Endwerte sofort, kein Count-Up, kein
-Balkenwachstum. Der Zustand bleibt vollständig sichtbar.
+Balkenwachstum, kein Aufblitzen. Tiles erscheinen ohne Übergang. Der
+Zustand bleibt vollständig sichtbar.
 
 Der Ring animiert **nur bei echter Änderung**, nicht bei jedem
 Recomposition-Durchlauf. `animateFloatAsState` erledigt das, solange der
 Zielwert stabil aus dem StateFlow kommt — ein neu berechneter Float pro
 Emission würde den Ring dauerhaft zappeln lassen.
 
-<a name="segmented"></a>
-## Umschaltung Übersicht | Verlauf
+<a name="verlauf"></a>
+## Verlauf: Tile statt zweiter Modus
 
-Entscheidung 17 ist gesperrt — die Umschaltung bleibt. Präzisierung:
+Das Segmented Control „Übersicht | Verlauf" ist **gestrichen** (Adi,
+2026-08-22). Entscheidung 17 des Design-Dokuments ist damit aufgehoben.
 
-- Position direkt unter der Headline, nicht in der Bottom Bar und nicht
-  über dem Ring. Die Bottom Bar hat vier Ziele und bekommt kein fünftes.
-- `SingleChoiceSegmentedButtonRow` (Material 3), Höhe 48dp, ausgewählter
-  Zustand `surfaceHigh` — **nicht** Lime, sonst konkurriert er mit dem Ring.
-- Der Zustand überlebt Tab-Wechsel und Prozess-Tod
-  (`SavedStateHandle`), sonst landet man nach jedem Musik-Ausflug wieder
-  in der Übersicht.
-- „Verlauf" bleibt die heutige flache Satzliste, unverändert bis auf die
-  Sprachdateien.
+Begründung: Ein Segmented Control ist ein Zugeständnis daran, dass man
+sich zwischen zwei Anordnungen nicht entscheiden konnte. Der Verlauf ist
+aber keine Alternative zur Übersicht, sondern ihre Fortsetzung — die
+Rohdaten unter den Aggregaten. Als Tile 7 am Ende des Grids braucht er
+keinen Zustand, der einen Prozess-Tod überleben muss, keine
+`SavedStateHandle`-Verdrahtung und keinen zweiten Einstiegspunkt.
+
+Umsetzung: Tile 7 zeigt die letzten 10 Sätze plus `Alle Sätze anzeigen`.
+Der Tap öffnet eine eigene Route innerhalb `:feature:progress` mit der
+vollen `LazyColumn` — dort greift Android-Back normal, was ein Segmented
+Control nie geleistet hätte.
+
+Damit hat der Screen eine Scroll-Richtung und keine Modi. Das ist der
+größte Beitrag zur Übersichtlichkeit in diesem Dokument.
 
 <a name="entschieden"></a>
 ## Entschieden (2026-08-22, Adi)
@@ -359,7 +567,11 @@ Entscheidung 17 ist gesperrt — die Umschaltung bleibt. Präzisierung:
 | Kulanz | Zwei Ruhetage sind frei; das ist die Kulanz. Kein zusätzlicher Freischein |
 | Gewichts-Format | Ganzzahlig ohne Dezimalstelle (`95 kg`), krumme Werte mit einer Stelle (`92,5 kg`), niemals `95,0 kg` ([R2b](#r2b)) |
 | Volumen-Einheit | kg unter 1000, ab 1000 kg Tonnen mit einer Dezimalstelle ([R2b](#r2b)) |
-| Ziel-Balken je Übung | **Kein Balken.** Reine Textangabe der Differenz — ruhiger und verliert keine Information |
+| Ziel-Balken je Übung | **Kein Balken.** Zehn Violett-Punkte plus Textdifferenz ([R5](#r5)) |
+| Segmented Control | **Gestrichen.** Verlauf ist Tile 7, kein zweiter Modus ([Verlauf](#verlauf)) |
+| Layout | **Bento-Grid**, zwei Spalten, Tiles unterschiedlich groß ([Bento](#bento)) |
+| Sichtbarkeit | Tiles ohne Aussage werden **ausgeblendet**, nicht leer gezeigt ([Ausblenden](#ausblenden)) |
+| Palette | Lime = Aktion, `756FFA` = Ziele, `141414` = Grund, `E7E6FB` = ein heller Tile ([Palette](#palette)) |
 
 Alles Übrige in diesem Dokument ist meine Entscheidung als Umsetzer und
 kann ohne Rückfrage geändert werden, solange das Designsystem und die
@@ -370,22 +582,32 @@ Abnahmekriterien unten eingehalten bleiben.
 
 - Der Screen beantwortet „bin ich auf Kurs?" ohne Scrollen, auf einem
   Gerät mit 6 Zoll.
-- Genau eine Lime-Fläche sichtbar (Ring), plus die Zeile unter dem Ring
-  nur im Zustand „ein Training fehlt".
-- Kein Zustand zeigt eine nackte Null ohne einordnenden Satz — geprüft
-  für: Montagmorgen, Woche ohne Training, Übung ohne Satz, Datenbank ohne
-  Sätze, Sätze ohne Ziel.
+- Genau **ein** heller Tile (`E7E6FB`) pro Screen; genau **eine**
+  Lime-Fläche (Ring). Violett trägt ausschließlich Ziel-Elemente.
+- Lime und `E7E6FB` berühren sich nirgends (Kontrast 1,08). Violett und
+  Lime stehen nirgends direkt nebeneinander (3,42).
+- Auf Violett-Flächen steht dunkler Text (`141414`, Ratio 4,75), niemals
+  weißer (3,73).
+- Kein Tile ist leer oder zeigt „keine Daten". Geprüft für: neuer Nutzer
+  ohne Sätze, ein Trainingstag, eine Woche Daten, Sätze ohne Ziel,
+  Montagmorgen.
+- Bei `fontScale > 1.5` wird das Grid einspaltig und keine Kachel
+  schneidet Text ab.
 - Kein Gewicht wird als `95,0 kg` angezeigt; kein krummer Wert wird
   stillschweigend gerundet.
 - Zahlen nutzen `Locale.getDefault()`, nicht `Locale.ROOT` — deutsche
   Nutzer sehen `12,4 t`, nicht `12.4 t`.
 - Der Streak bricht bei drei zusammenhängenden Ruhetagen und keinen Tag
   früher. Test mit Lücke 1, 2 und 3.
-- Bei 200 % Systemschrift ist keine Zahl abgeschnitten und der Ring
-  liegt nicht über seinem Text.
-- TalkBack liest Ring, Chart und jede Übungszeile als je ein Element mit
-  Zustand.
-- Bei reduzierter Animation ist jeder Wert sofort korrekt.
+- Kein Segmented Control und kein Modus-Zustand auf diesem Screen.
+- TalkBack liest jeden Tile und jede Übungszeile als je ein Element mit
+  Zustand; zehn Ziel-Punkte werden nicht einzeln angesagt.
+- Bei reduzierter Animation ist jeder Wert sofort korrekt und kein Tile
+  blitzt auf.
 - Alle Texte kommen aus `values/strings.xml` und `values-de/strings.xml`
   — kein festverdrahteter String im Compose-Code.
-- Scrollen und Ring-Animation halten 60 fps auf einem Mittelklassegerät.
+- `ThemeColorSnapshotTest` deckt ab: Violett bleibt `756FFA`,
+  `onSecondary` ist dunkel, Lime wird nie mit `secondaryContainer`
+  gepaart.
+- Scrollen, Ring-Animation und Tile-Übergänge halten 60 fps auf einem
+  Mittelklassegerät.
