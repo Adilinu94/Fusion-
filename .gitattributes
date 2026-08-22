@@ -1,3 +1,14 @@
+# Alle Textdateien mit LF auschecken. Grund: .editorconfig setzt
+# end_of_line = lf, ktlint und Spotless format("misc") pruefen dagegen.
+# Ohne diese Regel liefert core.autocrlf=true unter Windows CRLF, waehrend die
+# CI (ubuntu-latest) LF sieht -> spotlessCheck schlaegt lokal mit
+# Ganzdatei-Diffs fehl. text=auto laesst Git Binaerdateien selbst erkennen.
+* text=auto eol=lf
+
 # Shell-Skripte muessen LF-Zeilenenden behalten, sonst scheitern sie auf
 # Unix-Hosts (z. B. scripts/build-ffmpeg.sh, Plan Phase 3).
 *.sh text eol=lf
+
+# Windows-Batch braucht CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
