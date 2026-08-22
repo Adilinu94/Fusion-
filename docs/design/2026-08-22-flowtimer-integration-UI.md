@@ -4,6 +4,7 @@
 **Status:** Vorschlag zur Abnahme
 **Untergeordnet:** [`FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`](FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md) — dieses Dokument wählt aus dessen Tokens aus und definiert keine eigenen Farb-, Schrift- oder Abstandswerte.
 **Gehört zu:** [`2026-08-22-flowtimer-integration-design.md`](2026-08-22-flowtimer-integration-design.md), [`2026-08-22-flowtimer-integration-CONTEXT.md`](2026-08-22-flowtimer-integration-CONTEXT.md)
+**Prototyp:** [`prototypes/progress-dashboard.html`](prototypes/progress-dashboard.html) — Entscheidungswerkzeug, **nicht** Spezifikation. Bei Abweichung gilt dieses Dokument ([Prototyp](#prototyp)).
 
 <a name="einwand"></a>
 ## Der eine Einwand, der alles andere bestimmt
@@ -110,9 +111,9 @@ Alle Werte nach WCAG 2.x, gerechnet mit derselben Formel wie
 | `141414` auf `E7E6FB`-Fläche | 15,01 | alles ✓ — **das ist `onSecondaryContainer`** |
 | Violett auf `E7E6FB`-Fläche | 3,16 | nur große Zahlen, keine Labels |
 | Lime auf `E7E6FB`-Fläche | **1,08** | **verboten** |
-| Violett neben Lime | 3,42 | nie direkt benachbart |
+| Violett neben Lime | 3,42 | Grafik ✓ (≥ 3:1), **Text verboten** |
 
-Drei harte Regeln daraus:
+Vier harte Regeln daraus:
 
 1. **Auf Violett steht dunkler Text (`141414`), nicht weißer.** Weiß auf
    `756FFA` erreicht nur 3,73 und fällt bei Body-Text durch. Das ist
@@ -120,8 +121,16 @@ Drei harte Regeln daraus:
    (`onPrimary = 101010`).
 2. **Lime berührt `E7E6FB` nie.** 1,08 ist praktisch unsichtbar. Wenn der
    helle Tile eine Aktion braucht, ist sie `141414` auf `E7E6FB`.
-3. **Violett und Lime stehen nie direkt nebeneinander** (3,42). Zwischen
-   ihnen liegt immer Grund oder ein dunkler Tile.
+3. **Lime-Text auf Violett ist verboten, Lime-Grafik auf Violett erlaubt.**
+   3,42 unterschreitet die 4,5:1-Grenze für Text, überschreitet aber die
+   3:1-Grenze, die WCAG für grafische Objekte und Bedienelemente ansetzt.
+   Eine Lime-Pille auf einem Violett-Balken ist damit zulässig, ein
+   Lime-Label darauf nicht. Diese Unterscheidung eröffnet die
+   Chart-Hervorhebung in [R4](#r4); ohne sie wären die beiden Farben
+   pauschal getrennt und der Chart hätte keinen Fokuspunkt.
+4. **Violett und Lime bilden nie eine Textkante.** Wo sie sich berühren,
+   ist die eine Fläche und die andere Grafik — nie zwei Farbflächen mit
+   Text an der Naht.
 
 <a name="theme"></a>
 ### Was das am Theme ändert
@@ -275,22 +284,26 @@ Prozess-Tod überleben muss (siehe [Verlauf](#verlauf)).
 <a name="r1"></a>
 ### R1 — Lime handelt, Violett zielt
 
-Lime erscheint pro Screen genau einmal: als Ring auf dem hellen
-Aussage-Tile. Violett trägt alles, was mit **Zielen** zu tun hat —
-Ziel-Punkte, Ziel-Häkchen, das Aufblitzen beim ersten erreichten Ziel.
-Kein Element trägt beide Farben, und sie berühren sich nie (Kontrast
-untereinander nur 3,42).
+Lime erscheint pro Screen genau einmal als **Fläche**: als Ring auf dem
+hellen Aussage-Tile. Violett trägt alles, was mit **Zielen** zu tun hat —
+Ziel-Punkte, Ziel-Häkchen, die Chart-Grundlinie erfüllter Wochen, das
+Aufblitzen beim ersten erreichten Ziel.
+
+Kein Element trägt beide Farben als Text-auf-Fläche. Die einzige erlaubte
+Berührung ist die Wert-Pille im Chart: Lime-Pille auf Violett-Balken,
+Grafik auf Grafik ([R4](#r4)). Das ist zulässig, weil 3,42 die
+Grafik-Grenze von 3:1 überschreitet — für Text tut es das nicht.
 
 Dunkle Tiles bleiben farblos: Zahlen in `onSurface`, Beschriftungen in
 `onSurfaceVariant`, Chart-Balken in `onSurfaceVariant`. Farbe ist die
 Ausnahme, nicht die Grundausstattung — bei fünf Tiles auf einem Screen
 wäre alles andere Chaos.
 
-Einzige Lime-Ausnahme: die Zeile unter dem Ring wird Lime, **wenn genau
-ein Training fehlt**. Das ist der Goal-Gradient-Moment — Motivation steigt
-mit der Nähe zum Ziel, und dieser eine Zustand verdient die Farbe. Auf dem
-hellen Tile `E7E6FB` ist Lime aber unlesbar (1,08); dort wird die Zeile
-stattdessen `141414` **bold**. Gewicht statt Farbe.
+Einzige weitere Lime-Verwendung: die Zeile unter dem Ring wird Lime, **wenn
+genau ein Training fehlt**. Das ist der Goal-Gradient-Moment — Motivation
+steigt mit der Nähe zum Ziel, und dieser eine Zustand verdient die Farbe.
+Auf dem hellen Tile `E7E6FB` ist Lime aber unlesbar (1,08); dort wird die
+Zeile stattdessen `141414` **bold**. Gewicht statt Farbe.
 
 <a name="r2"></a>
 ### R2 — Zahlen benennen die Distanz, nicht den Stand
@@ -383,10 +396,28 @@ Wochen ohne Training zeigen **keinen** Balken der Höhe Null, sondern eine
 2dp-Markierung auf der Grundlinie. Ein Nullbalken sieht wie ein Fehler
 aus; eine Markierung liest sich als „hier war nichts".
 
+**Die aktuelle Woche ist der Fokuspunkt.** Ihr Balken ist Violett statt
+grau und trägt darüber eine Lime-Pille mit dem Wert: `12,4 t`. Acht graue
+Balken ohne Ankerpunkt lassen offen, welcher davon *jetzt* gilt — der
+Nutzer muss die Achse lesen und zählen. Mit einem gefärbten Balken plus
+Wert ist die Frage „wo stehe ich" ohne Tap beantwortet, und der einzige
+Zahlenwert im Chart hängt genau dort, wo er gebraucht wird.
+
+Die Pille ist der eine Ort, an dem Lime und Violett sich berühren
+dürfen: Grafik auf Grafik erreicht mit 3,42 die WCAG-Grenze von 3:1 für
+grafische Objekte. Der Pillen-**Text** steht auf Lime in `141010`
+(Ratio 16,2), nicht auf Violett. Wäre die Pille selbst violett und der
+Text Lime, wäre es unzulässig.
+
+Damit trägt der Chart drei Informationen ohne dritte Kodierung: Höhe =
+Volumen, Grundlinie = Wochenziel erfüllt, Farbe = jetzt. Wer mehr will,
+tippt einen Balken an.
+
 Kein Chart-Framework. `BarChart` in
 `core/designsystem/.../chart/Charts.kt` existiert, ist Canvas-basiert,
-animiert und trägt `contentDescription` — es fehlt nur die Grundlinien-
-Markierung. Eine Fremdbibliothek für acht Balken wäre Gewicht ohne Gewinn.
+animiert und trägt `contentDescription` — es fehlen nur die Grundlinien-
+Markierung und die Hervorhebung des letzten Balkens. Eine Fremdbibliothek
+für acht Balken wäre Gewicht ohne Gewinn.
 
 <a name="r5"></a>
 ### R5 — Die Übungsliste zeigt Bewegung, nicht Bestand
@@ -558,6 +589,55 @@ Control nie geleistet hätte.
 Damit hat der Screen eine Scroll-Richtung und keine Modi. Das ist der
 größte Beitrag zur Übersichtlichkeit in diesem Dokument.
 
+<a name="prototyp"></a>
+## Der HTML-Prototyp und was er nicht ist
+
+[`prototypes/progress-dashboard.html`](prototypes/progress-dashboard.html)
+zeigt fünf Datenzustände nebeneinander in je einem 393 × 852 dp Rahmen:
+kein Satz, Tag 2, zwei Wochen, voller Stand, Wochenziel übertroffen. Eine
+Datei, keine externen Assets, kein Netzwerk.
+
+**Er ist ein Entscheidungswerkzeug, keine Spezifikation.** Wo Prototyp und
+dieses Dokument sich widersprechen, gilt dieses Dokument. Der Prototyp
+darf gelöscht werden, sobald `:feature:progress` steht.
+
+Grund für ihn: `:feature:progress` existiert noch nicht. Eine
+Compose-Preview würde ein neues Gradle-Modul, einen Eintrag in
+`settings.gradle.kts`, eine Anpassung von `ModuleDependencyRulesTest` und
+einen Build über 29 Module verlangen — pro Layoutfrage. Im Browser ist
+eine Variante ein Reload. Da Flowtimer v2 ohnehin zuerst kommt, blockiert
+das nichts.
+
+**Was der Prototyp beantwortet:**
+
+- Dominiert der helle Tile die Hierarchie oder erdrückt er den Rest?
+- Sind zehn Violett-Punkte auf 393 dp Breite zählbar?
+- Wirkt der Screen mit zwei Tiles (Fall 1) leer oder ruhig?
+- Steht die Antwort auf „bin ich auf Kurs?" über der Faltlinie? Der
+  Rahmen zeichnet sie bei 852 dp ein.
+- Bricht das Grid bei doppelter Schrift? Ein Schalter setzt alle
+  Schriftgrößen hoch, macht das Grid einspaltig und schrumpft den Ring
+  auf 120 dp mit Zahl darunter (A11y-Punkt 1 und 2).
+- Ein zweiter Schalter legt das 8-dp-Raster als Linien darüber.
+
+**Wo der Prototyp lügt:**
+
+- Poppins ist echt (lokale TTF aus `core/designsystem`), aber
+  Browser-Zeilenhöhen und optische Größen weichen von Compose ab.
+- `animateItem()`, `fadeIn + scaleIn`, Federkurven mit `StiffnessLow`:
+  CSS kann sie nur nachahmen, nicht abbilden. Der Prototyp animiert
+  deshalb gar nicht.
+- TalkBack-Verhalten, `mergeDescendants`, `stateDescription`: nicht
+  prüfbar. Alle sieben A11y-Punkte bleiben Compose-Aufgaben.
+- Der `fontScale`-Schalter ist eine Annäherung. Androids Skalierung
+  betrifft nur `sp`-Werte, nicht `dp`; im Browser ist beides `px`.
+
+Was aus dem Prototyp zurück in dieses Dokument geflossen ist: die
+Chart-Hervorhebung der aktuellen Woche und die Unterscheidung
+Lime-Text/Lime-Grafik auf Violett ([R4](#r4), [Kontrast](#kontrast)).
+Beides kam aus dem Vergleich mit einem Referenz-Design, das dieselbe
+Palette nutzt.
+
 <a name="entschieden"></a>
 ## Entschieden (2026-08-22, Adi)
 
@@ -572,6 +652,12 @@ größte Beitrag zur Übersichtlichkeit in diesem Dokument.
 | Layout | **Bento-Grid**, zwei Spalten, Tiles unterschiedlich groß ([Bento](#bento)) |
 | Sichtbarkeit | Tiles ohne Aussage werden **ausgeblendet**, nicht leer gezeigt ([Ausblenden](#ausblenden)) |
 | Palette | Lime = Aktion, `756FFA` = Ziele, `141414` = Grund, `E7E6FB` = ein heller Tile ([Palette](#palette)) |
+| Prototyp | **HTML zuerst**, vor `:feature:progress`. Entscheidungswerkzeug, nicht Spezifikation ([Prototyp](#prototyp)) |
+
+Zwei Punkte kamen aus dem Vergleich mit einem Referenz-Design derselben
+Palette und sind meine Entscheidung als Umsetzer: die Hervorhebung der
+aktuellen Woche im Chart und die Lockerung der Lime-neben-Violett-Regel
+auf „Text verboten, Grafik erlaubt" ([R4](#r4)).
 
 Alles Übrige in diesem Dokument ist meine Entscheidung als Umsetzer und
 kann ohne Rückfrage geändert werden, solange das Designsystem und die
@@ -584,10 +670,13 @@ Abnahmekriterien unten eingehalten bleiben.
   Gerät mit 6 Zoll.
 - Genau **ein** heller Tile (`E7E6FB`) pro Screen; genau **eine**
   Lime-Fläche (Ring). Violett trägt ausschließlich Ziel-Elemente.
-- Lime und `E7E6FB` berühren sich nirgends (Kontrast 1,08). Violett und
-  Lime stehen nirgends direkt nebeneinander (3,42).
+- Lime und `E7E6FB` berühren sich nirgends (Kontrast 1,08). Lime-Text
+  steht nirgends auf Violett (3,42 < 4,5) — die Wert-Pille im Chart ist
+  Grafik auf Grafik und damit die einzige erlaubte Berührung.
 - Auf Violett-Flächen steht dunkler Text (`141414`, Ratio 4,75), niemals
   weißer (3,73).
+- Der Chart hebt die aktuelle Woche hervor (Violett-Balken plus
+  Lime-Wertpille); die Pillen-Schrift steht auf Lime, nicht auf Violett.
 - Kein Tile ist leer oder zeigt „keine Daten". Geprüft für: neuer Nutzer
   ohne Sätze, ein Trainingstag, eine Woche Daten, Sätze ohne Ziel,
   Montagmorgen.

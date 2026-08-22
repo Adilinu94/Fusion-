@@ -59,6 +59,7 @@ Keine Funktion irgendeines Repos geht verloren:
 | 21 | Zahlenformate | Gewichte ganzzahlig ohne Dezimalstelle (`95 kg`, nie `95,0 kg`); krumme Werte mit einer Stelle; Volumen unter 1000 kg in kg, darüber in Tonnen mit einer Stelle. Formatierung über `Locale.getDefault()` |
 | 22 | Layout | **Bento-Grid**, zwei Spalten, Tiles bewusst unterschiedlich groß. Tiles ohne Aussage werden **ausgeblendet**, nicht leer gezeigt. Bei `fontScale > 1.5` einspaltig |
 | 23 | Palette | Zusätzlich zu Lime: `756FFA` = **Ziele** (`secondary`), `141414` = **Grund** (`background`), `E7E6FB` = **ein heller Tile** (`secondaryContainer`). Lime bleibt ausschließlich Aktion. Theme-Änderung inklusive drei neuer `ThemeColorSnapshotTest`-Fälle |
+| 24 | UI-Prototyp | **HTML-Prototyp vor der Compose-Umsetzung.** Eine Datei, fünf Datenzustände: [`prototypes/progress-dashboard.html`](prototypes/progress-dashboard.html). Entscheidungswerkzeug, **keine** Spezifikation — bei Abweichung gilt [`…-UI.md`](2026-08-22-flowtimer-integration-UI.md). Darf nach der Umsetzung gelöscht werden |
 
 <a name="revisionen"></a>
 ## Revisionen gegenüber der Erstfassung
@@ -157,6 +158,7 @@ Kurzfassung:
 
 ## Implementierungsreihenfolge
 
+0. **UI-Prototyp** (`prototypes/progress-dashboard.html`) — läuft parallel zu Vorbedingung 0, blockiert nichts und kostet keinen Gradle-Build. Klärt Hierarchie, Faltlinie und Grid-Verhalten bei doppelter Schrift, bevor `:feature:progress` existiert.
 1. **Vorbedingung 0:** Flowtimer v2 fertigstellen (Phase 15 Builder + Phase 16 Polish) — in Flowtimer, auf alter Struktur.
 2. **Vorbedingung 1:** Beim Integrations-Start beide Working Trees committen — je ein beschrifteter Checkpoint-Commit (Fusion ~162, Flowtimer ~1.100 offene Änderungen).
 3. Privates `training-core`-Repo auf GitHub anlegen; Fusions `WorkoutMath`/`PrCalculator` hineinziehen, Flowtimers `Streak`/`WeekAgg`/`TargetMath` ergänzen, `bestFor` darauf abbilden. Flowtimer auf Submodule umstellen, alle Flowtimer-Tests grün.
