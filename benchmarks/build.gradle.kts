@@ -1,10 +1,9 @@
-// :benchmarks - Macrobenchmark + Baseline-Profile-Generierung (Phase 4).
-// Laeuft auf einem Geraet/Emulator (com.android.test), nie in der CI-Testkette.
-// AGP 9: com.android.test mit eingebautem Kotlin. Kein Compose-Plugin: der
-// Benchmark enthaelt keine Composables, und ohne Compose-Runtime im
-// Classpath bricht der Compose-Compiler den Build ab.
+// :benchmarks — Macrobenchmark + Baseline-Profile-Generierung (Phase 4).
+// Läuft auf einem Gerät/Emulator (com.android.test), nie in der CI-Testkette.
+// AGP 9: com.android.test mit eingebautem Kotlin.
 plugins {
     alias(libs.plugins.android.test)
+    alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.androidx.baselineprofile)
 }
 
@@ -36,31 +35,17 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    // Macrobenchmark misst die Release-App. Die Build-Typen legt das
-    // baselineprofile-Plugin an (benchmarkRelease/nonMinifiedRelease); ein
-    // eigener "benchmark"-Typ wuerde damit kollidieren.
-    //
-    // benchmarkRelease misst die minifizierte App. AGP verlangt, dass das
-    // Testprojekt dann ebenfalls minifiziert (checkTestedAppObfuscation),
-    // sonst finden die Testklassen die umbenannten App-Symbole nicht.
-    // configureEach, weil das Plugin den Typ erst nach diesem Block anlegt.
-    // AGP warnt, dass der Schalter bei einem debuggable Test-APK wirkungslos
-    // ist -- das ist richtig und gewollt: er erfuellt nur die Pruefung.
-    buildTypes.configureEach {
-        if (name == "benchmarkRelease") {
-            isMinifyEnabled = true
+    // Macrobenchmark misst die Release-App; debuggable=false ist Pflicht.
+    buildTypes {
+        create("benchmark") {
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("debug")
+            matchingFallbacks += listOf("release")
         }
     }
 }
 
-// Laeuft gegen ein angeschlossenes Geraet/Emulator, nie in der CI.
-baselineProfile {
-    useConnectedDevices = true
-}
-
 dependencies {
     implementation(libs.androidx.benchmark.macro.junit4)
-    implementation(libs.androidx.test.ext.junit)
-    implementation(libs.junit4)
     implementation(project(":app"))
 }

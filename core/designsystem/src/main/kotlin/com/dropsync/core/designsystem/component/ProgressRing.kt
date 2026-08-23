@@ -25,6 +25,11 @@ import androidx.compose.ui.unit.dp
  * Kreisfoermiger Fortschrittsring (Design.txt "Progress Ring / Spring").
  * Lime-Fortschritt auf grauem Rest-Track, feder-animiert. Der zentrale Inhalt
  * (z. B. grosse Restzeit) wird via [content] in die Mitte gelegt.
+ *
+ * [excessProgress] zeichnet einen duennen Zweitbogen konzentrisch IN den Ring
+ * (UI-Vertrag R2): Der Hauptbogen bleibt bei 100 Prozent stehen, der
+ * Ueberschuss ueber das Ziel wird separat sichtbar. Default 0 — der Bogen
+ * entfaellt, bestehende Aufrufer aendern sich nicht.
  */
 @Composable
 fun ProgressRing(
@@ -34,12 +39,20 @@ fun ProgressRing(
     strokeWidth: Dp = 14.dp,
     trackColor: Color = MaterialTheme.colorScheme.surfaceVariant,
     progressColor: Color = MaterialTheme.colorScheme.primary,
+    excessProgress: Float = 0f,
+    excessStrokeWidth: Dp = 6.dp,
+    excessColor: Color = MaterialTheme.colorScheme.secondary,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
         animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
         label = "progressRing",
+    )
+    val animatedExcess by animateFloatAsState(
+        targetValue = excessProgress.coerceIn(0f, 1f),
+        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        label = "progressRingExcess",
     )
     Box(modifier = modifier.size(ringSize), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
@@ -65,6 +78,23 @@ fun ProgressRing(
                 size = arcSize,
                 style = Stroke(width = stroke, cap = StrokeCap.Round),
             )
+            if (animatedExcess > 0f) {
+                val excessStroke = excessStrokeWidth.toPx()
+                val excessDiameter = (diameter - stroke - excessStroke * 2f).coerceAtLeast(excessStroke)
+                drawArc(
+                    color = excessColor,
+                    startAngle = -90f,
+                    sweepAngle = 360f * animatedExcess,
+                    useCenter = false,
+                    topLeft =
+                        Offset(
+                            (size.width - excessDiameter) / 2f,
+                            (size.height - excessDiameter) / 2f,
+                        ),
+                    size = Size(excessDiameter, excessDiameter),
+                    style = Stroke(width = excessStroke, cap = StrokeCap.Round),
+                )
+            }
         }
         content()
     }

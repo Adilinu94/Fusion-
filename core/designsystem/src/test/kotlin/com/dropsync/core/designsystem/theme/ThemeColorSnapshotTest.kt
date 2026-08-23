@@ -54,6 +54,58 @@ class ThemeColorSnapshotTest {
         assertEquals(BrandBlack, LightColors.onPrimary)
     }
 
+    /**
+     * Flowtimer-Integration (CONTEXT E4d): Violett traegt secondary und bleibt
+     * auf 756FFA gepinnt; der Grund (background/surface) ist 141414; genau ein
+     * heller Tile pro Screen laeuft in E7E6FB (secondaryContainer).
+     */
+    @Test
+    fun `Violett bleibt 756FFA und traegt die Ziel-Rollen`() {
+        assertEquals(Color(0xFF756FFA), BrandViolet)
+        assertEquals(BrandViolet, DarkColors.secondary)
+        assertEquals(Color(0xFF141414), BrandGround)
+        assertEquals(BrandGround, DarkColors.background)
+        assertEquals(BrandGround, DarkColors.surface)
+        assertEquals(Color(0xFFE7E6FB), BrandLilac)
+        assertEquals(BrandLilac, DarkColors.secondaryContainer)
+    }
+
+    /**
+     * E4d Kontrastregel 1: Auf Violett steht dunkler Text (141414, Ratio 4,75),
+     * nie weisser (nur 3,73 und damit unter WCAG AA fuer Text).
+     */
+    @Test
+    fun `onSecondary ist dunkel statt weiss`() {
+        assertEquals(BrandGround, DarkColors.onSecondary)
+        assertEquals(BrandGround, DarkColors.onSecondaryContainer)
+        val dunklerText = contrastRatio(BrandGround, BrandViolet)
+        val weisserText = contrastRatio(BrandWhite, BrandViolet)
+        org.junit.Assert.assertTrue(
+            "Kontrast $dunklerText unterschreitet 4.5:1 (WCAG AA)",
+            dunklerText >= 4.5,
+        )
+        org.junit.Assert.assertTrue(
+            "Weiss auf Violett ($weisserText) erfuellt AA und koennte sich " +
+                "einschleichen — dunkler Text ist Pflicht",
+            weisserText < 4.5,
+        )
+    }
+
+    /**
+     * E4d Kontrastregel 2 (der wichtigste Fall): Lime auf dem hellen Tile ist
+     * mit 1,08 praktisch unsichtbar. Solange die Kombination AA klar verfehlt,
+     * kann sie sich nicht still durchsetzen.
+     */
+    @Test
+    fun `Lime wird nie mit secondaryContainer gepaart`() {
+        val ratio = contrastRatio(BrandLime, DarkColors.secondaryContainer)
+        org.junit.Assert.assertTrue(
+            "Kontrast $ratio ueberschreitet 4.5:1 — Lime waere auf dem hellen " +
+                "Tile lesbar und damit eine verbotene Paarung",
+            ratio < 4.5,
+        )
+    }
+
     @Test
     fun `Spacing-Skala ist 4er-Raster`() {
         assertEquals(4, Spacing.space4.value.toInt())

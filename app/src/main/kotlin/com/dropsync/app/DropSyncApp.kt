@@ -65,8 +65,11 @@ import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
 import com.dropsync.feature.player.MiniPlayer
 import com.dropsync.feature.player.NowPlayingScreen
+import com.dropsync.feature.progress.AllSetsScreen
+import com.dropsync.feature.progress.ProgressDashboardScreen
 import com.dropsync.feature.settings.SettingsScreen
 import com.dropsync.feature.workout.CalibrationWizardScreen
+import com.dropsync.feature.workout.ExerciseLibraryScreen
 import com.dropsync.feature.workout.TrainScreen
 
 /**
@@ -96,6 +99,18 @@ private const val ROUTE_AUDIO_SETTINGS = "audio_settings"
  * auf den Mini-Player; kein viertes Hauptziel.
  */
 private const val ROUTE_NOW_PLAYING = "now_playing"
+
+/**
+ * Alle-Saetze-Route hinter dem Progress-Dashboard (UI-Vertrag Verlauf):
+ * die volle Satz-Liste als eigene Route, Android-Back gilt normal.
+ */
+private const val ROUTE_ALL_SETS = "progress/all_sets"
+
+/**
+ * Uebungsbibliothek (Schritt 7): Ort der Uebungs- und Ziel-Pflege
+ * (Entscheidung 13), erreichbar vom Train-Tab und dem Dashboard.
+ */
+private const val ROUTE_EXERCISE_LIBRARY = "exercise_library"
 
 /** Guided-Calibration-Wizard (Phase 4 Schritt 3), aus dem Train-Tab. */
 private const val ROUTE_CALIBRATION = "calibration/{exerciseId}/{deviceId}"
@@ -204,6 +219,7 @@ private fun DropSyncNavHost(
                 onOpenCalibration = { exerciseId, deviceId ->
                     navController.navigate("calibration/$exerciseId/$deviceId")
                 },
+                onOpenLibrary = { navController.navigate(ROUTE_EXERCISE_LIBRARY) { launchSingleTop = true } },
             )
         }
         composable(TopLevelDestination.MUSIC.route) {
@@ -215,9 +231,29 @@ private fun DropSyncNavHost(
             )
         }
         composable(TopLevelDestination.HISTORY.route) {
-            HistoryScreen(
+            // Verlauf-Tab ist das Bento-Dashboard (Flowtimer-Integration 6d-2);
+            // die Rohdaten stehen hinter der Alle-Saetze-Route.
+            ProgressDashboardScreen(
                 contentPadding = contentPadding,
                 onOpenTraining = { navController.navigateTopLevel(TopLevelDestination.TRAIN.route) },
+                onOpenAllSets = { navController.navigate(ROUTE_ALL_SETS) { launchSingleTop = true } },
+                onOpenExerciseLibrary = { navController.navigate(ROUTE_EXERCISE_LIBRARY) { launchSingleTop = true } },
+            )
+        }
+        composable(ROUTE_ALL_SETS) {
+            AllSetsScreen(
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ROUTE_EXERCISE_LIBRARY) {
+            ExerciseLibraryScreen(
+                contentPadding = contentPadding,
+                // TODO Flowtimer-Integration DB v9 (Schritt 7 Fortsetzung):
+                // Der Tap auf eine Uebung oeffnet den Ziel-Dialog, sobald
+                // TargetEntity existiert. Bis dahin fuehrt der Tap zurueck.
+                onOpenExercise = { navController.popBackStack() },
+                onBack = { navController.popBackStack() },
             )
         }
         composable(TopLevelDestination.SETTINGS.route) {

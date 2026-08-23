@@ -41,6 +41,9 @@
     <string name="library_search">Search</string>
     <string name="library_new_exercise">New exercise</string>
     <string name="library_custom_badge">Custom</string>
+    <string name="library_archive">Archive</string>
+    <string name="library_restore">Restore</string>
+    <string name="library_archived_section">Archived exercises</string>
     <string name="library_name_de">Name (German)</string>
     <string name="library_name_en">Name (English)</string>
     <string name="library_kind">Type</string>

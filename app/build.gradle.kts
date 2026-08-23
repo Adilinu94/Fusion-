@@ -89,6 +89,7 @@ dependencies {
     implementation(project(":feature:library"))
     implementation(project(":feature:audio"))
     implementation(project(":feature:player"))
+    implementation(project(":feature:progress"))
     implementation(project(":feature:timer"))
     implementation(project(":feature:workout"))
     implementation(project(":feature:settings"))

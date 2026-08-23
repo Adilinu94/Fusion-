@@ -84,6 +84,10 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override suspend fun archiveExercise(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
 
+    override fun observeArchivedExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> = flowOf(emptyList())
+
+    override suspend fun restoreExercise(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
+
     override suspend fun getRestPref(exerciseId: Long): AppResult<RestPref?> = AppResult.Success(null)
 
     override suspend fun setRestPref(

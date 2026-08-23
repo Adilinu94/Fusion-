@@ -466,3 +466,74 @@ Implementierungsreihenfolge im Design-Dokument.
   gruen, in einem frischen Clone fuenffach rot. Mit Testclone verifiziert.
 - [x] `python3 tools/doku_links_check.py` gruen — auch aus einem frischen
   `git clone` heraus, was vorher nicht der Fall war.
+
+## V. Flowtimer-Integration: Umsetzung gestartet — Basis-Entscheidungen, Designsystem (2026-08-23, Session: ZCode)
+
+- [x] Working-Tree-Analyse vor dem Start: von 587 offenen Eintraegen hatten
+  116 Dateien echte Inhaltsaenderungen (Rest Zeilenenden-Phantome der
+  LF-Normalisierung). HEAD (master) stand auf DB v6 und ohne HistoryScreen,
+  FlowRepComponents, Poppins-Fonts, app/src/test und weitere ungetrackte
+  Infrastruktur — der Working Tree war de facto der Projektstand. Ein Abzweig
+  von master haette bedeutet, die Haelfte der App zu rekonstruieren.
+- [x] Entscheidung Adi: alle offenen Aenderungen als EIN Fremd-Checkpoint auf
+  `wip/fremde-sessions-2026-08-23` (729ac46) parken, klar gelabelt als fremde
+  Arbeit (Abschnitte S/T, Geraeteabnahme offen, Verifikation durch Urheber).
+  `fusion/training-core` zweigt vom Checkpoint ab; master bleibt sauber
+  (offener Punkt 7 aus CONTEXT damit entschieden: Branch statt master).
+- [x] Baseline auf `fusion/training-core` gruen: test, spotlessCheck, detekt,
+  lintDebug, assembleDebug und `python tools/doku_links_check.py` (36 Dateien).
+- [x] Reihenfolge entzerrt (Adi erlaubt): Schritt 6 (Designsystem + Dashboard
+  gegen die bestehende FlatSetDao) vor der Kern-Extraktion (Schritte 3-5).
+  Vorbedingung 0 gilt weiter: Flowtimer v2 (Phase 15 + 16) zuerst; die offenen
+  Punkte 1/2/8 aus CONTEXT werden vor der Kern-Extraktion geklaert.
+- [x] E4d umgesetzt: `Theme.kt` um BrandViolet (756FFA, secondary = Ziele),
+  BrandGround (141414, background/surface) und BrandLilac (E7E6FB,
+  secondaryContainer = der eine helle Tile) erweitert; onSecondary und
+  onSecondaryContainer dunkel (4,75 statt weiss 3,73).
+  `ThemeColorSnapshotTest` um drei Faelle ergaenzt: Violett bleibt 756FFA,
+  onSecondary ist dunkel statt weiss, Lime wird nie mit secondaryContainer
+  gepaart (1,08). `BrandButtonSecondary` (aktuell unbenutzt) von secondary auf
+  surfaceContainerHigh umgestellt — secondary ist seit E4d exklusiv die
+  Ziel-Rolle und steht Buttons nicht mehr zur Verfuegung.
+- [x] 6b+6c umgesetzt (cf039e8): Modul `:feature:progress` angelegt (Template
+  feature/timer), `ModuleDependencyRulesTest` auf alle 29 Module vervollstaendigt
+  (health, sensor, audio fehlten), HistoryScreen + UiState + Test ins Feature
+  verschoben, alle Literals in stringResource (values EN / values-de DE),
+  Zahlformate zentral in `ProgressFormatters` (E4c/R2b: Locale.getDefault(),
+  ganzzahlige Gewichte ohne Dezimalstelle, Volumen t ab 1000 kg).
+- [x] 6d-1 umgesetzt (ff1ddd4): `ProgressUiState` mit Tages-Streak (E4b, zwei
+  freie Ruhetage), Wochenring (cap 1f), 8-Wochen-Aggregation mit kalendarischen
+  Wochengrenzen (DST-sicher) und Neue-Woche-Zustand (R3) — Zeit als Calendar
+  injiziert, deterministisch getestet (Luecke 1/2/3, Mitternacht, Montag).
+- [x] 6d-2 umgesetzt: Bento-Dashboard im Verlauf-Tab nach UI-Vertrag.
+  `LazyVerticalStaggeredGrid` Fixed(2), ab fontScale > 1.5 einspaltig und Ring
+  120 dp mit Zahl darunter (A11y 1+2). Aussage-Tile E7E6FB/radiusHero mit Ring
+  auf dunklem Track (Lime beruehrt E7E6FB nie), Distanz-Sprache (R2) inkl.
+  bold bei genau einem fehlenden Training, duenner Violett-Zweitbogen fuer
+  Ueberschuss (`ProgressRing.excessProgress`), Neue-Woche-Sprache (R3),
+  stateDescription am Tile (A11y 3). Streak- und Volumen-Tile (fest 120 dp),
+  Chart-Tile mit erweitertem `BarChart` (2-dp-Grundlinie erfuellter Wochen,
+  Null-Wochen-Markierung, Violett-Highlight + Lime-Wert-Pille, Tap-Ebene mit
+  KW/Volumen/Tage-Info), PR-Zeile (R6, Bestwert = max. Volumen je Uebung,
+  frisch = Rekordsatz juenger als 7 Tage), Ziel-Platzhalterzeile (R7) bis
+  TargetEntity (Schritt 7, DB v9), Tile 7 letzte 10 Saetze mit eigener
+  Alle-Saetze-Route (`AllSetsScreen`, HistoryScreen ersetzt: Bestwerte +
+  Vollliste, Android-Back normal). Bewegung: animateItem, fadeIn+scaleIn(0.96f)
+  200 ms, einmaliges Violett-Rand-Aufblitzen des Aussage-Tiles; bei reduzierter
+  Systemanimation sofortige Endwerte. Alle Gates gruen inkl.
+  `python tools/doku_links_check.py`.
+- [x] Schritt 7 umgesetzt (Ziele-Pflege): Archivieren/Wiederherstellen von
+  Uebungen (DAO `restoreExercise` + `observeArchivedExerciseLibrary`, Repo +
+  Fake, Library-UI mit Archiv-Sektion — Restore statt Delete schuetzt die
+  Trainingshistorie). ExerciseLibrary ueberall verdrahtet: eigene Route,
+  „Bibliothek"-Chip in der Trainings-Uebungsleiste, Ziel-Hinweiszeile des
+  Dashboards navigiert dorthin (Entscheidung 13: Uebungs- und Ziel-Pflege
+  leben in der Bibliothek). Wochenziel als `WorkoutGoalRepository` (MIN 1 /
+  MAX 7 / DEFAULT 3) mit `WorkoutGoalPreferencesStore` im DataStore —
+  bewusst NICHT Room, um den DB-Versionsspielraum bis zum Urheber-WIP-Merge
+  (v8) nicht zu beruehren; echte Ziele (TargetEntity, DB v9) bleiben
+  blockiert. Settings: WeeklyGoalSection mit FilterChips 1..7, horizontal
+  scrollbar, Plural-contentDescription (A11y); ProgressViewModel combine den
+  Goal-Flow live in Ring/Chart (aenderungen wirken ohne Neustart).
+  `FakeWorkoutGoalRepository` in core:testing. Alle Gates gruen inkl.
+  `python tools/doku_links_check.py`.

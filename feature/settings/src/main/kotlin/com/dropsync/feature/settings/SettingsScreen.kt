@@ -5,6 +5,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilterChip
@@ -56,6 +58,7 @@ import com.dropsync.core.model.SongMarker
 import com.dropsync.core.model.ThemeMode
 import com.dropsync.domain.audio.MixPreset
 import com.dropsync.domain.workout.ExportFormat
+import com.dropsync.domain.workout.WorkoutGoalRepository
 import kotlin.math.roundToInt
 
 /**
@@ -80,6 +83,7 @@ fun SettingsScreen(
     val getReadySeconds by viewModel.getReadySeconds.collectAsStateWithLifecycle()
     val restPresets by viewModel.restPresets.collectAsStateWithLifecycle()
     val smartShuffleEnabled by viewModel.smartShuffleEnabled.collectAsStateWithLifecycle()
+    val weeklyTrainingGoal by viewModel.weeklyTrainingGoal.collectAsStateWithLifecycle()
     val dspConfig by viewModel.dspConfig.collectAsStateWithLifecycle()
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     var markerToLink by remember { mutableStateOf<SongMarker?>(null) }
@@ -196,6 +200,14 @@ fun SettingsScreen(
             )
         }
         item {
+            // Wochenziel (Flowtimer-Integration Schritt 7): traegt den
+            // Wochenring des Progress-Dashboards (UI-Vertrag R2).
+            WeeklyGoalSection(
+                weeklyGoal = weeklyTrainingGoal,
+                onSetGoal = viewModel::setWeeklyTrainingGoal,
+            )
+        }
+        item {
             SettingsSectionTitle(stringResource(R.string.settings_data_section))
         }
         item {
@@ -295,6 +307,42 @@ fun SettingsScreen(
             },
             onDismiss = { markerToLink = null },
         )
+    }
+}
+
+/** Wochenziel-Auswahl 1..7 Trainingstage (Schritt 7): FilterChips ohne Deko. */
+@Composable
+private fun WeeklyGoalSection(
+    weeklyGoal: Int,
+    onSetGoal: (Int) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp)) {
+        Text(
+            text = stringResource(R.string.settings_weekly_goal),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(top = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            for (day in WorkoutGoalRepository.MIN_WEEKLY_GOAL..WorkoutGoalRepository.MAX_WEEKLY_GOAL) {
+                val dayDescription =
+                    pluralStringResource(R.plurals.settings_weekly_goal_days, day, day)
+                FilterChip(
+                    selected = day == weeklyGoal,
+                    onClick = { onSetGoal(day) },
+                    label = { Text(day.toString()) },
+                    modifier =
+                        Modifier
+                            .heightIn(min = 48.dp)
+                            .semantics { contentDescription = dayDescription },
+                )
+            }
+        }
     }
 }
 

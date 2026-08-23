@@ -64,7 +64,12 @@ fun BrandButtonPrimary(
     }
 }
 
-/** Sekundaere Aktion: kontrastierende Vollflaeche (schwarz/weiss je nach Theme). */
+/**
+ * Sekundaere Aktion: ruhige Flaeche (surfaceContainerHigh) statt Farbe.
+ * Seit der Flowtimer-Integration (CONTEXT E4d) ist secondary exklusiv die
+ * semantische Rolle "Ziele" (Violett) und steht Buttons nicht mehr zur
+ * Verfuegung.
+ */
 @Composable
 fun BrandButtonSecondary(
     text: String,
@@ -82,8 +87,8 @@ fun BrandButtonSecondary(
         shape = PillShape,
         colors =
             ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.secondary,
-                contentColor = MaterialTheme.colorScheme.onSecondary,
+                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                contentColor = MaterialTheme.colorScheme.onSurface,
             ),
         contentPadding = PaddingValues(horizontal = 24.dp),
         interactionSource = source,

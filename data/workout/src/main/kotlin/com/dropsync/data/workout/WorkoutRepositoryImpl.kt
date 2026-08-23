@@ -7,6 +7,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.common.getOrNull
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.ExerciseDao
+import com.dropsync.core.database.dao.ExerciseLibraryRow
 import com.dropsync.core.database.dao.RoutineDao
 import com.dropsync.core.database.dao.WorkoutDao
 import com.dropsync.core.database.entity.ExerciseEntity
@@ -358,16 +359,20 @@ class WorkoutRepositoryImpl(
         }
 
     override fun observeExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> =
-        exerciseDao.observeLibrary(locale).map { rows ->
-            rows.map { row ->
-                ExerciseLibraryItem(
-                    id = row.id,
-                    slug = row.slug,
-                    displayName = row.displayName ?: row.slug,
-                    equipment = runCatching { Equipment.valueOf(row.equipment) }.getOrDefault(Equipment.OTHER),
-                    isCustom = row.isCustom,
-                )
-            }
+        exerciseDao.observeLibrary(locale).map(::toLibraryItems)
+
+    override fun observeArchivedExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> =
+        exerciseDao.observeArchivedLibrary(locale).map(::toLibraryItems)
+
+    private fun toLibraryItems(rows: List<ExerciseLibraryRow>): List<ExerciseLibraryItem> =
+        rows.map { row ->
+            ExerciseLibraryItem(
+                id = row.id,
+                slug = row.slug,
+                displayName = row.displayName ?: row.slug,
+                equipment = runCatching { Equipment.valueOf(row.equipment) }.getOrDefault(Equipment.OTHER),
+                isCustom = row.isCustom,
+            )
         }
 
     override suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long> =
@@ -452,6 +457,16 @@ class WorkoutRepositoryImpl(
                 AppResult.success(Unit)
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("archiveExercise"))
+            }
+        }
+
+    override suspend fun restoreExercise(exerciseId: Long): AppResult<Unit> =
+        withContext(dispatchers.io) {
+            try {
+                exerciseDao.restoreExercise(exerciseId)
+                AppResult.success(Unit)
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("restoreExercise"))
             }
         }
 

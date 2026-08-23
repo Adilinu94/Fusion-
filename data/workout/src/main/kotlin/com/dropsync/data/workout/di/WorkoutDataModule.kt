@@ -1,5 +1,6 @@
 package com.dropsync.data.workout.di
 
+import android.content.Context
 import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.TransactionRunner
@@ -8,13 +9,16 @@ import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.RoutineDao
 import com.dropsync.core.database.dao.WorkoutDao
 import com.dropsync.data.workout.FlatSetRepositoryImpl
+import com.dropsync.data.workout.WorkoutGoalPreferencesStore
 import com.dropsync.data.workout.WorkoutRepositoryImpl
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.WorkoutGoalRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
@@ -51,4 +55,11 @@ object WorkoutDataModule {
         clock: Clock,
         dispatchers: DispatcherProvider,
     ): FlatSetRepository = FlatSetRepositoryImpl(flatSetDao, clock, dispatchers)
+
+    /** Wochenziel-DataStore (Flowtimer-Integration Schritt 7). */
+    @Provides
+    @Singleton
+    fun provideWorkoutGoalRepository(
+        @ApplicationContext context: Context,
+    ): WorkoutGoalRepository = WorkoutGoalPreferencesStore(context)
 }

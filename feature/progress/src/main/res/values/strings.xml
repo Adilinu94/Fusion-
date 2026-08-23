@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="progress_title_dashboard">Progress</string>
+    <string name="progress_title_all_sets">All sets</string>
+    <string name="progress_back">Back</string>
+    <string name="progress_default_exercise">Exercise</string>
+    <string name="progress_empty_title">No training logged yet</string>
+    <string name="progress_empty_body">After your first set, FlowRep shows your volume, records and exercise history here.</string>
+    <string name="progress_empty_open_training">Open training</string>
+    <string name="progress_section_records">Personal records</string>
+    <string name="progress_section_recent_sets">Recent sets</string>
+    <string name="progress_row_best_volume">Best volume</string>
+    <string name="progress_row_volume">%s volume</string>
+    <string name="progress_ring_of">of %d trainings</string>
+    <string name="progress_ring_missing_one">One more training this week</string>
+    <string name="progress_ring_missing_many">%d more trainings this week</string>
+    <string name="progress_ring_reached">Weekly goal reached</string>
+    <string name="progress_ring_exceeded">Weekly goal exceeded</string>
+    <string name="progress_ring_new_week">New week</string>
+    <string name="progress_ring_planned">%d trainings planned</string>
+    <string name="progress_ring_a11y_new_week">New week, %d trainings planned</string>
+    <string name="progress_ring_a11y_missing_one">%1$d of %2$d weekly trainings, one training missing</string>
+    <string name="progress_ring_a11y_missing_many">%1$d of %2$d weekly trainings, %3$d trainings missing</string>
+    <string name="progress_ring_a11y_reached">%1$d of %2$d weekly trainings, weekly goal reached</string>
+    <string name="progress_ring_a11y_exceeded">%1$d of %2$d weekly trainings, weekly goal exceeded</string>
+    <string name="progress_streak_days">days in a row</string>
+    <string name="progress_streak_line">%d training days in a row</string>
+    <string name="progress_streak_keep">Train today or tomorrow to keep the streak</string>
+    <string name="progress_volume_this_week">this week</string>
+    <string name="progress_chart_a11y">Volume of the last eight weeks, %1$s, this week %2$s</string>
+    <string name="progress_chart_week_label">Wk %d</string>
+    <string name="progress_chart_week_info">Wk %1$d · %2$s · %3$d of %4$d</string>
+    <string name="progress_trend_up">increasing</string>
+    <string name="progress_trend_down">decreasing</string>
+    <string name="progress_trend_flat">steady</string>
+    <string name="progress_pr_single">New record: %1$s %2$s</string>
+    <string name="progress_pr_many">%d new records this week</string>
+    <string name="progress_goals_hint">Set a goal to see your progress per exercise</string>
+    <string name="progress_show_all_sets">Show all sets</string>
+</resources>
