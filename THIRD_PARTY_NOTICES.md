@@ -36,15 +36,15 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 | androidx.profileinstaller | 1.4.1 | Apache-2.0 | Installiert Baseline Profiles zur Laufzeit (Phase 4) | https://developer.android.com/jetpack/androidx/releases/profileinstaller | FREIGEGEBEN |
 | androidx.benchmark (Macrobenchmark) | 1.5.0-alpha01 | Apache-2.0 | Startup-Messung + Baseline-Profile-Generierung, nur :benchmarks-Modul (keine Distribution in der App) | https://developer.android.com/jetpack/androidx/releases/benchmark | FREIGEGEBEN |
 | FFmpeg (libavcodec, libavformat, libavutil) | 6.1+ | LGPL-2.1-or-later | Audiodecoder-Extension (ALAC/AIFF/WMA/APE/TAK/TTA/DSD), dynamisch gelinkt, aus androidx/media gebaut (ADR-0006) | https://ffmpeg.org | OFFEN |
-| Raleway (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/impallari/Raleway | FREIGEGEBEN |
+| Poppins (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/google/fonts/tree/main/ofl/poppins | FREIGEGEBEN |
 
-## Raleway (SIL OFL 1.1)
+## Poppins (SIL OFL 1.1)
 
-Die Marken-Schriftfamilie Raleway wird unter der SIL Open Font License 1.1
-als statische TTF (Gewichte 400/500/600/700/800) in `:core:designsystem`
+Die Marken-Schriftfamilie Poppins wird unter der SIL Open Font License 1.1
+als statische TTF (Gewichte 400/500/700) in `:core:designsystem`
 (`src/main/res/font/`) gebuendelt und offline ausgeliefert - kein
 Google-Fonts-Provider, kein Netzzugriff. Der vollstaendige Lizenztext liegt
-unter `UI/Raleway/OFL.txt`. OFL erlaubt das Einbetten in Anwendungen; die
+unter `UI/Poppins/OFL.txt`. OFL erlaubt das Einbetten in Anwendungen; die
 Fonts werden nicht separat verkauft und der Lizenztext begleitet die Dateien.
 
 ## FFmpeg (LGPL 2.1+)
