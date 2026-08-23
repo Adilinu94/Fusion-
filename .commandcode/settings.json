@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__anysearch__search",
+      "mcp__anysearch__extract",
+      "mcp__mobile__device",
+      "mcp__mobile__app",
+      "mcp__mobile__screen",
+      "mcp__mobile__system",
+      "mcp__mobile__ui",
+      "mcp__mobile__input",
+      "mcp__anysearch__batch_search"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

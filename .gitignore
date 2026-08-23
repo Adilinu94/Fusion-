@@ -24,4 +24,7 @@ captures/
 .externalNativeBuild/
 .cxx/
 
+# Codeanalyse-Werkzeug (lokal generiert)
+graphify-out/
+
 .kotlin/

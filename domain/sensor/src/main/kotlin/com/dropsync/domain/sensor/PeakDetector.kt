@@ -7,7 +7,10 @@ data class PeakEvent(
     val peakValue: Double,
     val precedingValley: Double,
     val prominence: Double,
+    /** Diagnostic: excursion length in samples (time decisions use ms). */
     val durationSamples: Int,
+    /** Excursion length in milliseconds (time basis: timestamps). */
+    val durationMs: Long,
     /** Raw excursion window, consumed by TemplateMatcher. */
     val window: List<Double>,
 )
@@ -16,31 +19,30 @@ private enum class DetectorState { IDLE, RISING, FALLING }
 
 /**
  * Adaptive peak detector after Pan-Tompkins (port of peak_detector.dart):
- * theta = NPK + factor * (SPK - NPK), idle -> rising -> falling state
+ * theta = calibrated detection threshold, idle -> rising -> falling state
  * machine, refractory time against double counting, prominence filter.
  *
- * Punkt 6 (adaptive Refraktaerzeit): [updateExpectedDuration] setzt die
- * Refraktaerzeit auf 30% der erwarteten Rep-Dauer (wie CalibrationRefiner);
- * [updateLevels] kann die Dauer direkt aus dem Profil uebernehmen.
+ * Umbauplan Phase 1.4/4: the threshold [currentThreshold] is the calibrated
+ * theta used DIRECTLY (no SPK/NPK reconstruction). SPK/NPK only adapt
+ * internally via EMA after confirmed/rejected peaks.
  *
- * Punkt 4 (Accel-Kanal): [signal] waehlt aus, welches Feld des Frames der
- * Detector auswertet - default `smoothedGp` (Gyro), fuer den Accel-Zweig
- * `smoothedAccel`.
+ * Umbauplan Phase 2.5: refractory and duration use TIMESTAMPS, not the local
+ * sample index, so BLE packet loss cannot compress physical time.
  */
 class PeakDetector(
     val sampleRateHz: Double = 50.0,
-    initialSpk: Double = 100.0,
-    initialNpk: Double = 10.0,
-    private val thresholdFactor: Double = 0.25,
+    // Legacy default: theta = NPK + 0.25 * (SPK - NPK) with SPK=100, NPK=10.
+    private var threshold: Double = 32.5,
     private val fallingRatio: Double = 0.5,
     private val fallingDebounce: Int = 4,
-    refractorySeconds: Double = 0.5,
+    refractoryMs: Long = 500,
+    expectedDurationMs: Double = refractoryMs.toDouble(),
     private val prominenceRatio: Double = 0.2,
     private val refractoryDurationRatio: Double = 0.3,
     private val signal: (ProcessedFrame) -> Double = { it.smoothedGp },
 ) {
-    private var spk: Double = initialSpk
-    private var npk: Double = initialNpk
+    private var spk: Double = threshold
+    private var npk: Double = threshold * 0.5
 
     private var state = DetectorState.IDLE
     private var currentMax = 0.0
@@ -48,32 +50,47 @@ class PeakDetector(
     private var fallingCount = 0
     private val window = mutableListOf<Double>()
     private var sampleIndex = 0
-    private var lastPeakSampleIndex: Int? = null
-    private var refractorySamples = (refractorySeconds * sampleRateHz).toInt()
+    private var lastPeakTimestampMs: Long? = null
+    private var excursionStartMs: Long = 0L
+    private var refractoryMillis = refractoryMs
 
-    /** Erwartete Rep-Dauer (Basis fuer die adaptive Refraktaerzeit). */
-    var expectedDurationSamples: Double = refractorySeconds * sampleRateHz
+    /** Erwartete Rep-Dauer in ms (Basis fuer die adaptive Refraktaerzeit). */
+    var expectedDurationMs: Double = expectedDurationMs
         private set
 
-    /** Current adaptive threshold theta = NPK + factor * (SPK - NPK). */
-    val currentThreshold: Double
-        get() = npk + thresholdFactor * (spk - npk)
+    /** Current adaptive detection threshold theta (calibrated start value). */
+    var currentThreshold: Double = threshold
+        private set
 
     var lastPeakDurationSamples: Int = 0
+        private set
     var lastPeakProminence: Double = 0.0
+        private set
 
     /**
-     * Punkt 6: setzt die Refraktaerzeit auf 30% der erwarteten Rep-Dauer,
-     * begrenzt auf 100 ms bis 2 s. Schnelle Reps (kurze Dauer) werden so
-     * nicht mehr faelschlich unterdrueckt.
+     * Umbauplan Punkt 6: setzt die Refraktaerzeit auf 30% der erwarteten
+     * Rep-Dauer in ms, begrenzt auf 100 ms bis 2 s.
      */
-    fun updateExpectedDuration(durationSamples: Double) {
-        expectedDurationSamples = durationSamples
-        refractorySamples =
-            (durationSamples * refractoryDurationRatio)
-                .toInt()
-                .coerceAtLeast(5)
-                .coerceAtMost(100)
+    fun updateExpectedDurationMs(durationMs: Double) {
+        expectedDurationMs = durationMs
+        refractoryMillis =
+            (durationMs * refractoryDurationRatio)
+                .toLong()
+                .coerceAtLeast(100)
+                .coerceAtMost(2_000)
+    }
+
+    /** Umbauplan Phase 1.4: sets the calibrated theta directly. */
+    fun updateThreshold(
+        theta: Double,
+        expectedDurationMs: Double? = null,
+    ) {
+        require(theta.isFinite() && theta >= 0.0) { "theta must be finite and >= 0" }
+        this.threshold = theta
+        currentThreshold = theta
+        spk = theta
+        npk = theta * 0.5
+        expectedDurationMs?.let { updateExpectedDurationMs(it) }
     }
 
     /** Processes ONE frame; returns a [PeakEvent] when a peak is confirmed. */
@@ -82,12 +99,12 @@ class PeakDetector(
         val value = signal(frame)
         if (value.isNaN()) return null
 
-        val theta = currentThreshold
         when (state) {
             DetectorState.IDLE -> {
-                if (value > theta && !inRefractory()) {
+                if (value > currentThreshold && !inRefractory(frame.timestampMs)) {
                     state = DetectorState.RISING
                     currentMax = value
+                    excursionStartMs = frame.timestampMs
                     window.clear()
                     window.add(value)
                 } else if (value < currentMin) {
@@ -101,7 +118,7 @@ class PeakDetector(
                     currentMax = value
                     fallingCount = 0
                 }
-                if (value < theta * fallingRatio) {
+                if (value < currentThreshold * fallingRatio) {
                     state = DetectorState.FALLING
                     fallingCount = 1
                 }
@@ -133,7 +150,7 @@ class PeakDetector(
         return if (prominence >= minProminence) {
             // Confirmed: update SPK (EMA alpha=0.125).
             spk = 0.125 * currentMax + 0.875 * spk
-            lastPeakSampleIndex = sampleIndex
+            lastPeakTimestampMs = timestampMs
             lastPeakDurationSamples = window.size
             lastPeakProminence = prominence
             PeakEvent(
@@ -143,6 +160,7 @@ class PeakDetector(
                 precedingValley = currentMin,
                 prominence = prominence,
                 durationSamples = window.size,
+                durationMs = (timestampMs - excursionStartMs).coerceAtLeast(0),
                 window = window.toList(),
             )
         } else {
@@ -152,12 +170,12 @@ class PeakDetector(
         }
     }
 
-    private fun inRefractory(): Boolean {
-        val last = lastPeakSampleIndex ?: return false
-        return (sampleIndex - last) < refractorySamples
+    private fun inRefractory(timestampMs: Long): Boolean {
+        val last = lastPeakTimestampMs ?: return false
+        return (timestampMs - last) < refractoryMillis
     }
 
-    /** Resets detector state; SPK/NPK survive (loaded from the profile). */
+    /** Resets detector state; threshold/levels survive (loaded from the profile). */
     fun reset() {
         state = DetectorState.IDLE
         currentMax = 0.0
@@ -165,16 +183,6 @@ class PeakDetector(
         fallingCount = 0
         window.clear()
         sampleIndex = 0
-        lastPeakSampleIndex = null
-    }
-
-    fun updateLevels(
-        spk: Double? = null,
-        npk: Double? = null,
-        expectedDurationSamples: Double? = null,
-    ) {
-        spk?.let { this.spk = it }
-        npk?.let { this.npk = it }
-        expectedDurationSamples?.let { updateExpectedDuration(it) }
+        lastPeakTimestampMs = null
     }
 }

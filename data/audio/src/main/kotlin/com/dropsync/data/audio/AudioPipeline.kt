@@ -1,6 +1,8 @@
 package com.dropsync.data.audio
 
+import androidx.annotation.OptIn
 import androidx.media3.common.audio.AudioProcessor
+import androidx.media3.common.util.UnstableApi
 import com.dropsync.domain.audio.AudioInfo
 import com.dropsync.domain.audio.AudioMath
 import com.dropsync.domain.audio.DitherMode
@@ -41,6 +43,7 @@ data class OutputFormatInfo(
  * meldet Format-/Trackereignisse zurueck; Konfigurationsaenderungen aus
  * dem Store wirken sofort und ohne Pipeline-Flush.
  */
+@OptIn(UnstableApi::class)
 @Singleton
 class AudioPipeline
     @Inject

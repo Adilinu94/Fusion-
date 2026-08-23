@@ -102,6 +102,9 @@ class PlaybackRepositoryImpl(
 
     override suspend fun setShuffle(enabled: Boolean): AppResult<Unit> = command { it.shuffleModeEnabled = enabled }
 
+    override suspend fun setPlaybackSpeed(speed: Float): AppResult<Unit> =
+        command { it.setPlaybackSpeed(speed.coerceIn(MIN_PLAYBACK_SPEED, MAX_PLAYBACK_SPEED)) }
+
     override suspend fun setRepeatMode(mode: RepeatMode): AppResult<Unit> =
         command {
             it.repeatMode =
@@ -123,7 +126,7 @@ class PlaybackRepositoryImpl(
             AppResult.failure(AppError.Unknown(e.message))
         }
 
-    override suspend fun crossfadeTo(
+    override suspend fun playSongAt(
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit> =
@@ -133,8 +136,8 @@ class PlaybackRepositoryImpl(
                 attachListener(player)
                 val controller = player as? MediaController
                 if (controller != null) {
-                    // Nur der Service haelt den Zweitspieler: den echten
-                    // Crossfade per Custom-Kommando dort ausloesen (ADR-0012).
+                    // Nur der Service haelt den Player: den Wechsel per
+                    // Custom-Kommando dort ausloesen.
                     val args =
                         Bundle().apply {
                             putLong(PlaybackCommands.ARG_SONG_ID, song.mediaStoreId)
@@ -143,10 +146,12 @@ class PlaybackRepositoryImpl(
                                 startPositionMs.coerceAtLeast(0),
                             )
                         }
-                    controller.sendCustomCommand(
-                        SessionCommand(PlaybackCommands.ACTION_CROSSFADE_TO, Bundle.EMPTY),
-                        args,
-                    )
+                    controller
+                        .sendCustomCommand(
+                            SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY),
+                            args,
+                        ).awaitResult()
+                        .throwOnFailure()
                 } else {
                     // Fallback ohne MediaController: vorgespulter harter Wechsel.
                     player.setMediaItem(
@@ -162,6 +167,33 @@ class PlaybackRepositoryImpl(
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
         }
+
+    /**
+     * Umbauplan Phase 10.1: wartet auf den Session-Result des Custom
+     * Commands, statt sofort Erfolg zu melden. Nicht erfolgreiche Codes
+     * (Permission, Bad Value, Unknown) werfen, damit Prepare/Arm sich
+     * nicht ueberholen und Fehler sichtbar werden.
+     */
+    private suspend fun com.google.common.util.concurrent.ListenableFuture<
+        androidx.media3.session.SessionResult,
+    >.awaitResult(): androidx.media3.session.SessionResult =
+        kotlinx.coroutines.suspendCancellableCoroutine { cont ->
+            addListener(
+                {
+                    cont.resumeWith(
+                        runCatching { get() },
+                    )
+                },
+                { it.run() },
+            )
+            cont.invokeOnCancellation { cancel(false) }
+        }
+
+    private fun androidx.media3.session.SessionResult.throwOnFailure() {
+        if (resultCode != androidx.media3.session.SessionResult.RESULT_SUCCESS) {
+            throw IllegalStateException("MediaSession-Kommando fehlgeschlagen (Code $resultCode)")
+        }
+    }
 
     private suspend fun command(block: (Player) -> Unit): AppResult<Unit> =
         try {
@@ -194,6 +226,7 @@ class PlaybackRepositoryImpl(
                             Player.EVENT_REPEAT_MODE_CHANGED,
                             Player.EVENT_POSITION_DISCONTINUITY,
                             Player.EVENT_PLAYBACK_STATE_CHANGED,
+                            Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
                         )
                     ) {
                         // Auch externe Steuerung (Notification, Bluetooth)
@@ -222,6 +255,10 @@ class PlaybackRepositoryImpl(
     }
 
     companion object {
+        /** Sicherer Tempo-Bereich (media3-Issue #1101: Extremwerte werfen auf Geraeten). */
+        const val MIN_PLAYBACK_SPEED = 0.5f
+        const val MAX_PLAYBACK_SPEED = 2.0f
+
         /** Reine Abbildung Player -> Domainzustand; ohne Seiteneffekte. */
         fun Player.toPlaybackState(): PlaybackState {
             val items =
@@ -239,6 +276,7 @@ class PlaybackRepositoryImpl(
                 currentSongId = currentMediaItem?.mediaId?.toLongOrNull(),
                 positionMs = currentPosition.coerceAtLeast(0),
                 durationMs = duration.coerceAtLeast(0),
+                playbackSpeed = playbackParameters.speed,
                 shuffleEnabled = shuffleModeEnabled,
                 repeatMode =
                     when (repeatMode) {

@@ -31,13 +31,49 @@ data class ProcessedFrame(
     val isSettled: Boolean,
 )
 
+/** Version of the rep-detection pipeline a profile was calibrated with. */
+enum class RepEngineVersion {
+    /** Legacy pipeline (shadow-only, pre Umbauplan). */
+    V1_CURRENT,
+
+    /** Reliable pipeline: two-phase validation, timestamp-based timing. */
+    V2_RELIABLE,
+}
+
+/** Which signal branch the calibration used (Umbauplan Phase 1.1). */
+enum class RepSignalKind {
+    SIGNED_GYRO_PROJECTION,
+    GYRO_MAGNITUDE,
+    COMBINED_GYRO_ACCEL,
+}
+
+/**
+ * Lebenszyklus einer Profilrevision (Umbauplan Phase 7.4): aktive Profile
+ * treiben die Live-Pipeline, Kandidaten muessen sich erst durch validierte
+ * Sets beweisen, RETIRED-Revisionen bleiben fuer Rollbacks erhalten.
+ */
+enum class ProfileStatus {
+    ACTIVE,
+    CANDIDATE,
+    RETIRED,
+}
+
 /**
  * Calibration profile per exercise + device (Phase 4 step 3): the rotation
  * axis + gyro bias learned by Guided Calibration 2.0, the rep template, and
- * the adaptive levels the peak detector/scorer start from.
+ * the detection parameters the live pipeline starts from.
  *
  * Without [rotationAxis]/[gyroBias] the pipeline cannot project the gyro
  * signal correctly, so a profile that lacks them is treated as absent.
+ *
+ * Umbauplan Phase 0/1: the profile is versioned ([schemaVersion],
+ * [engineVersion], [signalKind]) and stores the calibrated threshold
+ * [detectionThreshold] directly - no lossy SPK/NPK reconstruction. Old
+ * (unversioned) profiles are not loadable; they lead to "recalibrate".
+ *
+ * Umbauplan Phase 7.4: profiles carry revisions ([revision],
+ * [parentRevision], [status]); the learn loop stores CANDIDATE profiles
+ * that are promoted to ACTIVE only after enough validated sets.
  */
 data class CalibrationProfile(
     val exerciseId: Long,
@@ -47,10 +83,37 @@ data class CalibrationProfile(
     /** Gyro rest bias measured in the rest stage. */
     val gyroBias: List<Double>,
     val repTemplate: List<Double>,
-    val signalPeakLevel: Double,
-    val noisePeakLevel: Double,
+    /** Expected peak prominence (deg/s) of one clean rep. */
     val expectedProminence: Double,
-    val expectedDurationSamples: Double,
     /** Calibration quality 0..1 (1 = clean sweep), for the wizard review. */
     val qualityScore: Double = 1.0,
-)
+    /** Persisted schema version of this profile. */
+    val schemaVersion: Int = PROFILE_SCHEMA_VERSION,
+    /** Pipeline version this profile was calibrated for. */
+    val engineVersion: RepEngineVersion = RepEngineVersion.V2_RELIABLE,
+    /** Signal branch used during calibration (only GP is released). */
+    val signalKind: RepSignalKind = RepSignalKind.SIGNED_GYRO_PROJECTION,
+    /** Calibrated detection threshold theta (deg/s) - used directly live. */
+    val detectionThreshold: Double,
+    /** Measured noise floor (deg/s) of the rest signal. */
+    val noiseFloor: Double,
+    /** Expected duration of one full rep cycle in milliseconds. */
+    val expectedDurationMs: Double,
+    /** Umbauplan Phase 7.4: Revisionsnummer (Kalibrierung startet bei 1). */
+    val revision: Int = 1,
+    /** Vorgaenger-Revision; null nur bei der Erst-Kalibrierung. */
+    val parentRevision: Int? = null,
+    /** Lebenszyklus-Status dieser Revision. */
+    val status: ProfileStatus = ProfileStatus.ACTIVE,
+    /** Validierte Sets dieser Revision (Promotion bei genug Beweisen). */
+    val validatedSetCount: Int = 0,
+) {
+    companion object {
+        /**
+         * Current persisted schema. Profiles with a different version are
+         * rejected by the codec ("recalibrate" instead of misinterpreting).
+         * v4 adds revision/parentRevision/status/validatedSetCount.
+         */
+        const val PROFILE_SCHEMA_VERSION = 4
+    }
+}

@@ -123,6 +123,20 @@ class TimerEngineTest {
     }
 
     @Test
+    fun `restzeit kann laufend und pausiert verlaengert werden`() {
+        engine.start(TimerMode.REST, durationMs = 60_000)
+        clock.advanceBy(20_000)
+        engine.evaluate()
+
+        assertTrue(engine.addTime(15_000))
+        assertEquals(55_000, engine.state.value.remainingMs)
+
+        assertTrue(engine.pause())
+        assertTrue(engine.addTime(15_000))
+        assertEquals(70_000, engine.state.value.remainingMs)
+    }
+
+    @Test
     fun `nach cancel loest kein alter callback mehr etwas aus`() {
         // Abnahme Schritt 7: nach cancel keine Haptik, Ansage oder
         // Lautstaerkeaenderung durch veraltete Trigger.

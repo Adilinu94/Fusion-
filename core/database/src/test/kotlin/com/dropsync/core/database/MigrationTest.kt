@@ -79,11 +79,48 @@ class MigrationTest {
         helper.runMigrationsAndValidate(dbPath, 5, true, *DROPSYNC_MIGRATIONS).close()
     }
 
+    @Test
+    fun `migration 5 auf 6 ergaenzt track peak`() {
+        // Kette v1 -> v6 (neue Spalte track_analysis.peak_linear, Phase 8);
+        // validiert gegen das exportierte Schema 6.json.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V6).absolutePath
+
+        helper.createDatabase(dbPath, 1).close()
+        helper.runMigrationsAndValidate(dbPath, 6, true, *DROPSYNC_MIGRATIONS).close()
+    }
+
+    @Test
+    fun `migration 6 auf 7 ergaenzt bpm und camelot key`() {
+        // Kette v1 -> v7 (neue Spalten track_analysis.bpm und camelot_key,
+        // Mix-Phase 1); validiert gegen das exportierte Schema 7.json.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V7).absolutePath
+
+        helper.createDatabase(dbPath, 1).close()
+        helper.runMigrationsAndValidate(dbPath, 7, true, *DROPSYNC_MIGRATIONS).close()
+    }
+
+    @Test
+    fun `migration 7 auf 8 ergaenzt lautheit und confidence`() {
+        // Kette v1 -> v8 (neue Spalten track_analysis.bpm_confidence,
+        // key_confidence, integrated_lufs, true_peak_db; Offtrack Phase 8);
+        // validiert gegen das exportierte Schema 8.json.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V8).absolutePath
+
+        helper.createDatabase(dbPath, 1).close()
+        helper.runMigrationsAndValidate(dbPath, 8, true, *DROPSYNC_MIGRATIONS).close()
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V2 = "migration-test-v2.db"
         const val TEST_DB_V3 = "migration-test-v3.db"
         const val TEST_DB_V4 = "migration-test-v4.db"
         const val TEST_DB_V5 = "migration-test-v5.db"
+        const val TEST_DB_V6 = "migration-test-v6.db"
+        const val TEST_DB_V7 = "migration-test-v7.db"
+        const val TEST_DB_V8 = "migration-test-v8.db"
     }
 }

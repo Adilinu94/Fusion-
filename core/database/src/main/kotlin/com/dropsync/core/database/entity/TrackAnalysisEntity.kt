@@ -29,6 +29,24 @@ data class TrackAnalysisEntity(
     /** Track-Peak (0..1) fuer die visuelle Lautheits-Normalisierung (Phase 8). */
     @ColumnInfo(name = "peak_linear", defaultValue = "0.0")
     val peakLinear: Double = 0.0,
+    /** Geschaetztes Tempo (Mix-Phase 1); null bis zur sicheren Erkennung. */
+    @ColumnInfo(name = "bpm")
+    val bpm: Float? = null,
+    /** Konfidenz der Tempo-Schaetzung 0..1 (Offtrack Phase 8). */
+    @ColumnInfo(name = "bpm_confidence")
+    val bpmConfidence: Float? = null,
+    /** Camelot-Notation (Mix-Phase 1); null, wenn nicht sicher bestimmbar. */
+    @ColumnInfo(name = "camelot_key")
+    val camelotKey: String? = null,
+    /** Konfidenz der Tonart-Schaetzung 0..1 (Offtrack Phase 8). */
+    @ColumnInfo(name = "key_confidence")
+    val keyConfidence: Float? = null,
+    /** Integrierte Lautheit in LUFS (Offtrack Phase 8). */
+    @ColumnInfo(name = "integrated_lufs")
+    val integratedLufs: Float? = null,
+    /** True-Peak-Naeherung in dBFS (Offtrack Phase 8). */
+    @ColumnInfo(name = "true_peak_db")
+    val truePeakDb: Float? = null,
 ) {
     // ByteArray braucht inhaltsbasierte Gleichheit (data class vergleicht Referenzen).
     override fun equals(other: Any?): Boolean {
@@ -39,7 +57,13 @@ data class TrackAnalysisEntity(
             bucketCount == other.bucketCount &&
             analyzerVersion == other.analyzerVersion &&
             analyzedAtEpochMs == other.analyzedAtEpochMs &&
-            peakLinear == other.peakLinear
+            peakLinear == other.peakLinear &&
+            bpm == other.bpm &&
+            bpmConfidence == other.bpmConfidence &&
+            camelotKey == other.camelotKey &&
+            keyConfidence == other.keyConfidence &&
+            integratedLufs == other.integratedLufs &&
+            truePeakDb == other.truePeakDb
     }
 
     override fun hashCode(): Int {
@@ -49,6 +73,12 @@ data class TrackAnalysisEntity(
         result = 31 * result + analyzerVersion
         result = 31 * result + analyzedAtEpochMs.hashCode()
         result = 31 * result + peakLinear.hashCode()
+        result = 31 * result + (bpm?.hashCode() ?: 0)
+        result = 31 * result + (bpmConfidence?.hashCode() ?: 0)
+        result = 31 * result + (camelotKey?.hashCode() ?: 0)
+        result = 31 * result + (keyConfidence?.hashCode() ?: 0)
+        result = 31 * result + (integratedLufs?.hashCode() ?: 0)
+        result = 31 * result + (truePeakDb?.hashCode() ?: 0)
         return result
     }
 }

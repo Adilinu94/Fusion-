@@ -104,6 +104,36 @@ val MIGRATION_5_6 =
         }
     }
 
+/**
+ * v6 -> v7: fuegt `track_analysis` die Spalten `bpm` und `camelot_key`
+ * hinzu (Mix-Uebergaenge-Plan Phase 1). Additiv, nullable, ohne Default;
+ * alte Analysen bleiben als Waveform-Fallback gueltig, der
+ * Analyzer-Version-Bump (3 -> 4) stoesst die Neuberechnung an.
+ */
+val MIGRATION_6_7 =
+    object : Migration(6, 7) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `bpm` REAL")
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `camelot_key` TEXT")
+        }
+    }
+
+/**
+ * v7 -> v8: fuegt `track_analysis` die Spalten `bpm_confidence`,
+ * `key_confidence`, `integrated_lufs` und `true_peak_db` hinzu
+ * (Offtrack Phase 8, Analyse-/Lautheits-Erweiterung). Additiv, nullable,
+ * ohne Default; alte Eintraege bleiben als Waveform-Fallback gueltig.
+ */
+val MIGRATION_7_8 =
+    object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `bpm_confidence` REAL")
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `key_confidence` REAL")
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `integrated_lufs` REAL")
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `true_peak_db` REAL")
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)

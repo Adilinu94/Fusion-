@@ -93,7 +93,7 @@ class DspSettingsStore
         private fun readConfig(prefs: Preferences): DspConfig =
             DspConfig.sanitized(
                 DspConfig(
-                    enabled = prefs[enabledKey] ?: true,
+                    enabled = prefs[enabledKey] ?: false,
                     preampDb = prefs[preampDbKey] ?: 0.0,
                     limiterEnabled = prefs[limiterKey] ?: true,
                     eq =

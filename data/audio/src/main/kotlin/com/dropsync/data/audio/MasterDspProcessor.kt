@@ -1,8 +1,10 @@
 package com.dropsync.data.audio
 
+import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.audio.AudioProcessor
 import androidx.media3.common.audio.BaseAudioProcessor
+import androidx.media3.common.util.UnstableApi
 import com.dropsync.domain.audio.AudioMath
 import com.dropsync.domain.audio.BiquadCoefficients
 import com.dropsync.domain.audio.BiquadFilter
@@ -36,6 +38,7 @@ import kotlin.math.roundToInt
  *   wirken sofort. Nur eine neue Resampler-Zielrate braucht eine neue
  *   Konfiguration des Sinks und greift beim naechsten Titel.
  */
+@OptIn(UnstableApi::class)
 class MasterDspProcessor : BaseAudioProcessor() {
     private val pendingConfig = AtomicReference<DspConfig?>(null)
 

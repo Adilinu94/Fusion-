@@ -3,6 +3,7 @@ package com.dropsync.data.sensor
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.sensor.DeviceEvent
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -41,6 +42,9 @@ internal class SwitchingSensorProvider(
 
     override val deviceEvents: Flow<DeviceEvent> =
         useBle.flatMapLatest { on -> if (on) ble.deviceEvents else fake.deviceEvents }
+
+    override val health: Flow<SensorHealth> =
+        useBle.flatMapLatest { on -> if (on) ble.health else fake.health }
 
     override suspend fun connect(deviceId: String?): AppResult<Unit> = ble.connect(deviceId)
 

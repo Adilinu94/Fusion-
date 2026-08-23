@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
@@ -30,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
+import com.dropsync.core.designsystem.component.FlowRepSurface
 
 /** Laufzeitberechtigung fuer Audio je nach API-Level (Schritt 4.1). */
 private val audioPermission: String
@@ -109,22 +112,21 @@ private fun PermissionExplainer(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = stringResource(R.string.library_permission_title),
-            style = MaterialTheme.typography.titleLarge,
-        )
-        Spacer(Modifier.height(8.dp))
-        Text(
-            text = stringResource(R.string.library_permission_rationale),
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(Modifier.height(16.dp))
-        // Grosses Touch-Ziel (Schritt 12.5).
-        Button(
-            onClick = onRequest,
-            modifier = Modifier.heightIn(min = 48.dp),
-        ) {
-            Text(stringResource(R.string.library_permission_button))
+        FlowRepSurface(modifier = Modifier.fillMaxWidth()) {
+            Text(
+                text = stringResource(R.string.library_permission_title),
+                style = MaterialTheme.typography.titleLarge,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = stringResource(R.string.library_permission_rationale),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            FlowRepPrimaryButton(
+                text = stringResource(R.string.library_permission_button),
+                onClick = onRequest,
+                modifier = Modifier.padding(top = 24.dp),
+            )
         }
     }
 }

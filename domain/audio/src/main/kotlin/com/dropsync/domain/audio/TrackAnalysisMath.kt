@@ -1,6 +1,8 @@
 package com.dropsync.domain.audio
 
 import kotlin.math.abs
+import kotlin.math.log10
+import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -133,5 +135,73 @@ class EnergyAccumulator(
         sumOfSquares = 0.0
         samplesInWindow = 0
         return windows.toList()
+    }
+}
+
+/**
+ * Integrierte Lautheit (LUFS) und True-Peak-Naeherung in einem
+ * Streaming-Durchgang (Offtrack Phase 8/10). Rein JVM-testbar.
+ *
+ * Die integrierte Lautheit folgt der EBU-R128-Grundidee: Fenster-RMS
+ * bilden die Momentan-Lautheit, mit einem absoluten Gate bei -70 LUFS
+ * und einem relativen Gate, das auf dem lautesten 10-Prozent-Pegel
+ * liegt. True-Peak bleibt hier eine konservative PCM-Peak-Naeherung;
+ * echtes 4x-Oversampling folgt erst mit der Hardware-Messung.
+ */
+class LoudnessAccumulator(
+    private val sampleRateHz: Int,
+    windowMs: Int = DEFAULT_WINDOW_MS,
+) {
+    init {
+        require(sampleRateHz > 0) { "sampleRateHz muss positiv sein" }
+        require(windowMs > 0) { "windowMs muss positiv sein" }
+    }
+
+    private val energy =
+        EnergyAccumulator(
+            samplesPerWindow = sampleRateHz * windowMs / 1_000,
+        )
+    private var truePeakLinear = 0.0
+
+    /** Nimmt ein Mono-Sample im Bereich [-1.0, 1.0] auf. */
+    fun accept(sample: Double) {
+        energy.accept(sample)
+        val magnitude = abs(sample)
+        if (magnitude > truePeakLinear) truePeakLinear = magnitude
+    }
+
+    /** Integrierte Lautheit in LUFS oder `null` ohne genug Energie. */
+    fun integratedLufs(): Float? {
+        val windows = energy.finish()
+        if (windows.isEmpty()) return null
+        val lufs =
+            windows
+                .map { linearToLufs(it) }
+                .filter { it > ABSOLUTE_GATE_LUFS }
+        if (lufs.isEmpty()) return null
+
+        // Relatives Gate: lauteste 10 % bestimmen den Referenzpegel.
+        val sorted = lufs.sortedDescending()
+        val topCount = (sorted.size / 10).coerceAtLeast(1)
+        val relativeGate = sorted.take(topCount).average()
+        val gated =
+            lufs.filter { it > relativeGate - RELATIVE_GATE_MARGIN_LUFS }
+        if (gated.isEmpty()) return null
+        return gated.average().toFloat()
+    }
+
+    /** Groesster Betrag bisher (0..1); Basis fuer die True-Peak-Schaetzung. */
+    fun truePeakLinear(): Double = truePeakLinear
+
+    private fun linearToLufs(linear: Double): Double {
+        val power = (linear * linear).coerceAtLeast(MIN_POWER)
+        return 10.0 * log10(power)
+    }
+
+    companion object {
+        const val DEFAULT_WINDOW_MS: Int = 400
+        const val ABSOLUTE_GATE_LUFS: Double = -70.0
+        const val RELATIVE_GATE_MARGIN_LUFS: Double = 10.0
+        private const val MIN_POWER: Double = 1e-12
     }
 }

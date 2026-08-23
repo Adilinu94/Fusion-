@@ -45,8 +45,12 @@ class TrackAnalysisRepositoryImpl(
     override fun observeAnalysis(songId: Long): Flow<TrackAnalysis?> =
         trackAnalysisDao.observeBySongId(songId).map { entity ->
             entity
-                ?.takeIf { it.analyzerVersion == WaveformCodec.ANALYZER_VERSION }
+                // Veraltete Analyse (analyzerVersion < CURRENT) bleibt als
+                // Waveform-Fallback sichtbar, bis die Neuberechnung fertig
+                // ist; nur Mix-Metadaten (BPM/Key) bleiben bis dahin null.
+                ?.takeIf { it.analyzerVersion <= WaveformCodec.ANALYZER_VERSION }
                 ?.let {
+                    val current = it.analyzerVersion == WaveformCodec.ANALYZER_VERSION
                     // bucket_count = 0 ist der persistierte Fehlerfall
                     // (Format ohne Plattformdecoder): leere Buckets melden,
                     // damit die UI auf die Zeitleiste zurueckfaellt.
@@ -54,6 +58,12 @@ class TrackAnalysisRepositoryImpl(
                         waveformBuckets = WaveformCodec.unpack(it.waveformData),
                         onsetCandidatesMs = emptyList(),
                         peakLinear = it.peakLinear,
+                        bpm = it.bpm?.takeIf { current },
+                        camelotKey = it.camelotKey?.takeIf { current },
+                        bpmConfidence = it.bpmConfidence?.takeIf { current },
+                        keyConfidence = it.keyConfidence?.takeIf { current },
+                        integratedLufs = it.integratedLufs?.takeIf { current },
+                        truePeakDb = it.truePeakDb?.takeIf { current },
                     )
                 }
         }
@@ -161,6 +171,12 @@ class TrackAnalysisWorker(
                         analyzerVersion = WaveformCodec.ANALYZER_VERSION,
                         analyzedAtEpochMs = deps.clock().epochMillis(),
                         peakLinear = result.value.peakLinear,
+                        bpm = result.value.bpm,
+                        camelotKey = result.value.camelotKey,
+                        bpmConfidence = result.value.bpmConfidence,
+                        keyConfidence = result.value.keyConfidence,
+                        integratedLufs = result.value.integratedLufs,
+                        truePeakDb = result.value.truePeakDb,
                     ),
                 )
                 if (detectOnsets) {
@@ -170,23 +186,39 @@ class TrackAnalysisWorker(
             }
 
             is AppResult.Failure -> {
-                // Fehlerfall persistieren (bucket_count = 0): ein Format ohne
-                // Plattformdecoder scheitert auch beim naechsten Versuch; die
-                // UI faellt dauerhaft auf die Zeitleiste zurueck statt endlos
-                // zu laden oder neu anzustossen.
-                deps.trackAnalysisDao().upsert(
-                    TrackAnalysisEntity(
-                        songId = songId,
-                        waveformData = ByteArray(0),
-                        bucketCount = 0,
-                        analyzerVersion = WaveformCodec.ANALYZER_VERSION,
-                        analyzedAtEpochMs = deps.clock().epochMillis(),
-                    ),
-                )
-                Result.failure()
+                // Umbauplan Phase 10.4: temporaere Fehler (z. B. Datei
+                // gerade gesperrt, kurzzeitiger Decoder-Fehler) NICHT als
+                // aktuellen leeren Cache-Eintrag speichern - WorkManager
+                // retried dann und der naechste Durchgang kann gelingen.
+                // Permanente Decoderfehler werden getrennt abgelegt.
+                if (result.error.isPermanentAnalysisFailure()) {
+                    deps.trackAnalysisDao().upsert(
+                        TrackAnalysisEntity(
+                            songId = songId,
+                            waveformData = ByteArray(0),
+                            bucketCount = 0,
+                            analyzerVersion = WaveformCodec.ANALYZER_VERSION,
+                            analyzedAtEpochMs = deps.clock().epochMillis(),
+                        ),
+                    )
+                    Result.failure()
+                } else {
+                    Result.retry()
+                }
             }
         }
     }
+
+    private fun com.dropsync.core.common.AppError.isPermanentAnalysisFailure(): Boolean =
+        when (this) {
+            // Medienquelle fehlt dauerhaft (geloescht, nicht lesbar):
+            // der leere Cache verhindert endloses Nachladen.
+            is com.dropsync.core.common.AppError.MediaUnavailable -> true
+
+            // Alles andere (Unknown, DatabaseFailure, ...) ist temporaer:
+            // WorkManager darf erneut versuchen.
+            else -> false
+        }
 
     /**
      * Schreibt Onset-Kandidaten als SongMarker(source = AUTO_DETECTED,

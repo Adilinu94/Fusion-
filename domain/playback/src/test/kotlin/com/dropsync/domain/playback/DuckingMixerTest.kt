@@ -48,4 +48,22 @@ class DuckingMixerTest {
         assertEquals(1.0, ramp.next(0.4, 1.0, 500), 1e-9)
         assertTrue(ramp.next(0.4, 1.0, 500) <= 1.0)
     }
+
+    @Test
+    fun `ducking state kombiniert ueber min und bleibt linear`() {
+        // Offtrack Phase 10: expliziter Zustand, das staerkste Ducking gewinnt.
+        val restOnly = DuckingState(restDuckDb = -8.0, cueDuckDb = 0.0)
+        assertEquals(0.398, restOnly.combinedGain, 0.01)
+
+        val cueWins = DuckingState(restDuckDb = -8.0, cueDuckDb = -12.0)
+        assertEquals(0.251, cueWins.combinedGain, 0.01)
+    }
+
+    @Test
+    fun `loudness info bleibt reine metadaten ohne anwendung`() {
+        val info = LoudnessInfo(trackGainDb = -3.0f, truePeakDb = -1.0f, integratedLufs = -12.0f)
+        assertEquals(-3.0f, info.trackGainDb)
+        assertEquals(-1.0f, info.truePeakDb)
+        assertEquals(-12.0f, info.integratedLufs)
+    }
 }

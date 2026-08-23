@@ -5,10 +5,13 @@ import app.cash.turbine.test
 import com.dropsync.core.testing.FakeCalibrationProfileRepository
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.FakeFlatSetRepository
+import com.dropsync.core.testing.FakeHeartRateSource
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
 import com.dropsync.core.testing.FakeSensorProvider
 import com.dropsync.core.testing.FakeWorkoutRepository
+import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.CalibrationProfile
+import com.dropsync.domain.sensor.ProfileStatus
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.timer.CueOutput
 import com.dropsync.domain.timer.RestTimerServiceStarter
@@ -52,24 +55,25 @@ class TrainViewModelTest {
     private lateinit var calibrationProfileRepository: FakeCalibrationProfileRepository
     private lateinit var timerEngine: TimerEngine
     private lateinit var shadowSessionRecorder: FakeShadowSessionRecorder
+    private lateinit var heartRateSource: FakeHeartRateSource
 
     private fun profile(
         exerciseId: Long = 1L,
         deviceId: String = "AA:BB:CC:DD:EE:FF",
         axis: List<Double> = listOf(1.0, 0.0, 0.0),
         bias: List<Double> = listOf(0.0, 0.0, 0.0),
-        spk: Double = 150.0,
-        npk: Double = 20.0,
+        threshold: Double = 15.0,
+        durationMs: Double = 2_000.0,
     ) = CalibrationProfile(
         exerciseId = exerciseId,
         deviceId = deviceId,
         rotationAxis = axis,
         gyroBias = bias,
         repTemplate = List(64) { 0.0 },
-        signalPeakLevel = spk,
-        noisePeakLevel = npk,
-        expectedProminence = 50.0,
-        expectedDurationSamples = 50.0,
+        expectedProminence = 1.0,
+        detectionThreshold = threshold,
+        noiseFloor = 5.0,
+        expectedDurationMs = durationMs,
     )
 
     @Before
@@ -81,6 +85,7 @@ class TrainViewModelTest {
         calibrationProfileRepository = FakeCalibrationProfileRepository()
         timerEngine = TimerEngine(clock = FakeClock(), cueOutput = NoOpCueOutput())
         shadowSessionRecorder = FakeShadowSessionRecorder()
+        heartRateSource = FakeHeartRateSource()
     }
 
     @After
@@ -98,6 +103,9 @@ class TrainViewModelTest {
             calibrationProfileRepository = calibrationProfileRepository,
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
             shadowSessionRecorder = shadowSessionRecorder,
+            heartRateSource = heartRateSource,
+            healthPermissionContract = TestHealthPermissionContract(),
+            clock = FakeClock(),
         )
 
     /**
@@ -292,15 +300,17 @@ class TrainViewModelTest {
                 dispatcher.scheduler.runCurrent()
                 assertEquals(
                     "Countdown muss nach 3.1 s abgelaufen sein",
-                    TrainViewModel.SetPhase.COUNTING,
+                    ActiveSetPhase.COUNTING,
                     vm.setPhase.value,
                 )
 
-                // Zwei saubere Reps auf gx (rein positives Dreieck, wie in
-                // ExerciseEnginePipelineIsolationTest verifiziert).
+                // Zwei vollstaendige Zwei-Phasen-Zyklen auf gx (Umbauplan
+                // Phase 4: halbe Reps zaehlen nicht mehr).
                 val settle = List(60) { 0.0 }
                 val rep =
-                    (1..15).map { 60.0 * it / 15.0 } + (1..15).map { 60.0 - 60.0 * it / 15.0 }
+                    (1..15).map { 60.0 * it / 15.0 } +
+                        (1..30).map { 60.0 - 120.0 * it / 30.0 } +
+                        (1..15).map { -60.0 + 60.0 * it / 15.0 }
                 val samples =
                     (settle + rep + List(60) { 0.0 } + rep + List(40) { 0.0 })
                         .mapIndexed { i, gx ->
@@ -404,6 +414,218 @@ class TrainViewModelTest {
             }
         }
 
+    // --- Paket D: Lernpfad ueber SetTrace --------------------------------
+
+    @Test
+    fun `Abweichung ohne reproduzierbaren Count speichert keinen Kandidaten`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                val exercise = ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl")
+                // Sehr hoher Threshold: die Live-Pipeline zaehlt 0. Der Nutzer
+                // bestaetigt 5 - der Refiner findet zwar 5 Peaks, kann den
+                // Count mit dem unveraenderten Threshold aber nicht
+                // reproduzieren (Revalidierung schlaegt fehl) -> kein
+                // Kandidat, die App bleibt stabil (konservative Garantie).
+                calibrationProfileRepository.put(
+                    profile(
+                        exerciseId = 1L,
+                        axis = listOf(0.0, 0.0, 1.0),
+                        threshold = 500.0,
+                    ),
+                )
+                sensorProvider.setConnectedDeviceId("AA:BB:CC:DD:EE:FF")
+                vm.selectExercise(exercise)
+                dispatcher.scheduler.runCurrent()
+
+                sensorProvider.setConnectionState(SensorConnectionState.STREAMING)
+                vm.startCountedSet()
+                dispatcher.scheduler.advanceTimeBy(3_100)
+                dispatcher.scheduler.runCurrent()
+
+                // Fuenf vollstaendige Sinus-Zyklen auf gz (RefinerTest-Setup).
+                val samples =
+                    buildList {
+                        var t = 0L
+                        repeat(60) {
+                            add(
+                                com.dropsync.domain.sensor.SensorSample(
+                                    timestampMs = t,
+                                    ax = 0.0,
+                                    ay = 0.0,
+                                    az = 9.81,
+                                    gx = 0.0,
+                                    gy = 0.0,
+                                    gz = 0.0,
+                                ),
+                            )
+                            t += 20
+                        }
+                        repeat(5) {
+                            for (i in 0 until 50) {
+                                val gz = 120.0 * kotlin.math.sin(2.0 * kotlin.math.PI * i / 50.0)
+                                add(
+                                    com.dropsync.domain.sensor.SensorSample(
+                                        timestampMs = t,
+                                        ax = 0.0,
+                                        ay = 0.0,
+                                        az = 9.81,
+                                        gx = 0.0,
+                                        gy = 0.0,
+                                        gz = gz,
+                                    ),
+                                )
+                                t += 20
+                            }
+                            repeat(30) {
+                                add(
+                                    com.dropsync.domain.sensor.SensorSample(
+                                        timestampMs = t,
+                                        ax = 0.0,
+                                        ay = 0.0,
+                                        az = 9.81,
+                                        gx = 0.0,
+                                        gy = 0.0,
+                                        gz = 0.0,
+                                    ),
+                                )
+                                t += 20
+                            }
+                        }
+                    }
+                emitStream(samples)
+                assertEquals("Live zaehlt mit Threshold 500 nichts", 0, vm.liveCountedReps.value)
+
+                vm.stopCountedSet()
+                dispatcher.scheduler.runCurrent()
+
+                vm.setWeight("20")
+                vm.setReps("5")
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(
+                    "fehlgeschlagene Revalidierung speichert keinen Kandidaten",
+                    0,
+                    calibrationProfileRepository.saved.size,
+                )
+                // App bleibt funktionsfaehig: Reps-Feld ist fuer den naechsten
+                // Satz geleert.
+                assertEquals("", vm.repsInput.value)
+            }
+        }
+
+    @Test
+    fun `validiertes Set erhoeht den Kandidaten-Zaehler`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                val exercise = ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl")
+                calibrationProfileRepository.put(profile(exerciseId = 1L))
+                sensorProvider.setConnectedDeviceId("AA:BB:CC:DD:EE:FF")
+                vm.selectExercise(exercise)
+                dispatcher.scheduler.runCurrent()
+
+                sensorProvider.setConnectionState(SensorConnectionState.STREAMING)
+                vm.startCountedSet()
+                dispatcher.scheduler.advanceTimeBy(3_100)
+                dispatcher.scheduler.runCurrent()
+
+                val settle = List(60) { 0.0 }
+                val rep =
+                    (1..15).map { 60.0 * it / 15.0 } +
+                        (1..30).map { 60.0 - 120.0 * it / 30.0 } +
+                        (1..15).map { -60.0 + 60.0 * it / 15.0 }
+                val samples =
+                    (settle + rep + List(60) { 0.0 } + rep + List(40) { 0.0 })
+                        .mapIndexed { i, gx ->
+                            com.dropsync.domain.sensor.SensorSample(
+                                timestampMs = i * 20L,
+                                ax = 0.0,
+                                ay = 0.0,
+                                az = 9.8,
+                                gx = gx,
+                                gy = 0.0,
+                                gz = 0.0,
+                            )
+                        }
+                emitStream(samples)
+                vm.stopCountedSet()
+                dispatcher.scheduler.runCurrent()
+
+                // Nutzer bestaetigt die Live-Zaehlung (2) direkt.
+                vm.setWeight("20")
+                vm.setReps("2")
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(
+                    "validiertes Set muss noteValidatedSet ausloesen",
+                    1,
+                    calibrationProfileRepository.noteValidatedSetCalls,
+                )
+            }
+        }
+
+    @Test
+    fun `UNRELIABLE-Signal trainiert nie`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                val exercise = ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl")
+                calibrationProfileRepository.put(profile(exerciseId = 1L))
+                sensorProvider.setConnectedDeviceId("AA:BB:CC:DD:EE:FF")
+                vm.selectExercise(exercise)
+                dispatcher.scheduler.runCurrent()
+
+                sensorProvider.setConnectionState(SensorConnectionState.STREAMING)
+                vm.startCountedSet()
+                dispatcher.scheduler.advanceTimeBy(3_100)
+                dispatcher.scheduler.runCurrent()
+
+                val settle = List(60) { 0.0 }
+                val rep =
+                    (1..15).map { 60.0 * it / 15.0 } +
+                        (1..30).map { 60.0 - 120.0 * it / 30.0 } +
+                        (1..15).map { -60.0 + 60.0 * it / 15.0 }
+                val samples =
+                    (settle + rep + List(60) { 0.0 } + rep + List(40) { 0.0 })
+                        .mapIndexed { i, gx ->
+                            com.dropsync.domain.sensor.SensorSample(
+                                timestampMs = i * 20L,
+                                ax = 0.0,
+                                ay = 0.0,
+                                az = 9.8,
+                                gx = gx,
+                                gy = 0.0,
+                                gz = 0.0,
+                            )
+                        }
+                emitStream(samples)
+
+                // Stream wird unzuverlaessig -> Controller bricht ab.
+                sensorProvider.setHealth(
+                    com.dropsync.domain.sensor.SensorHealth(
+                        connectionState = SensorConnectionState.STREAMING,
+                        recentPacketLossRate = 0.5,
+                    ),
+                )
+                dispatcher.scheduler.runCurrent()
+
+                vm.setWeight("20")
+                vm.setReps("2")
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(
+                    "UNRELIABLE-Set darf nie lernen",
+                    0,
+                    calibrationProfileRepository.saved.size,
+                )
+                assertEquals(0, calibrationProfileRepository.noteValidatedSetCalls)
+            }
+        }
+
     // --- Fakes ------------------------------------------------------------
     // Sensor/FlatSet/Workout/RestTimerPrefs/Clock/CalibrationProfile kommen
     // aus :core:testing (Testinfra-Umbau Schritt 2); nur der hier spezifische
@@ -440,5 +662,22 @@ class TrainViewModelTest {
         override fun tone(cueSessionId: String) = Unit
 
         override fun stopAll(cueSessionId: String) = Unit
+    }
+
+    /** Noop-Contract fuer den Health-Connect-Permission-Launcher (Tests). */
+    private class TestHealthPermissionContract :
+        androidx.activity.result.contract.ActivityResultContract<
+            Set<String>,
+            Set<String>,
+        >() {
+        override fun createIntent(
+            context: android.content.Context,
+            input: Set<String>,
+        ): android.content.Intent = android.content.Intent()
+
+        override fun parseResult(
+            resultCode: Int,
+            intent: android.content.Intent?,
+        ): Set<String> = emptySet()
     }
 }

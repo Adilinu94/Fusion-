@@ -21,8 +21,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 /**
- * Einzige Activity; hostet die Navigation mit den drei Zielen Musik,
- * Training, Einstellungen (Bauplan Schritt 12.2). Die Shell passt sich
+ * Einzige Activity; hostet die Navigation mit vier Hauptzielen. Die Shell passt sich
  * ueber Window Size Classes an (12.6). Das App-Design (Hell/Dunkel/System)
  * kommt aus den Einstellungen und wird hier auf Theme und Systemleisten
  * angewendet.
@@ -43,9 +42,10 @@ class MainActivity : ComponentActivity() {
                 themeSettings.themeMode.collectAsStateWithLifecycle(
                     initialValue = ThemeMode.SYSTEM,
                 )
+            val systemDark = isSystemInDarkTheme()
             val darkTheme =
                 when (themeMode) {
-                    ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                    ThemeMode.SYSTEM -> systemDark
                     ThemeMode.LIGHT -> false
                     ThemeMode.DARK -> true
                 }

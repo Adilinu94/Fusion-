@@ -14,10 +14,12 @@ data class QualityResult(
  * Weighted rep quality: correlation 40 %, ROM/prominence 25 %, tempo 20 %,
  * symmetry 15 %. A rep counts when score >= minScore. Shadow-pipeline
  * only — no live counting risk (design doc Phase 4 step 6).
+ *
+ * Umbauplan Phase 4: durations are milliseconds, not sample counts.
  */
 class QualityScorer(
     expectedProminence: Double = 50.0,
-    expectedDurationSamples: Double = 50.0,
+    expectedDurationMs: Double = 1_000.0,
     private val weightCorrelation: Double = 0.40,
     private val weightRom: Double = 0.25,
     private val weightTempo: Double = 0.20,
@@ -26,13 +28,13 @@ class QualityScorer(
 ) {
     var expectedProminence: Double = expectedProminence
         private set
-    var expectedDurationSamples: Double = expectedDurationSamples
+    var expectedDurationMs: Double = expectedDurationMs
         private set
 
     fun score(
         correlation: Double,
         prominence: Double,
-        durationSamples: Int,
+        durationMs: Long,
         durationRatio: Double,
     ): QualityResult {
         val corrScore = ((correlation + 1.0) / 2.0).coerceIn(0.0, 1.0)
@@ -41,7 +43,7 @@ class QualityScorer(
         val romScore = (1.0 - kotlin.math.abs(romRatio - 1.0)).coerceIn(0.0, 1.0)
 
         val tempoRatio =
-            if (expectedDurationSamples > 0) durationSamples / expectedDurationSamples else 1.0
+            if (expectedDurationMs > 0) durationMs / expectedDurationMs else 1.0
         val tempoScore = (1.0 - kotlin.math.abs(tempoRatio - 1.0)).coerceIn(0.0, 1.0)
 
         val symmetryScore = (1.0 - kotlin.math.abs(durationRatio - 0.5) * 2.0).coerceIn(0.0, 1.0)
@@ -63,9 +65,9 @@ class QualityScorer(
 
     fun updateExpectations(
         expectedProminence: Double? = null,
-        expectedDurationSamples: Double? = null,
+        expectedDurationMs: Double? = null,
     ) {
         expectedProminence?.let { this.expectedProminence = it }
-        expectedDurationSamples?.let { this.expectedDurationSamples = it }
+        expectedDurationMs?.let { this.expectedDurationMs = it }
     }
 }

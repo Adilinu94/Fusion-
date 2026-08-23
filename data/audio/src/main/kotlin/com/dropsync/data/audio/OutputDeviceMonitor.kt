@@ -5,6 +5,7 @@ import android.content.Context
 import android.media.AudioDeviceCallback
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.dropsync.domain.audio.OutputDeviceKind
@@ -102,7 +103,13 @@ class OutputDeviceMonitor
                         else -> OutputDeviceKind.OTHER
                     },
                 name = ranked?.productName?.toString(),
-                address = ranked?.address?.takeIf { it.isNotBlank() },
+                // Lint-Phase 11: getAddress() braucht API 28 (minSdk 26).
+                address =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                        ranked?.address?.takeIf { it.isNotBlank() }
+                    } else {
+                        null
+                    },
                 bluetoothCodec = bluetoothCodecName(ranked),
             )
         }

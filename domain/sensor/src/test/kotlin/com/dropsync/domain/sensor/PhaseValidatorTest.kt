@@ -23,8 +23,17 @@ class PhaseValidatorTest {
     }
 
     @Test
-    fun `pure envelope window passes simplified check`() {
-        assertTrue(validator.validate(List(10) { it.toDouble() }).valid)
+    fun `pure positive window is rejected as half rep`() {
+        // Umbauplan Phase 4: ein reines Anheben (nur positiv) darf NICHT
+        // mehr als vollstaendige Rep durchgehen.
+        val result = validator.validate(List(10) { it.toDouble() })
+        assertFalse("reine positive Phase muss abgelehnt werden", result.valid)
+    }
+
+    @Test
+    fun `pure negative window is rejected as half rep`() {
+        val result = validator.validate(List(10) { -it.toDouble() })
+        assertFalse("reine negative Phase muss abgelehnt werden", result.valid)
     }
 
     @Test

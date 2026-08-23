@@ -32,6 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.util.Locale
 import javax.inject.Inject
 
@@ -95,25 +96,40 @@ class TimerService : Service() {
 
     // --- Actions -----------------------------------------------------------
 
-    /** Skip: cancel the current rest and go back to IDLE. */
-    private fun onSkip() {
+    /**
+     * Umbauplan Phase 10.3: Abbruchpfade muessen das Snapshot SYNCHRON
+     * loeschen, BEVOR der Service stoppt - sonst stellt ein spaeterer
+     * Prozessstart den bereits abgebrochenen Timer wieder her.
+     */
+    private fun terminateTimer() {
         timerEngine.cancel(CancelReason.USER)
         timerEngine.reset()
-        stopSelfIfIdle()
+        runBlocking {
+            snapshotStore.clear()
+            monotonicStateStore.setLastElapsedRealtimeMs(clock.elapsedRealtimeMs())
+        }
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    /** Skip: cancel the current rest and go back to IDLE. */
+    private fun onSkip() {
+        terminateTimer()
     }
 
     /** +15 s: finish the current rest, then start a fresh 15 s rest. */
     private fun onPlus15() {
         timerEngine.cancel(CancelReason.USER)
         timerEngine.reset()
+        // Phase 10.3: altes Snapshot synchron loeschen, damit ein Kill
+        // zwischen cancel und neuem Tick nicht den alten Timer restauriert.
+        runBlocking { snapshotStore.clear() }
         timerEngine.start(TimerMode.REST, PLUS_15_MS)
     }
 
     /** Finish exercise: cancel the timer immediately (design rule step 5). */
     private fun onFinish() {
-        timerEngine.cancel(CancelReason.USER)
-        timerEngine.reset()
-        stopSelfIfIdle()
+        terminateTimer()
     }
 
     // --- Tick + notification ----------------------------------------------

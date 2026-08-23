@@ -39,8 +39,11 @@ data class GuidedCalibrationResult(
     val chosenSignal: ChosenSignal,
     val theta: Double,
     val baseline: Double,
+    /** Measured rest sigma of the chosen signal (noise floor). */
+    val noiseFloor: Double,
     val expectedProminence: Double,
     val expectedDurationSamples: Double,
+    val expectedDurationMs: Double,
     val repTemplate: List<Double>,
     val qualityScore: Double,
 )
@@ -237,8 +240,10 @@ class CalibrationController(
             chosenSignal = cfg.signal,
             theta = theta,
             baseline = baseline,
+            noiseFloor = metaB?.get(cfg.signal)?.second ?: 0.0,
             expectedProminence = expectedProminence,
             expectedDurationSamples = medT * sampleRateHz,
+            expectedDurationMs = medT * 1_000.0,
             repTemplate = repTemplate,
             qualityScore = quality,
         )
@@ -482,7 +487,13 @@ class CalibrationController(
         nSoll: Int,
     ): SweepCfg? {
         var beste: SweepCfg? = null
-        for ((name, sig) in signals) {
+        // Umbauplan Phase 1.3: bis GYRO_MAG/COMBINED mit echten
+        // Hardware-Traces verifiziert sind, wird der Sweep ausschliesslich
+        // auf dem signierten GP-Signal gefahren - die Live-Pipeline
+        // verarbeitet naemlich immer GP.
+        val names = listOf(ChosenSignal.GP)
+        for (name in names) {
+            val sig = signals[name] ?: continue
             val (baseline, sigma) = meta[name]!!
             val span = percentile(sig.toList(), 99.0) - baseline
             if (span <= 0) continue

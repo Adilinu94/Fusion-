@@ -90,5 +90,13 @@ class CalibrationControllerWizardTest {
         assertTrue(result.theta > 0)
         assertTrue(result.expectedProminence > 0)
         assertTrue(result.expectedDurationSamples > 0)
+        assertTrue("Dauer muss auch in ms vorliegen", result.expectedDurationMs > 0)
+        assertTrue("NoiseFloor muss nichtnegativ sein", result.noiseFloor >= 0)
+        // Umbauplan Phase 1.3: der Sweep darf nur GP waehlen.
+        assertEquals(
+            "Kalibrierung muss auf dem signierten GP-Signal laufen",
+            ChosenSignal.GP,
+            result.chosenSignal,
+        )
     }
 }

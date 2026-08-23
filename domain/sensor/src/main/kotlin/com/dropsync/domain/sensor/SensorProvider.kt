@@ -20,6 +20,9 @@ interface SensorProvider {
     /** BLE address of the connected chip; null until connected. */
     val connectedDeviceId: StateFlow<String?>
 
+    /** Umbauplan Phase 3: Paketverlust/Gaps als Health-Flow. */
+    val health: Flow<SensorHealth>
+
     /**
      * Connects to a FlowRep chip. [deviceId] null = scan by advertise name.
      * Returns an [AppResult] so BLE failures surface as German user text

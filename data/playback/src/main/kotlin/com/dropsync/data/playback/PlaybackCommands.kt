@@ -1,16 +1,15 @@
 package com.dropsync.data.playback
 
 /**
- * Eigene MediaSession-Kommandos jenseits der Standard-Player-Befehle
- * (Musik-Workout-Plan Phase 4). Der echte Crossfade auf einen beliebig
- * vorgespulten Titel kann nur dienstseitig laufen (nur der Service haelt
- * den Zweitspieler); der Controller stoesst ihn deshalb ueber ein
- * Custom-Kommando an. Die Konstanten teilen sich [PlaybackRepositoryImpl]
- * (Sender) und [PlaybackService] (Empfaenger).
+ * Eigene MediaSession-Kommandos jenseits der Standard-Player-Befehle.
+ * Die Drop-Landung wechselt dienstseitig auf den einen sessionfuehrenden
+ * Player; der Controller stoesst das ueber ein Custom-Kommando an. Die
+ * Konstanten teilen sich [PlaybackRepositoryImpl] (Sender) und
+ * [PlaybackService] (Empfaenger).
  */
 object PlaybackCommands {
-    /** Drop-Landung: dienstseitig per Crossfade auf einen Work-Titel wechseln. */
-    const val ACTION_CROSSFADE_TO: String = "com.dropsync.playback.CROSSFADE_TO"
+    /** Drop-Landung: auf einen Work-Titel wechseln, vorgespult. */
+    const val ACTION_PLAY_SONG_AT: String = "com.dropsync.playback.PLAY_SONG_AT"
 
     /** MediaStore-ID des Zieltitels (Long). */
     const val ARG_SONG_ID: String = "song_id"

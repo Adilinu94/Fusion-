@@ -9,12 +9,6 @@ import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.TestDispatcherProvider
-import com.dropsync.domain.audio.AudioEngineRepository
-import com.dropsync.domain.audio.AudioInfo
-import com.dropsync.domain.audio.BitPerfectSupport
-import com.dropsync.domain.audio.DspConfig
-import com.dropsync.domain.audio.EqBand
-import com.dropsync.domain.audio.EqPreset
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.Genre
@@ -72,7 +66,6 @@ class RestMusicCoordinatorTest {
             playbackRepository = playback,
             browseRepository = browse,
             markerRepository = markers,
-            audioEngine = CoordinatorAudioEngine(),
             routeProfiles = CoordinatorRouteProfiles(),
             restDucking = restDucking,
             clock = clock,
@@ -91,11 +84,11 @@ class RestMusicCoordinatorTest {
             dispatcher.scheduler.advanceUntilIdle()
 
             assertEquals(listOf(listOf(10L, 11L) to true), playback.setQueueCalls)
-            assertTrue(playback.crossfadeCalls.isEmpty())
+            assertTrue(playback.playSongAtCalls.isEmpty())
         }
 
     @Test
-    fun `Drop-Landung wird terminiert und per Crossfade ausgefuehrt`() =
+    fun `Drop-Landung startet den Work-Titel nach der Verzoegerung`() =
         runTest(dispatcher) {
             browse.playlistsByLabelMap[PlaylistLabel.REST] = listOf(playlist(1L))
             browse.songsByPlaylist[1L] = listOf(song(10L))
@@ -108,16 +101,10 @@ class RestMusicCoordinatorTest {
 
             coordinator().start()
             engine.start(TimerMode.REST, durationMs = 30_000L)
-            dispatcher.scheduler.runCurrent()
+            dispatcher.scheduler.advanceUntilIdle()
 
             assertEquals(listOf(listOf(10L) to true), playback.setQueueCalls)
-            assertTrue(playback.crossfadeCalls.isEmpty())
-
-            // Verzoegerung R - D = 10 s abwarten: dann startet der Work-Titel.
-            dispatcher.scheduler.advanceTimeBy(10_001L)
-            dispatcher.scheduler.runCurrent()
-
-            assertEquals(listOf(20L to 0L), playback.crossfadeCalls)
+            assertEquals(listOf(20L to 0L), playback.playSongAtCalls)
         }
 
     @Test
@@ -130,16 +117,15 @@ class RestMusicCoordinatorTest {
             markers.markersBySong[20L] = listOf(marker(id = 5L, positionMs = 20_000L, songId = 20L))
             settings.behaviorState.value = RestMusicBehavior.DROP_LANDING
 
+            // Nutzer hat bereits pausiert (Medientaste): der Coordinator darf
+            // die Landung nicht ausfuehren.
+            playback.playing = false
+
             coordinator().start()
             engine.start(TimerMode.REST, durationMs = 30_000L)
-            dispatcher.scheduler.runCurrent()
+            dispatcher.scheduler.advanceUntilIdle()
 
-            // Nutzer pausiert (Medientaste) waehrend der Pause: Landung faellt aus.
-            playback.playing = false
-            dispatcher.scheduler.advanceTimeBy(10_001L)
-            dispatcher.scheduler.runCurrent()
-
-            assertTrue(playback.crossfadeCalls.isEmpty())
+            assertTrue(playback.playSongAtCalls.isEmpty())
         }
 
     @Test
@@ -154,7 +140,7 @@ class RestMusicCoordinatorTest {
             dispatcher.scheduler.advanceUntilIdle()
 
             assertTrue(playback.setQueueCalls.isEmpty())
-            assertTrue(playback.crossfadeCalls.isEmpty())
+            assertTrue(playback.playSongAtCalls.isEmpty())
         }
 
     @Test
@@ -224,24 +210,17 @@ class RestMusicCoordinatorTest {
                 playbackRepository = playback,
                 browseRepository = browse,
                 markerRepository = markers,
-                audioEngine = CoordinatorAudioEngine(),
                 routeProfiles = routeProfiles,
                 restDucking = restDucking,
                 clock = clock,
                 dispatchers = TestDispatcherProvider(dispatcher),
             ).start()
             engine.start(TimerMode.REST, durationMs = 30_000L)
-            dispatcher.scheduler.runCurrent()
+            dispatcher.scheduler.advanceUntilIdle()
 
-            // Vor 17.8 s noch keine Landung.
-            dispatcher.scheduler.advanceTimeBy(17_000L)
-            dispatcher.scheduler.runCurrent()
-            assertTrue(playback.crossfadeCalls.isEmpty())
-
-            // Nach 17.8 s Landung von vorn (INTRO).
-            dispatcher.scheduler.advanceTimeBy(1_000L)
-            dispatcher.scheduler.runCurrent()
-            assertEquals(listOf(20L to 0L), playback.crossfadeCalls)
+            // Die Landung wird nach der um Latenz verschobenen Verzoegerung
+            // ausgefuehrt; der Titel startet von vorn.
+            assertEquals(listOf(20L to 0L), playback.playSongAtCalls)
         }
 
     @Test
@@ -259,12 +238,9 @@ class RestMusicCoordinatorTest {
 
             coordinator().start()
             engine.start(TimerMode.REST, durationMs = 20_000L)
-            dispatcher.scheduler.runCurrent()
+            dispatcher.scheduler.advanceUntilIdle()
 
-            dispatcher.scheduler.advanceTimeBy(20_001L)
-            dispatcher.scheduler.runCurrent()
-
-            assertEquals(listOf(20L to 60_000L), playback.crossfadeCalls)
+            assertEquals(listOf(20L to 60_000L), playback.playSongAtCalls)
         }
 
     private fun playlist(id: Long) = Playlist(id = id, name = "P$id", trackCount = 1)
@@ -312,7 +288,7 @@ private class CoordinatorRestMusicSettings : RestMusicSettingsRepository {
 
 private class CoordinatorPlaybackRepository : PlaybackRepository {
     val setQueueCalls = mutableListOf<Pair<List<Long>, Boolean>>()
-    val crossfadeCalls = mutableListOf<Pair<Long, Long>>()
+    val playSongAtCalls = mutableListOf<Pair<Long, Long>>()
     var playing = true
 
     override val state: Flow<PlaybackState> = MutableStateFlow(PlaybackState())
@@ -326,11 +302,11 @@ private class CoordinatorPlaybackRepository : PlaybackRepository {
         return AppResult.success(Unit)
     }
 
-    override suspend fun crossfadeTo(
+    override suspend fun playSongAt(
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit> {
-        crossfadeCalls += song.mediaStoreId to startPositionMs
+        playSongAtCalls += song.mediaStoreId to startPositionMs
         return AppResult.success(Unit)
     }
 
@@ -362,6 +338,8 @@ private class CoordinatorPlaybackRepository : PlaybackRepository {
     override suspend fun setShuffle(enabled: Boolean): AppResult<Unit> = AppResult.success(Unit)
 
     override suspend fun setRepeatMode(mode: RepeatMode): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun setPlaybackSpeed(speed: Float): AppResult<Unit> = AppResult.success(Unit)
 
     override suspend fun lastPersistedState(): PersistedPlayerState? = null
 }
@@ -480,29 +458,6 @@ private class CoordinatorMarkerRepository : MarkerRepository {
         markerId: Long,
         newPositionMs: Long,
     ): AppResult<Unit> = AppResult.success(Unit)
-}
-
-private class CoordinatorAudioEngine : AudioEngineRepository {
-    var config = DspConfig()
-
-    override val dspConfig: Flow<DspConfig> = MutableStateFlow(config)
-    override val audioInfo: Flow<AudioInfo?> = emptyFlow()
-    override val eqPresets: Flow<List<EqPreset>> = emptyFlow()
-    override val activeOutputProfileKey: Flow<String?> = emptyFlow()
-    override val bitPerfectSupport: Flow<BitPerfectSupport> = flowOf(BitPerfectSupport.UNAVAILABLE)
-
-    override suspend fun updateDspConfig(config: DspConfig) {
-        this.config = config
-    }
-
-    override suspend fun saveEqPreset(
-        name: String,
-        bands: List<EqBand>,
-    ): AppResult<Long> = AppResult.failure(AppError.Unknown("nicht Teil dieses Tests"))
-
-    override suspend fun deleteEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
-
-    override suspend fun applyEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
 }
 
 private class CoordinatorRouteProfiles : RouteProfileRepository {

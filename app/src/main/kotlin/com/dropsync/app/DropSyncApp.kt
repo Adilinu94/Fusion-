@@ -1,15 +1,35 @@
 package com.dropsync.app
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
@@ -19,9 +39,18 @@ import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
@@ -42,7 +71,7 @@ import com.dropsync.feature.workout.TrainScreen
 
 /**
  * Hauptnavigation mit vier Zielen (Fusion-Design 2026-08-07):
- * Train (Start), Music, Verlauf, Einstellungen. Kompakt: Bottom Navigation;
+ * Music (Start), Train, Verlauf, Einstellungen. Kompakt: Bottom Navigation;
  * ab Medium: Navigation Rail per Window Size Classes.
  */
 enum class TopLevelDestination(
@@ -50,8 +79,8 @@ enum class TopLevelDestination(
     val iconRes: Int,
     val labelRes: Int,
 ) {
-    TRAIN("train", BrandIcons.NavTrain, R.string.nav_train),
     MUSIC("music", BrandIcons.NavMusic, R.string.nav_music),
+    TRAIN("train", BrandIcons.NavTrain, R.string.nav_train),
     HISTORY("history", BrandIcons.NavHistory, R.string.nav_history),
     SETTINGS("settings", BrandIcons.NavSettings, R.string.nav_settings),
 }
@@ -93,21 +122,33 @@ private fun DropSyncContent(
     navController: NavHostController,
     showBottomBar: Boolean,
 ) {
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    val currentRoute = backStackEntry?.destination?.route
+    // Now-Playing ist ein chromeloser Vollbild-Moment (Poweramp-Optik):
+    // Mini-Player + Bottom-Nav werden dort ausgeblendet, damit das Cover
+    // im echten Viewport zentriert werden kann und keine doppelten
+    // Transport-Controls erscheinen.
+    val immersive = currentRoute == ROUTE_NOW_PLAYING
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            Column {
-                // Der aktive Mini-Player bleibt in der Shell sichtbar (12.2).
-                MiniPlayer(
-                    onOpenNowPlaying = { navController.openNowPlaying() },
-                )
-                if (showBottomBar) {
-                    DropSyncNavigationBar(navController)
+            if (!immersive) {
+                Column {
+                    // Der aktive Mini-Player bleibt in der Shell sichtbar (12.2).
+                    MiniPlayer(
+                        onOpenNowPlaying = { navController.openNowPlaying() },
+                    )
+                    if (showBottomBar) {
+                        FlowRepGlassNavigation(navController)
+                    }
                 }
             }
         },
     ) { innerPadding ->
-        DropSyncNavHost(navController, innerPadding)
+        DropSyncNavHost(
+            navController,
+            if (immersive) PaddingValues() else innerPadding,
+        )
     }
 }
 
@@ -118,7 +159,43 @@ private fun DropSyncNavHost(
 ) {
     NavHost(
         navController = navController,
-        startDestination = TopLevelDestination.TRAIN.route,
+        startDestination = TopLevelDestination.MUSIC.route,
+        // Now-Playing als Sheet-Moment: von unten aufsteigend, zurueck
+        // gleitend; alle anderen Ziele bleiben bei weichem Fade (kein
+        // Slide-Wettlauf mit der Tab-Pille). Echte Shared-Element-Transition
+        // MiniPlayer->Now-Playing benoetigt den Player als Overlay/Sheet in
+        // der Shell statt einer Route (Movement-Scope erreicht den Mini-
+        // Player ausserhalb des NavHost nicht) — als Folgearbeit notiert.
+        enterTransition = {
+            if (targetState.destination.route == ROUTE_NOW_PLAYING) {
+                slideInVertically(
+                    animationSpec =
+                        spring(
+                            dampingRatio = Spring.DampingRatioLowBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                    initialOffsetY = { it },
+                ) + fadeIn()
+            } else {
+                fadeIn()
+            }
+        },
+        exitTransition = { fadeOut() },
+        popEnterTransition = { fadeIn() },
+        popExitTransition = {
+            if (targetState.destination.route == ROUTE_NOW_PLAYING) {
+                slideOutVertically(
+                    animationSpec =
+                        spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMediumLow,
+                        ),
+                    targetOffsetY = { it },
+                ) + fadeOut()
+            } else {
+                fadeOut()
+            }
+        },
     ) {
         composable(TopLevelDestination.TRAIN.route) {
             // FlowRep Train-Tab: flaches Satz-Log (Phase 2).
@@ -138,26 +215,10 @@ private fun DropSyncNavHost(
             )
         }
         composable(TopLevelDestination.HISTORY.route) {
-            // Verlauf: flache Liste Sätze zeitlich, Gruppe pro Tag,
-            // Volumen Linie über Zeit, PR Abzeichen (Fusion-Design).
-            // Vorläufig leerer Platzhalter bis Phase 9 (Verlauf Politur).
-            Column(
-                modifier =
-                    Modifier
-                        .fillMaxSize()
-                        .padding(top = contentPadding.calculateTopPadding()),
-            ) {
-                Text(
-                    text = "Verlauf",
-                    style = MaterialTheme.typography.headlineMedium,
-                    modifier = Modifier.padding(16.dp),
-                )
-                Text(
-                    text = "Noch keine Sätze aufgezeichnet.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
-            }
+            HistoryScreen(
+                contentPadding = contentPadding,
+                onOpenTraining = { navController.navigateTopLevel(TopLevelDestination.TRAIN.route) },
+            )
         }
         composable(TopLevelDestination.SETTINGS.route) {
             SettingsScreen(
@@ -196,25 +257,124 @@ private fun DropSyncNavHost(
 }
 
 @Composable
-private fun DropSyncNavigationBar(navController: NavHostController) {
+private fun FlowRepGlassNavigation(navController: NavHostController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    NavigationBar {
-        TopLevelDestination.entries.forEach { destination ->
-            val label = stringResource(destination.labelRes)
-            NavigationBarItem(
-                selected = currentRoute == destination.route,
-                onClick = { navController.navigateTopLevel(destination.route) },
-                icon = { Icon(painterResource(destination.iconRes), contentDescription = null) },
-                label = { Text(label) },
-                colors =
-                    NavigationBarItemDefaults.colors(
-                        // Lime-Pill als Active-State (Design.txt: Lime nur
-                        // fuer die aktive/primaere Stelle).
-                        indicatorColor = MaterialTheme.colorScheme.primary,
-                        selectedIconColor = MaterialTheme.colorScheme.onPrimary,
-                    ),
-            )
+    val destinations = TopLevelDestination.entries
+    val selectedIndex =
+        destinations
+            .indexOfFirst { it.route == currentRoute }
+            .coerceAtLeast(0)
+    val pillShape = RoundedCornerShape(50)
+    val containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
+    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+
+    BoxWithConstraints(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 16.dp, vertical = 8.dp)
+                .shadow(elevation = 12.dp, shape = pillShape, clip = false)
+                .clip(pillShape)
+                .background(containerColor)
+                .border(1.dp, borderColor, pillShape),
+    ) {
+        val tabWidth = maxWidth / destinations.size
+        // Gleitender Indikator: Feder-Physik laesst die Pille sichtbar von
+        // einem Tab zum naechsten gleiten (kein harter Sprung). Etwas
+        // Bounce, damit der Wechsel modern und lebendig wirkt.
+        val indicatorOffset by animateDpAsState(
+            targetValue = tabWidth * selectedIndex,
+            animationSpec =
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMediumLow,
+                ),
+            label = "bottom-nav-indicator",
+        )
+
+        Box(
+            modifier =
+                Modifier
+                    .offset(x = indicatorOffset)
+                    .width(tabWidth)
+                    .height(72.dp)
+                    .padding(4.dp)
+                    .clip(pillShape)
+                    .background(MaterialTheme.colorScheme.primary),
+        )
+
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .height(72.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            destinations.forEachIndexed { index, destination ->
+                val label = stringResource(destination.labelRes)
+                val selected = index == selectedIndex
+                // Leichter Pop auf dem aktiven Icon, passend zur gleitenden
+                // Pille; inaktive Icons bleiben ruhig.
+                val iconScale by animateFloatAsState(
+                    targetValue = if (selected) 1.12f else 1f,
+                    animationSpec =
+                        spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium,
+                        ),
+                    label = "bottom-nav-icon-scale",
+                )
+                Column(
+                    modifier =
+                        Modifier
+                            .weight(1f)
+                            .fillMaxHeight()
+                            .padding(vertical = 6.dp)
+                            .semantics {
+                                stateDescription = if (selected) "Ausgewählt" else "Nicht ausgewählt"
+                            }.clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                role = Role.Tab,
+                                onClick = { navController.navigateTopLevel(destination.route) },
+                            ),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(destination.iconRes),
+                        contentDescription = null,
+                        modifier =
+                            Modifier
+                                .size(30.dp)
+                                .graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                },
+                        tint =
+                            if (selected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                    )
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.labelSmall,
+                        color =
+                            if (selected) {
+                                MaterialTheme.colorScheme.onPrimary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            },
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                    )
+                }
+            }
         }
     }
 }

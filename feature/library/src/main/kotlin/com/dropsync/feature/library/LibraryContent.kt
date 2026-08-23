@@ -8,6 +8,13 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -131,67 +138,85 @@ internal fun LibraryContent(
                 )
             }
         }
-        when (val route = current) {
-            LibraryRoute.Home -> {
-                HomeRoute(viewModel, contentPadding, onOpen = { push(LibraryRoute.Category(it)) })
-            }
+        // Poweramp-artiger Uebergang: der alte Screen blendet aus, der neue
+        // sanft ein. Bewusst nur Fade, kein Slide, damit es ruhig und
+        // akkuschonend bleibt.
+        AnimatedContent(
+            targetState = current,
+            transitionSpec = {
+                (fadeIn(tween(220)) togetherWith fadeOut(tween(180)))
+                    .using(SizeTransform(clip = false))
+            },
+            label = "library-route",
+            modifier = Modifier.weight(1f),
+        ) { route ->
+            when (route) {
+                LibraryRoute.Home -> {
+                    HomeRoute(
+                        viewModel = viewModel,
+                        contentPadding = contentPadding,
+                        onOpen = { push(LibraryRoute.Category(it)) },
+                        onOpenNowPlaying = onOpenNowPlaying,
+                    )
+                }
 
-            is LibraryRoute.Category -> {
-                CategoryRoute(
-                    viewModel = viewModel,
-                    category = route.category,
-                    contentPadding = contentPadding,
-                    onBack = ::pop,
-                    onOpenCollection = { push(it) },
-                    onOpenFolderTree = { push(LibraryRoute.FolderTree(it)) },
-                    onOpenPlaylist = { push(LibraryRoute.PlaylistDetailRoute(it)) },
-                    onAddToPlaylist = { songForPlaylist = it },
-                    onDelete = ::requestDelete,
-                    onOpenNowPlaying = onOpenNowPlaying,
-                )
-            }
+                is LibraryRoute.Category -> {
+                    CategoryRoute(
+                        viewModel = viewModel,
+                        category = route.category,
+                        contentPadding = contentPadding,
+                        onBack = ::pop,
+                        onOpenCollection = { push(it) },
+                        onOpenFolderTree = { push(LibraryRoute.FolderTree(it)) },
+                        onOpenPlaylist = { push(LibraryRoute.PlaylistDetailRoute(it)) },
+                        onAddToPlaylist = { songForPlaylist = it },
+                        onDelete = ::requestDelete,
+                        onOpenNowPlaying = onOpenNowPlaying,
+                    )
+                }
 
-            is LibraryRoute.Collection -> {
-                CollectionRoute(
-                    viewModel = viewModel,
-                    route = route,
-                    contentPadding = contentPadding,
-                    onBack = ::pop,
-                    onAddToPlaylist = { songForPlaylist = it },
-                    onDelete = ::requestDelete,
-                    onOpenNowPlaying = onOpenNowPlaying,
-                )
-            }
+                is LibraryRoute.Collection -> {
+                    CollectionRoute(
+                        viewModel = viewModel,
+                        route = route,
+                        contentPadding = contentPadding,
+                        onBack = ::pop,
+                        onAddToPlaylist = { songForPlaylist = it },
+                        onDelete = ::requestDelete,
+                        onOpenNowPlaying = onOpenNowPlaying,
+                    )
+                }
 
-            is LibraryRoute.FolderTree -> {
-                FolderTreeRoute(
-                    viewModel = viewModel,
-                    path = route.path,
-                    contentPadding = contentPadding,
-                    onBack = ::pop,
-                    onOpenFolder = { push(LibraryRoute.FolderTree(it.path)) },
-                    onOpenLeaf = { node ->
-                        push(
-                            LibraryRoute.Collection(
-                                kind = CollectionKind.FOLDER,
-                                key = node.path,
-                                label = node.name,
-                                artist = null,
-                            ),
-                        )
-                    },
-                    onOpenNowPlaying = onOpenNowPlaying,
-                )
-            }
+                is LibraryRoute.FolderTree -> {
+                    FolderTreeRoute(
+                        viewModel = viewModel,
+                        path = route.path,
+                        contentPadding = contentPadding,
+                        onBack = ::pop,
+                        onOpenFolder = { push(LibraryRoute.FolderTree(it.path)) },
+                        onOpenLeaf = { node ->
+                            push(
+                                LibraryRoute.Collection(
+                                    kind = CollectionKind.FOLDER,
+                                    key = node.path,
+                                    label = node.name,
+                                    artist = null,
+                                ),
+                            )
+                        },
+                        onOpenNowPlaying = onOpenNowPlaying,
+                    )
+                }
 
-            is LibraryRoute.PlaylistDetailRoute -> {
-                PlaylistDetailRoute(
-                    viewModel = viewModel,
-                    playlistId = route.id,
-                    contentPadding = contentPadding,
-                    onBack = ::pop,
-                    onOpenNowPlaying = onOpenNowPlaying,
-                )
+                is LibraryRoute.PlaylistDetailRoute -> {
+                    PlaylistDetailRoute(
+                        viewModel = viewModel,
+                        playlistId = route.id,
+                        contentPadding = contentPadding,
+                        onBack = ::pop,
+                        onOpenNowPlaying = onOpenNowPlaying,
+                    )
+                }
             }
         }
     }
@@ -219,8 +244,12 @@ private fun HomeRoute(
     viewModel: LibraryViewModel,
     contentPadding: PaddingValues,
     onOpen: (LibraryCategory) -> Unit,
+    onOpenNowPlaying: () -> Unit,
 ) {
     val queue by viewModel.queue.collectAsStateWithLifecycle()
+    val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
+    val pendingMarkers by viewModel.pendingMarkerReviews.collectAsStateWithLifecycle()
+    val songs by viewModel.allSongs.collectAsStateWithLifecycle()
     val viewConfig by viewModel.viewConfig.collectAsStateWithLifecycle()
     val excluded by viewModel.excludedFolders.collectAsStateWithLifecycle()
     val allFolders by viewModel.allFolderPaths.collectAsStateWithLifecycle()
@@ -234,8 +263,14 @@ private fun HomeRoute(
     LibraryHomeScreen(
         categories = visibleCategories,
         queueCount = queue.size,
+        playbackState = playbackState,
+        pendingMarkers = pendingMarkers,
+        songs = songs,
         contentPadding = contentPadding,
         onOpen = onOpen,
+        onOpenNowPlaying = onOpenNowPlaying,
+        onConfirmMarker = viewModel::confirmMarker,
+        onDiscardMarker = viewModel::discardMarker,
         onRescan = { viewModel.refresh(force = true) },
         onSelectFolders = { showFolders = true },
         onEditCategories = { showCategories = true },

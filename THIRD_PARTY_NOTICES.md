@@ -32,16 +32,20 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 | androidx.test (junit-ext, runner, espresso-core) | 1.3.0 / 1.7.0 / 3.7.0 | Apache-2.0 | Instrumentierte Tests (nur Testscope) | https://developer.android.com/testing | FREIGEGEBEN |
 | Spotless (Gradle-Plugin) | 8.8.0 | Apache-2.0 | Formatierung/statische Analyse (nur Build, keine Distribution) | https://github.com/diffplug/spotless | FREIGEGEBEN |
 | ktlint | 1.8.0 | MIT | Kotlin-Linting via Spotless (nur Build) | https://github.com/pinterest/ktlint | FREIGEGEBEN |
+| Detekt (Gradle-Plugin) | 2.0.0-alpha.6 | Apache-2.0 | Kotlin-Codeanalyse als CI-Gate (nur Build, keine Distribution); Alpha, weil 2.x die erste Toolchain mit Kotlin 2.4/AGP 9.3 ist | https://github.com/detekt/detekt | FREIGEGEBEN |
+| androidx.profileinstaller | 1.4.1 | Apache-2.0 | Installiert Baseline Profiles zur Laufzeit (Phase 4) | https://developer.android.com/jetpack/androidx/releases/profileinstaller | FREIGEGEBEN |
+| androidx.benchmark (Macrobenchmark) | 1.5.0-alpha01 | Apache-2.0 | Startup-Messung + Baseline-Profile-Generierung, nur :benchmarks-Modul (keine Distribution in der App) | https://developer.android.com/jetpack/androidx/releases/benchmark | FREIGEGEBEN |
 | FFmpeg (libavcodec, libavformat, libavutil) | 6.1+ | LGPL-2.1-or-later | Audiodecoder-Extension (ALAC/AIFF/WMA/APE/TAK/TTA/DSD), dynamisch gelinkt, aus androidx/media gebaut (ADR-0006) | https://ffmpeg.org | OFFEN |
-| Raleway (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/impallari/Raleway | FREIGEGEBEN |
+| Poppins (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/google/fonts/tree/main/ofl/poppins | FREIGEGEBEN |
 
-## Raleway (SIL OFL 1.1)
+## Poppins (SIL OFL 1.1)
 
-Die Marken-Schriftfamilie Raleway wird unter der SIL Open Font License 1.1
-als statische TTF (Gewichte 400/500/600/700/800) in `:core:designsystem`
+Die Marken-Schriftfamilie Poppins wird unter der SIL Open Font License 1.1
+als statische TTF (Gewichte 400/500/700) in `:core:designsystem`
 (`src/main/res/font/`) gebuendelt und offline ausgeliefert - kein
 Google-Fonts-Provider, kein Netzzugriff. Der vollstaendige Lizenztext liegt
-unter `UI/Raleway/OFL.txt`. OFL erlaubt das Einbetten in Anwendungen; die
+unter `UI/Raleway/OFL.txt`; die SIL OFL 1.1 ist fuer die hier gebuendelten,
+unveraenderten Poppins-Dateien ebenfalls massgeblich. OFL erlaubt das Einbetten in Anwendungen; die
 Fonts werden nicht separat verkauft und der Lizenztext begleitet die Dateien.
 
 ## FFmpeg (LGPL 2.1+)

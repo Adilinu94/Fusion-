@@ -24,6 +24,7 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.domain.sensor.DeviceEvent
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -66,6 +67,10 @@ import kotlin.coroutines.resume
  *
  * All GATT operations are serialized through [BleGattClient]: the Android BLE
  * stack allows one outstanding operation at a time.
+ *
+ * Umbauplan Phase 2: every GATT operation has an ID and a timeout, Android
+ * return values are checked, late callbacks of old operations are ignored,
+ * and ALL failure paths run through the central [cleanupConnection].
  */
 @Singleton
 @SuppressLint("MissingPermission") // Guarded by hasBlePermissions() before every BLE call.
@@ -89,6 +94,9 @@ class BleSensorProvider
         private val _connectedDeviceId = MutableStateFlow<String?>(null)
         override val connectedDeviceId: StateFlow<String?> = _connectedDeviceId.asStateFlow()
 
+        private val _health = MutableStateFlow(SensorHealth())
+        override val health: StateFlow<SensorHealth> = _health.asStateFlow()
+
         private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { _samples.tryEmit(it) })
         private val dedupTracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
         private val gattClient = BleGattClient()
@@ -103,6 +111,9 @@ class BleSensorProvider
         private var deviceEventPollJob: Job? = null
         private var mtuTimeoutJob: Job? = null
         private var lastDeviceEventSeq = 0
+
+        /** Aufeinanderfolgende Protokollfehler (Cleanup-Grund). */
+        private var consecutiveProtocolErrors = 0
 
         /** Last negotiated MTU (diagnostics). */
         var lastNegotiatedMtu = 0
@@ -147,28 +158,23 @@ class BleSensorProvider
                         adapter.getRemoteDevice(deviceId)
                     } else {
                         scanForFlowRep(adapter)
-                            ?: return AppResult.failure(
-                                AppError.Unknown("FlowRep-Sensor nicht gefunden (15s Scan)"),
-                            )
+                            ?: run {
+                                cleanupConnection(DisconnectReason.SCAN_FAILED)
+                                return AppResult.failure(
+                                    AppError.Unknown("FlowRep-Sensor nicht gefunden (15s Scan)"),
+                                )
+                            }
                     }
                 connectGatt(device)
             } catch (e: Exception) {
-                _connectionState.value = SensorConnectionState.DISCONNECTED
+                cleanupConnection(DisconnectReason.CONNECT_FAILED)
                 AppResult.failure(BleErrorMapper.map(e))
             }
         }
 
         override suspend fun disconnect() {
-            pollJob?.cancel()
-            pollJob = null
-            deviceEventPollJob?.cancel()
-            deviceEventPollJob = null
-            jitterBuffer.stop()
             runCatching { sendControlCommand(CONTROL_STOP_STREAM) }
-            gattClient.close()
-            remoteId = null
-            _connectedDeviceId.value = null
-            _connectionState.value = SensorConnectionState.DISCONNECTED
+            cleanupConnection(DisconnectReason.USER_REQUEST)
         }
 
         /** START_STREAM (0x01). No-op when not connected. */
@@ -191,6 +197,10 @@ class BleSensorProvider
 
         // --- Scan + connect -------------------------------------------------
 
+        /**
+         * Umbauplan Phase 2.3: der Scan wird bei Erfolg, Fehler UND
+         * Cancellation/Timeout immer mit stopScan() beendet.
+         */
         private suspend fun scanForFlowRep(adapter: BluetoothAdapter): BluetoothDevice? {
             val scanner = adapter.bluetoothLeScanner ?: return null
             val filters = DEVICE_NAMES.map { ScanFilter.Builder().setDeviceName(it).build() }
@@ -208,10 +218,15 @@ class BleSensorProvider
                                 result: ScanResult,
                             ) {
                                 val name = result.device.name ?: return
-                                if (isFlowRepDeviceName(name) && cont.isActive) cont.resume(result.device)
+                                if (isFlowRepDeviceName(name) && cont.isActive) {
+                                    // Phase 2.3: scan ends on success.
+                                    runCatching { scanner.stopScan(this) }
+                                    cont.resume(result.device)
+                                }
                             }
 
                             override fun onScanFailed(errorCode: Int) {
+                                runCatching { scanner.stopScan(this) }
                                 if (cont.isActive) cont.resume(null)
                             }
                         }
@@ -244,19 +259,25 @@ class BleSensorProvider
                         }
 
                         is GattEvent.Disconnected -> {
-                            mtuTimeoutJob?.cancel()
-                            mtuTimeoutJob = null
+                            // P0-Fix: Remote-Disconnect raeumt ALLES auf
+                            // (Jobs, Jitterbuffer, GATT, Zustaende).
                             if (cont.isActive) {
                                 cont.resume(AppResult.failure(AppError.Unknown("Verbindung getrennt")))
                             }
-                            _connectedDeviceId.value = null
-                            if (_connectionState.value != SensorConnectionState.DISCONNECTED) {
-                                _connectionState.value = SensorConnectionState.DISCONNECTED
-                            }
+                            scope.launch { cleanupConnection(DisconnectReason.REMOTE_DISCONNECT) }
                         }
 
                         is GattEvent.Notification -> {
                             onDeviceEventBytes(event.value)
+                        }
+
+                        // Umbauplan Phase 2.1: GATT-Operation haengt (kein
+                        // Callback) - Verbindung als fehlerhaft behandeln.
+                        is GattEvent.OperationTimedOut -> {
+                            if (cont.isActive) {
+                                cont.resume(AppResult.failure(AppError.Unknown("GATT-Timeout")))
+                            }
+                            scope.launch { cleanupConnection(DisconnectReason.GATT_TIMEOUT) }
                         }
                     }
                 }
@@ -269,6 +290,8 @@ class BleSensorProvider
          * [MtuNegotiationSession] entscheidet pro Callback/Timeout, hier wird
          * nur ausgefuehrt. Samsung-Quirk (silent failure) wird durch den
          * Timeout abgefangen: kein `onMtuChanged` -> Retry, nie Endlos-Warten.
+         * Umbauplan Phase 2.1: der GattClient-Operationstimeout gibt die
+         * Queue zusaetzlich frei, falls gar kein Callback kommt.
          */
         private fun runMtuNegotiation() {
             mtuTimeoutJob?.cancel()
@@ -307,6 +330,7 @@ class BleSensorProvider
             val service = gattClient.getService(SERVICE_UUID)
             if (service == null) {
                 if (cont.isActive) cont.resume(AppResult.failure(AppError.Unknown("Service fee0 nicht gefunden")))
+                scope.launch { cleanupConnection(DisconnectReason.SERVICE_MISSING) }
                 return
             }
             sensorDataChar = service.getCharacteristic(SENSOR_DATA_UUID)
@@ -315,6 +339,7 @@ class BleSensorProvider
             deviceEventChar = service.getCharacteristic(DEVICE_EVENT_UUID)
             if (sensorDataChar == null || controlPointChar == null) {
                 if (cont.isActive) cont.resume(AppResult.failure(AppError.Unknown("GATT-Charakteristik fehlt")))
+                scope.launch { cleanupConnection(DisconnectReason.CHARACTERISTIC_MISSING) }
                 return
             }
             lastDeviceEventSeq = 0
@@ -322,7 +347,7 @@ class BleSensorProvider
             gattClient.requestHighConnectionPriority()
             _connectionState.value = SensorConnectionState.CONNECTED
             if (cont.isActive) cont.resume(AppResult.success(Unit))
-            // Firmware auto-starts streaming in onConnect; delay the polling
+            // Firmware auto-starts streaming in connect; delay the polling
             // start so the first reads don't pull stale data into the baseline.
             scope.launch {
                 delay(FIRMWARE_STREAM_DELAY_MS)
@@ -335,6 +360,7 @@ class BleSensorProvider
         private fun startPolling() {
             pollJob?.cancel()
             dedupTracker.reset()
+            consecutiveProtocolErrors = 0
             jitterBuffer.reset()
             jitterBuffer.start()
             _connectionState.value = SensorConnectionState.STREAMING
@@ -348,13 +374,35 @@ class BleSensorProvider
                                 bytes.size != BleProtocolParser.V2_TOTAL_BYTES
                             ) {
                                 parseErrors++
+                                updateHealth()
                                 continue
                             }
                             val batchTimestamp = BleProtocolParser.timestampOf(bytes)
-                            if (dedupTracker.shouldSkip(batchTimestamp)) continue
+                            if (dedupTracker.shouldSkip(batchTimestamp)) {
+                                updateHealth()
+                                continue
+                            }
                             val samples = BleProtocolParser.parseBatch(bytes)
+                            consecutiveProtocolErrors = 0
                             receivedBatches++
                             jitterBuffer.addBatch(samples)
+                            updateHealth()
+                        } catch (e: BleProtocolException) {
+                            // Umbauplan Phase 2.4: unbekannte Versionen oder
+                            // kaputte Pakete sind Sensorfehler - bei einer
+                            // Serie davon ist die Verbindung unbrauchbar.
+                            parseErrors++
+                            consecutiveProtocolErrors++
+                            if (consecutiveProtocolErrors >= MAX_CONSECUTIVE_PROTOCOL_ERRORS) {
+                                Log.w(
+                                    "BleSensorProvider",
+                                    "Zu viele Protokollfehler, Verbindung wird beendet",
+                                )
+                                scope.launch { cleanupConnection(DisconnectReason.PROTOCOL_ERROR) }
+                                return@launch
+                            }
+                            updateHealth()
+                            delay(POLL_ERROR_BACKOFF_MS)
                         } catch (e: Exception) {
                             // Transient GATT errors are expected in a tight read
                             // loop; back off briefly instead of killing the stream.
@@ -406,6 +454,64 @@ class BleSensorProvider
             gattClient.write(ch, byteArrayOf(command.toByte()))
         }
 
+        // --- Cleanup (Umbauplan Phase 2.2) -----------------------------------
+
+        /** Warum die Verbindung beendet wurde (zentraler Cleanup). */
+        enum class DisconnectReason {
+            USER_REQUEST,
+            REMOTE_DISCONNECT,
+            SCAN_FAILED,
+            CONNECT_FAILED,
+            SERVICE_MISSING,
+            CHARACTERISTIC_MISSING,
+            GATT_TIMEOUT,
+            PROTOCOL_ERROR,
+        }
+
+        /**
+         * Umbauplan Phase 2.2: EINE zentrale Cleanup-Funktion fuer alle
+         * Fehler- und Endpfade. Idempotent; darf aus jedem Zustand laufen.
+         * Setzt garantiert Jobs, Queue, Buffer, Characteristics, GATT,
+         * Device-ID und den oeffentlichen Zustand zurueck.
+         */
+        private suspend fun cleanupConnection(reason: DisconnectReason) {
+            pollJob?.cancel()
+            pollJob = null
+            deviceEventPollJob?.cancel()
+            deviceEventPollJob = null
+            mtuTimeoutJob?.cancel()
+            mtuTimeoutJob = null
+            consecutiveProtocolErrors = 0
+            sensorDataChar = null
+            controlPointChar = null
+            batteryChar = null
+            deviceEventChar = null
+            lastDeviceEventSeq = 0
+            jitterBuffer.stop()
+            dedupTracker.reset()
+            gattClient.close()
+            remoteId = null
+            _connectedDeviceId.value = null
+            _connectionState.value = SensorConnectionState.DISCONNECTED
+            updateHealth()
+            Log.d("BleSensorProvider", "cleanupConnection($reason)")
+        }
+
+        /** Umbauplan Phase 3: Paketverlust und Gaps als Health-Flow. */
+        private fun updateHealth() {
+            _health.value =
+                SensorHealth(
+                    connectionState = _connectionState.value,
+                    receivedBatches = receivedBatches.toLong(),
+                    duplicateBatches = dedupTracker.duplicateSkips.toLong(),
+                    missedBatches = dedupTracker.estimatedMissedBatches.toLong(),
+                    parseErrors = parseErrors.toLong(),
+                    jitterBufferDrops = jitterBuffer.droppedFrames.toLong(),
+                    largestGapMs = dedupTracker.largestGapMs,
+                    recentPacketLossRate = dedupTracker.recentPacketLossRate,
+                )
+        }
+
         // --- Permissions + adapter -------------------------------------------
 
         private fun hasBlePermissions(): Boolean {
@@ -454,6 +560,9 @@ class BleSensorProvider
 
             /** MTU-Timeout: kein onMtuChanged -> Retry (Samsung silent failure). */
             private const val MTU_TIMEOUT_MS = 1_000L
+
+            /** Serie von Protokollfehlern, nach der die Verbindung endet. */
+            private const val MAX_CONSECUTIVE_PROTOCOL_ERRORS = 10
         }
     }
 
@@ -476,18 +585,56 @@ internal sealed interface GattEvent {
         val characteristicUuid: UUID,
         val value: ByteArray,
     ) : GattEvent
+
+    /** Umbauplan Phase 2.1: eine Operation hat nie einen Callback geliefert. */
+    data object OperationTimedOut : GattEvent
+}
+
+/** Umbauplan Phase 2.1: Typ einer serialisierten GATT-Operation. */
+internal enum class GattOperationType {
+    MTU,
+    DISCOVER,
+    DESCRIPTOR,
+    READ,
+    WRITE,
 }
 
 /**
  * Serialized wrapper around [BluetoothGatt] (the Android BLE stack allows one
  * outstanding operation at a time). Operations suspend until the matching
  * callback arrives; a FIFO queue paces them.
+ *
+ * Umbauplan Phase 2.1:
+ * - Jede Operation hat eine ID und einen Typ.
+ * - Android-Rueckgabewerte werden geprueft (false = sofort opDone).
+ * - Pro Operation laeuft ein Timeout; danach wird die Queue freigegeben.
+ * - Spaete Callbacks fremder Typen werden in [opDone] ignoriert.
+ * - Kein frei erzeugter CoroutineScope pro Operation; ein Scope fuer alles.
+ * - Haengt ein READ oder DISCOVER endgueltig (kein Callback), meldet der
+ *   Client [GattEvent.OperationTimedOut]; der Provider raeumt dann die
+ *   Verbindung zentral auf.
  */
 @SuppressLint("MissingPermission")
 internal class BleGattClient {
     var onEvent: (GattEvent) -> Unit = {}
 
     private var gatt: BluetoothGatt? = null
+
+    private var nextOpId = 0L
+
+    private data class ActiveOp(
+        val id: Long,
+        val type: GattOperationType,
+    )
+
+    private val activeOp = AtomicReference<ActiveOp?>(null)
+
+    private val scope =
+        CoroutineScope(
+            kotlinx.coroutines.CoroutineName("BleGattClient") +
+                kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.Dispatchers.Default,
+        )
 
     private data class ReadRequest(
         val characteristic: BluetoothGattCharacteristic,
@@ -501,7 +648,8 @@ internal class BleGattClient {
     private val pendingRead = AtomicReference<ReadRequest?>(null)
     private val pendingWrite = AtomicReference<WriteRequest?>(null)
     private val opInFlight = AtomicBoolean(false)
-    private val opQueue = java.util.concurrent.ConcurrentLinkedQueue<suspend () -> Unit>()
+    private val opQueue =
+        java.util.concurrent.ConcurrentLinkedQueue<Pair<GattOperationType, suspend () -> Unit>>()
 
     val isConnected: Boolean
         get() = gatt != null
@@ -525,7 +673,7 @@ internal class BleGattClient {
                 status: Int,
             ) {
                 onEvent(GattEvent.MtuChanged(mtu, status))
-                opDone()
+                opDone(GattOperationType.MTU)
             }
 
             override fun onServicesDiscovered(
@@ -533,7 +681,7 @@ internal class BleGattClient {
                 status: Int,
             ) {
                 onEvent(GattEvent.ServicesDiscovered)
-                opDone()
+                opDone(GattOperationType.DISCOVER)
             }
 
             override fun onCharacteristicRead(
@@ -546,7 +694,7 @@ internal class BleGattClient {
                 if (req != null && req.characteristic.uuid == characteristic.uuid && req.cont.isActive) {
                     req.cont.resume(if (status == BluetoothGatt.GATT_SUCCESS) value else null)
                 }
-                opDone()
+                opDone(GattOperationType.READ)
             }
 
             @Deprecated("API < 33")
@@ -560,7 +708,7 @@ internal class BleGattClient {
                     @Suppress("DEPRECATION")
                     req.cont.resume(if (status == BluetoothGatt.GATT_SUCCESS) characteristic.value else null)
                 }
-                opDone()
+                opDone(GattOperationType.READ)
             }
 
             override fun onCharacteristicWrite(
@@ -570,7 +718,7 @@ internal class BleGattClient {
             ) {
                 val req = pendingWrite.getAndSet(null)
                 if (req != null && req.cont.isActive) req.cont.resume(status == BluetoothGatt.GATT_SUCCESS)
-                opDone()
+                opDone(GattOperationType.WRITE)
             }
 
             override fun onDescriptorWrite(
@@ -578,7 +726,7 @@ internal class BleGattClient {
                 descriptor: BluetoothGattDescriptor,
                 status: Int,
             ) {
-                opDone()
+                opDone(GattOperationType.DESCRIPTOR)
             }
 
             override fun onCharacteristicChanged(
@@ -606,9 +754,14 @@ internal class BleGattClient {
         gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
     }
 
+    /**
+     * Umbauplan Phase 2.2: zentraler Cleanup. Beendet Pending-Reads/Writes,
+     * leert die Queue, schliesst GATT und setzt alle Zustands-Bits zurueck.
+     */
     fun close() {
         gatt?.close()
         gatt = null
+        activeOp.set(null)
         opInFlight.set(false)
         opQueue.clear()
         pendingRead.getAndSet(null)?.cont?.resume(null)
@@ -618,11 +771,19 @@ internal class BleGattClient {
     fun getService(uuid: UUID) = gatt?.getService(uuid)
 
     fun requestMtu(mtu: Int) {
-        enqueue { gatt?.requestMtu(mtu) }
+        enqueue(GattOperationType.MTU) {
+            if (gatt?.requestMtu(mtu) != true) opDone(GattOperationType.MTU)
+        }
     }
 
     fun discoverServices() {
-        enqueue { gatt?.discoverServices() }
+        enqueue(GattOperationType.DISCOVER) {
+            if (gatt?.discoverServices() != true) {
+                // Android hat den Aufruf abgelehnt: es kommt kein Callback.
+                opDone(GattOperationType.DISCOVER)
+                onEvent(GattEvent.OperationTimedOut)
+            }
+        }
     }
 
     fun requestHighConnectionPriority() {
@@ -635,15 +796,18 @@ internal class BleGattClient {
         runCatching {
             g.setCharacteristicNotification(characteristic, true)
             val cccd = characteristic.getDescriptor(CCCD_UUID) ?: return
-            enqueue {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                    g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                    @Suppress("DEPRECATION")
-                    g.writeDescriptor(cccd)
-                }
+            enqueue(GattOperationType.DESCRIPTOR) {
+                val ok =
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
+                            BluetoothStatusCodes.SUCCESS
+                    } else {
+                        @Suppress("DEPRECATION")
+                        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                        @Suppress("DEPRECATION")
+                        g.writeDescriptor(cccd)
+                    }
+                if (!ok) opDone(GattOperationType.DESCRIPTOR)
             }
         }
     }
@@ -651,8 +815,8 @@ internal class BleGattClient {
     suspend fun read(characteristic: BluetoothGattCharacteristic?): ByteArray? {
         val g = gatt ?: return null
         val ch = characteristic ?: return null
-        return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            enqueue {
+        return suspendCancellableCoroutine { cont ->
+            enqueue(GattOperationType.READ) {
                 pendingRead.set(ReadRequest(ch, cont))
                 val initiated: Boolean =
                     @Suppress("DEPRECATION")
@@ -660,7 +824,7 @@ internal class BleGattClient {
                 if (!initiated) {
                     pendingRead.set(null)
                     if (cont.isActive) cont.resume(null)
-                    opDone()
+                    opDone(GattOperationType.READ)
                 }
             }
         }
@@ -672,8 +836,8 @@ internal class BleGattClient {
     ): Boolean {
         val g = gatt ?: return false
         val ch = characteristic ?: return false
-        return kotlinx.coroutines.suspendCancellableCoroutine { cont ->
-            enqueue {
+        return suspendCancellableCoroutine { cont ->
+            enqueue(GattOperationType.WRITE) {
                 pendingWrite.set(WriteRequest(cont))
                 val ok =
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -688,33 +852,80 @@ internal class BleGattClient {
                 if (!ok) {
                     pendingWrite.set(null)
                     if (cont.isActive) cont.resume(false)
-                    opDone()
+                    opDone(GattOperationType.WRITE)
                 }
             }
         }
     }
 
-    private fun enqueue(op: suspend () -> Unit) {
-        opQueue.add(op)
+    private fun enqueue(
+        type: GattOperationType,
+        op: suspend () -> Unit,
+    ) {
+        opQueue.add(type to op)
         drain()
     }
 
     private fun drain() {
         if (!opInFlight.compareAndSet(false, true)) return
-        val next = opQueue.poll()
-        if (next == null) {
-            opInFlight.set(false)
-            return
+        val (type, op) =
+            opQueue.poll() ?: run {
+                opInFlight.set(false)
+                return
+            }
+        scope.launch {
+            val opId = ++nextOpId
+            activeOp.set(ActiveOp(opId, type))
+            // Umbauplan Phase 2.1: Timeout pro Operation. Feuert der
+            // Callback nicht, wird die Queue freigegeben; READ/DISCOVER
+            // melden den Haenger an den Provider (zentraler Cleanup).
+            val timeoutJob =
+                scope.launch {
+                    delay(OPERATION_TIMEOUT_MS)
+                    if (activeOp.get()?.id == opId) {
+                        when (type) {
+                            GattOperationType.READ -> pendingRead.getAndSet(null)?.cont?.resume(null)
+                            GattOperationType.WRITE -> pendingWrite.getAndSet(null)?.cont?.resume(false)
+                            else -> Unit
+                        }
+                        opDone(opId)
+                        if (type == GattOperationType.READ || type == GattOperationType.DISCOVER) {
+                            onEvent(GattEvent.OperationTimedOut)
+                        }
+                    }
+                }
+            try {
+                op()
+            } finally {
+                timeoutJob.cancel()
+            }
         }
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Default).launch { next() }
     }
 
-    private fun opDone() {
+    /**
+     * Umbauplan Phase 2.1: spaete Callbacks alter Operationen duerfen weder
+     * die Continuation einer neuen Operation bedienen noch deren Queue-Sperre
+     * freigeben: freigegeben wird nur, wenn der Callback-Typ zur aktuell
+     * aktiven Operation passt.
+     */
+    private fun opDone(type: GattOperationType) {
+        val active = activeOp.get() ?: return
+        if (active.type != type) return
+        opDone(active.id)
+    }
+
+    private fun opDone(opId: Long) {
+        val active = activeOp.get() ?: return
+        if (active.id != opId) return
+        if (!activeOp.compareAndSet(active, null)) return
         opInFlight.set(false)
         drain()
     }
 
     companion object {
         val CCCD_UUID: UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+
+        /** Kein GATT-Aufruf darf die Queue dauerhaft blockieren. */
+        const val OPERATION_TIMEOUT_MS = 3_000L
     }
 }

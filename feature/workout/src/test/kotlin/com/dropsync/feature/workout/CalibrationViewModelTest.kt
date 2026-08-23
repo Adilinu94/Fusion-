@@ -20,16 +20,14 @@ import org.junit.Before
 import org.junit.Test
 
 /**
- * Punkt 2a des Rep-Zaehlungs-Umbauplans: CalibrationViewModel.confirmAndSave()
- * muss signalPeakLevel = theta + expectedProminence (SPK) und noisePeakLevel =
- * theta * 0.5 (NPK) speichern - nicht theta/baseline direkt.
- *
- * theta selbst ist nur im (privaten) Controller sichtbar. Die Formel wird
- * deshalb ueber die Invariante geprueft, die genau aus ihr folgt:
- *   SPK - prominence == 2 * NPK   (weil SPK = theta + prominence,
- *                                   NPK = theta * 0.5)
- * Vor dem Fix gilt stattdessen SPK = theta und NPK = baseline (die
- * Rest-Statistik, hier ~9.81), was die Invariante verletzt.
+ * Umbauplan Phase 1.4: CalibrationViewModel.confirmAndSave() muss den
+ * kalibrierten Threshold theta DIREKT persistieren (kein verlustbehafteter
+ * SPK/NPK-Umweg). Nach dem Speichern gilt:
+ *   profile.detectionThreshold > 0
+ *   profile.noiseFloor >= 0
+ *   profile.expectedDurationMs > 0
+ *   profile.engineVersion == V2_RELIABLE
+ *   profile.signalKind == SIGNED_GYRO_PROJECTION
  *
  * Der synthetische Wizard-Durchlauf (REST -> SINGLE_REP -> KNOWN_SET ->
  * SLOW_SET -> REVIEW) ist in CalibrationControllerWizardTest (:domain:sensor)
@@ -153,7 +151,7 @@ class CalibrationViewModelTest {
     }
 
     @Test
-    fun `confirmAndSave speichert SPK als theta plus Prominenz und NPK als halbes theta`() =
+    fun `confirmAndSave speichert den kalibrierten Threshold direkt`() =
         runTest(dispatcher) {
             withViewModel { vm ->
                 driveWizard(vm)
@@ -165,18 +163,28 @@ class CalibrationViewModelTest {
                 assertEquals(1, calibrationProfileRepository.saved.size)
                 val profile = calibrationProfileRepository.saved.single()
 
-                // SPK = theta + expectedProminence, NPK = theta * 0.5
-                // => SPK - expectedProminence == 2 * NPK.
-                val theta = profile.signalPeakLevel - profile.expectedProminence
-                assertEquals(
-                    "SPK - Prominenz muss 2 * NPK ergeben (SPK=theta+prom, NPK=theta*0.5)",
-                    2.0 * profile.noisePeakLevel,
-                    theta,
-                    1e-6,
+                // Umbauplan Phase 1.4: theta direkt persistiert.
+                assertTrue(
+                    "detectionThreshold muss der kalibrierte positive Threshold sein",
+                    profile.detectionThreshold > 0.0,
                 )
                 assertTrue(
-                    "SPK muss groesser als NPK sein",
-                    profile.signalPeakLevel > profile.noisePeakLevel,
+                    "noiseFloor muss nichtnegativ sein",
+                    profile.noiseFloor >= 0.0,
+                )
+                assertTrue(
+                    "expectedDurationMs muss positiv sein",
+                    profile.expectedDurationMs > 0.0,
+                )
+                assertEquals(
+                    "nur GP-Kalibrierung ist freigegeben",
+                    com.dropsync.domain.sensor.RepSignalKind.SIGNED_GYRO_PROJECTION,
+                    profile.signalKind,
+                )
+                assertEquals(
+                    "neue Profile tragen die zuverlaessige Engine-Version",
+                    com.dropsync.domain.sensor.RepEngineVersion.V2_RELIABLE,
+                    profile.engineVersion,
                 )
             }
         }

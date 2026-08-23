@@ -12,6 +12,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Lint-Phase 11: VIBRATE fuer den Timer-Haptikadapter (Schutzklasse
+         normal, keine Laufzeitabfrage noetig). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <application
         android:name=".DropSyncApplication"
         android:allowBackup="false"

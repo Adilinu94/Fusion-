@@ -72,4 +72,25 @@ class BleProtocolParserTest {
         val parsed = BleProtocolParser.parseBatch(bytes)
         assertTrue(parsed[0].timestampMs > 0)
     }
+
+    // --- Umbauplan Phase 2.4: Protokollversion ------------------------------
+
+    @Test
+    fun `unknown v2 version byte throws`() {
+        val samples = (0 until 4).map(::sample)
+        val bytes = BleProtocolParser.encodeBatch(1000, samples, protocolVersion = 2)
+        bytes[4] = 7 // unbekannte Protokollversion
+        assertThrows(BleProtocolException::class.java) {
+            BleProtocolParser.parseBatch(bytes)
+        }
+    }
+
+    @Test
+    fun `v2 with version byte two parses normally`() {
+        val samples = (0 until 4).map(::sample)
+        val bytes = BleProtocolParser.encodeBatch(1000, samples, protocolVersion = 2)
+        bytes[4] = BleProtocolParser.PROTOCOL_VERSION_V2.toByte()
+        val parsed = BleProtocolParser.parseBatch(bytes)
+        assertEquals(4, parsed.size)
+    }
 }
