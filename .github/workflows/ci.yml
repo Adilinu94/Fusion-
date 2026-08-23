@@ -43,7 +43,12 @@ jobs:
             SDKMANAGER="sdkmanager"
           fi
           yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "platforms;android-37" "build-tools;37.0.0" "platform-tools"
+          # Paketname ist "platforms;android-37.0", nicht "...;android-37" --
+          # seit API 36 tragen die Platform-Pakete eine Minor-Version. Ohne den
+          # Punkt meldet sdkmanager nur "Failed to find package" (Warning) und
+          # bricht mit Exit-Code 1 ab; die CI war seit Einfuehrung dieses
+          # Schritts durchgaengig rot.
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
 
       # Reihenfolge bewusst wie im README (Build-Abschnitt): test, dann
       # spotlessCheck, dann assembleDebug. Bricht beim ersten roten Gate ab.
