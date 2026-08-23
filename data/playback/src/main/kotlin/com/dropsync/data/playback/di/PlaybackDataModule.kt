@@ -83,7 +83,7 @@ object PlaybackDataModule {
      */
     @Provides
     @Singleton
-    fun provideAudioClock(): Media3AudioClock = Media3AudioClock()
+    fun provideAudioClock(routeProfiles: RouteProfileRepository): Media3AudioClock = Media3AudioClock(routeProfiles)
 
     /** Rest-Ducking auf dem Preamp-Knoten (Design Phase 7). */
     @Provides

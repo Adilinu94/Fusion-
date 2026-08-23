@@ -15,11 +15,13 @@ data class ExerciseEngineConfig(
     val oneEuroMinCutoff: Double = 1.0,
     val oneEuroBeta: Double = 0.007,
     val envelopeCutoffHz: Double = 3.0,
-    val thresholdFactor: Double = 0.25,
     val templateThreshold: Double = 0.7,
     val minQualityScore: Double = 0.55,
     val expectedProminence: Double = 50.0,
-    val expectedDurationSamples: Double = 50.0,
+    /** Umbauplan Phase 1.4: calibrated detection threshold (deg/s). */
+    val detectionThreshold: Double = 32.5,
+    /** Umbauplan Phase 4: expected rep duration in milliseconds. */
+    val expectedDurationMs: Double = 1_000.0,
     val hasValidCalibration: Boolean = false,
     /** Punkt 4: Accel-Kanal + Voting aktiv (Feature-Flag fuer den Rollout). */
     val accelEnabled: Boolean = false,
@@ -32,6 +34,9 @@ data class ExerciseEngineConfig(
         require(rotationAxis.size == 3) { "rotationAxis must have 3 components" }
         require(gyroBias.size == 3) { "gyroBias must have 3 components" }
         require(templatePoolSize >= 1) { "templatePoolSize must be >= 1" }
+        require(detectionThreshold.isFinite() && detectionThreshold >= 0.0) {
+            "detectionThreshold must be finite and >= 0"
+        }
     }
 }
 
@@ -42,6 +47,7 @@ data class RepEvent(
     val correlation: Double?,
     val prominence: Double,
     val durationSamples: Int,
+    val durationMs: Long,
     val timestampMs: Long,
 )
 
@@ -52,13 +58,13 @@ data class EngineFrameResult(
 )
 
 /**
- * New orchestrator of the full rep-detection pipeline (port of
+ * Orchestrator of the full rep-detection pipeline (port of
  * exercise_engine.dart): SignalChain -> RepCounter, plus state and event
  * emission. Stateful - call [reset] on session change.
  *
- * SHADOW ONLY (design doc Phase 4 step 6): runs alongside the legacy path
- * once a calibration profile exists; never counts live until its own
- * shadow DoD (section 11b) is met.
+ * Umbauplan Phase 1: the pipeline consumes the calibrated threshold
+ * directly ([ExerciseEngineConfig.detectionThreshold]) so calibration and
+ * live detection share the exact same parameter.
  */
 class ExerciseEnginePipeline(
     val config: ExerciseEngineConfig,
@@ -78,7 +84,7 @@ class ExerciseEnginePipeline(
     private val qualityScorer =
         QualityScorer(
             expectedProminence = config.expectedProminence,
-            expectedDurationSamples = config.expectedDurationSamples,
+            expectedDurationMs = config.expectedDurationMs,
             minScore = config.minQualityScore,
         )
 
@@ -93,7 +99,9 @@ class ExerciseEnginePipeline(
             peakDetector =
                 PeakDetector(
                     sampleRateHz = config.sampleRateHz,
-                    thresholdFactor = config.thresholdFactor,
+                    threshold = config.detectionThreshold,
+                    refractoryMs = (config.expectedDurationMs * 0.3).toLong().coerceIn(100, 2_000),
+                    expectedDurationMs = config.expectedDurationMs,
                 ),
             templateMatcher = templateMatcher,
             phaseValidator = PhaseValidator(),
@@ -105,9 +113,7 @@ class ExerciseEnginePipeline(
                     // Konservative Levels: theta niedrig, Prominenz niedrig.
                     PeakDetector(
                         sampleRateHz = config.sampleRateHz,
-                        initialSpk = 0.5,
-                        initialNpk = 0.05,
-                        thresholdFactor = 0.25,
+                        threshold = 0.1625,
                         prominenceRatio = 0.2,
                         signal = { it.smoothedAccel },
                     )
@@ -127,6 +133,13 @@ class ExerciseEnginePipeline(
     var framesRejected = 0
         private set
 
+    /** Umbauplan Phase 2.6: Anzahl grosser Zeitluecken im aktuellen Set. */
+    var largeGapCount = 0
+        private set
+
+    /** Umbauplan Phase 2.6: letzter Sample-Timestamp (Gap-Erkennung). */
+    private var lastSampleTimestampMs: Long? = null
+
     val isSettled: Boolean
         get() = signalChain.isSettled
     val hasTemplate: Boolean
@@ -142,6 +155,11 @@ class ExerciseEnginePipeline(
         ay: Double = 0.0,
         az: Double = 0.0,
     ): EngineFrameResult {
+        val last = lastSampleTimestampMs
+        if (last != null && timestampMs - last >= LARGE_GAP_MS) {
+            onLargeGap()
+        }
+        lastSampleTimestampMs = timestampMs
         val frame = signalChain.process(timestampMs, gx, gy, gz, ax, ay, az)
         if (!frame.isSettled) {
             framesRejected++
@@ -158,6 +176,7 @@ class ExerciseEnginePipeline(
                     correlation = repResult.correlation,
                     prominence = repResult.prominence ?: 0.0,
                     durationSamples = repResult.durationSamples ?: 0,
+                    durationMs = repResult.durationMs ?: 0,
                     timestampMs = frame.timestampMs,
                 ),
             )
@@ -165,8 +184,24 @@ class ExerciseEnginePipeline(
         return EngineFrameResult(frame = frame, repResult = repResult)
     }
 
+    /**
+     * Umbauplan Phase 2.6: bei einer grossen Zeitluecke (>= 150-250 ms)
+     * werden laufender Peak, Pending-Rep und Filterzustand verworfen und
+     * die Filter schwingen neu ein. Physische Zeit wird so nie komprimiert.
+     */
+    private fun onLargeGap() {
+        largeGapCount++
+        repCounter.abortPending()
+        signalChain.reset()
+    }
+
     /** ExerciseEngine contract: feed an already-processed frame. */
     override fun processFrame(frame: ProcessedFrame) {
+        val last = lastSampleTimestampMs
+        if (last != null && frame.timestampMs - last >= LARGE_GAP_MS) {
+            onLargeGap()
+        }
+        lastSampleTimestampMs = frame.timestampMs
         if (!frame.isSettled) {
             framesRejected++
             return
@@ -182,6 +217,7 @@ class ExerciseEnginePipeline(
                     correlation = repResult.correlation,
                     prominence = repResult.prominence ?: 0.0,
                     durationSamples = repResult.durationSamples ?: 0,
+                    durationMs = repResult.durationMs ?: 0,
                     timestampMs = frame.timestampMs,
                 ),
             )
@@ -191,12 +227,11 @@ class ExerciseEnginePipeline(
     /** Sets the rep template (from the calibration profile). */
     fun setTemplate(template: List<Double>) = repCounter.setTemplate(template)
 
-    /** Feeds the calibration levels (SPK/NPK) into the peak detector. */
-    fun updateLevels(
-        spk: Double? = null,
-        npk: Double? = null,
-        expectedDurationSamples: Double? = null,
-    ) = repCounter.updateLevels(spk, npk, expectedDurationSamples)
+    /** Umbauplan Phase 1.4: feeds the calibrated threshold directly. */
+    fun updateThreshold(
+        theta: Double,
+        expectedDurationMs: Double? = null,
+    ) = repCounter.updateThreshold(theta, expectedDurationMs)
 
     /** Adopts a new calibration axis + bias without resetting counts. */
     fun updateCalibration(
@@ -211,5 +246,12 @@ class ExerciseEnginePipeline(
         _repCount.value = 0
         framesProcessed = 0
         framesRejected = 0
+        largeGapCount = 0
+        lastSampleTimestampMs = null
+    }
+
+    companion object {
+        /** Umbauplan Phase 2.6: Luecke, ab der Zustand verworfen wird. */
+        const val LARGE_GAP_MS = 250L
     }
 }

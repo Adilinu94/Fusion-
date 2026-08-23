@@ -25,6 +25,12 @@ data class PlaybackState(
     val currentSongId: Long? = null,
     val positionMs: Long = 0,
     val durationMs: Long = 0,
+    /**
+     * Aktiver Tempo-Faktor der Wiedergabe (BPM-Lock/Tempo-Regler,
+     * 0.5..2.0; 1.0 = Originaltempo). Player-global fuer die laufende
+     * Session, gilt also auch nach Titelwechseln.
+     */
+    val playbackSpeed: Float = 1f,
     val shuffleEnabled: Boolean = false,
     val repeatMode: RepeatMode = RepeatMode.OFF,
     val queueSongIds: List<Long> = emptyList(),

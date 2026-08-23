@@ -24,12 +24,13 @@ import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.LibraryParams
 import androidx.media3.session.MediaSession
 import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
 import androidx.media3.session.SessionResult
 import com.dropsync.core.common.AppResult
+import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.data.audio.AudioPipeline
 import com.dropsync.data.audio.DspRenderersFactory
-import com.dropsync.data.audio.DspSettingsStore
 import com.dropsync.data.audio.OutputFormatInfo
 import com.dropsync.data.audio.SourceFormatInfo
 import com.dropsync.domain.library.LibraryBrowseRepository
@@ -45,7 +46,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -63,6 +64,7 @@ import javax.inject.Inject
  *   (Bauplan Abschnitt 4).
  */
 @AndroidEntryPoint
+@OptIn(UnstableApi::class)
 class PlaybackService : MediaLibraryService() {
     @Inject
     lateinit var audioPipeline: AudioPipeline
@@ -80,29 +82,25 @@ class PlaybackService : MediaLibraryService() {
     lateinit var playbackSettingsStore: PlaybackSettingsStore
 
     @Inject
-    lateinit var dspSettingsStore: DspSettingsStore
+    lateinit var audioClock: Media3AudioClock
 
     @Inject
-    lateinit var audioClock: Media3AudioClock
+    lateinit var dispatchers: DispatcherProvider
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
-    // Player-Zugriffe (Crossfade, BT-Resume) gehoeren auf den Main-Thread.
+    // Player-Zugriffe (Drop-Landung, BT-Resume) gehoeren auf den Main-Thread.
     private val mainScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
 
     private var player: ExoPlayer? = null
     private var session: MediaLibrarySession? = null
     private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
-    private var crossfadeController: CrossfadeController? = null
     private var audioDeviceCallback: AudioDeviceCallback? = null
     private var resumeOnBluetoothConnect = false
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        // Bit-Perfect (ADR-0009) entscheidet ueber den Sink-Aufbau und
-        // gilt deshalb ab Service-Start (kurzer, einmaliger Store-Read).
-        val bitPerfect = runBlocking { dspSettingsStore.config.first() }.bitPerfectEnabled
         val exoPlayer =
             ExoPlayer
                 .Builder(
@@ -110,7 +108,10 @@ class PlaybackService : MediaLibraryService() {
                     DspRenderersFactory(
                         this,
                         audioPipeline.audioProcessors(),
-                        floatOutput = !bitPerfect,
+                        // Standard: 16-Bit-Ausgabe, um CPU/Akku zu schonen.
+                        // Hi-Res/Bit-Perfect ist als Option spaeter wieder
+                        // aktivierbar, ist aber nicht der Workout-Standard.
+                        floatOutput = false,
                     ),
                 ).setAudioAttributes(
                     AudioAttributes
@@ -138,43 +139,14 @@ class PlaybackService : MediaLibraryService() {
                         libraryRepository = libraryRepository,
                         browseRepository = browseRepository,
                         labels = browseLabels(),
-                        onCrossfade = ::handleCrossfadeTo,
+                        ownPackageName = packageName,
+                        onPlaySongAt = ::handlePlaySongAt,
                     ),
                 ).build()
         // MusicFX (Plan Phase 4): Systemequalizer erhaelt die Session-ID;
         // ob er statt der internen Kette wirkt, steuert useSystemEffects.
         audioSessionId = exoPlayer.audioSessionId
         broadcastEffectSession(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
-        // Crossfade (ADR-0007): Dual-Player mit Equal-Power-Rampen; der
-        // Zweitspieler nimmt nie Audio Focus (der Hauptspieler haelt ihn).
-        val controller =
-            CrossfadeController(
-                mainPlayer = exoPlayer,
-                secondaryPlayerFactory = {
-                    ExoPlayer
-                        .Builder(this)
-                        .setAudioAttributes(
-                            AudioAttributes
-                                .Builder()
-                                .setUsage(C.USAGE_MEDIA)
-                                .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                                .build(),
-                            false,
-                        ).build()
-                },
-                scope = mainScope,
-            )
-        crossfadeController = controller
-        controller.start()
-        mainScope.launch {
-            audioPipeline.currentConfig.collect { config ->
-                // Nie bei Bit-Perfect ueberblenden (ADR-0009).
-                val seconds = if (config.bitPerfectEnabled) 0 else config.crossfadeSeconds
-                controller.setCrossfadeSeconds(seconds)
-                // Uebergangs-Preset (Mix-Uebergaenge-Plan Phase 2).
-                controller.setPreset(config.mixPreset)
-            }
-        }
         // Option "Bei BT-Verbindung automatisch fortsetzen" (Plan Phase 4).
         mainScope.launch {
             playbackSettingsStore.resumeOnBluetoothConnect.collect { enabled ->
@@ -210,8 +182,6 @@ class PlaybackService : MediaLibraryService() {
             getSystemService<AudioManager>()?.unregisterAudioDeviceCallback(callback)
         }
         audioDeviceCallback = null
-        crossfadeController?.release()
-        crossfadeController = null
         audioClock.detach()
         // Genau einmal freigeben (Abnahme Schritt 5).
         session?.release()
@@ -256,19 +226,21 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Empfaengt das Drop-Landungs-Kommando (Musik-Workout-Plan Phase 4):
-     * loest den Song auf und uebergibt ihn dem [CrossfadeController]. Der
-     * eigentliche Crossfade laeuft auf dem Main-Thread, weil er Player
-     * beruehrt.
+     * Empfaengt das Drop-Landungs-Kommando: loest den Song auf und wechselt
+     * auf dem einen sessionfuehrenden Player vorgespult. Der Session-Result
+     * wird erst nach der echten Ausfuehrung zurueckgegeben.
      */
-    private fun handleCrossfadeTo(
+    private suspend fun handlePlaySongAt(
         songId: Long,
         startPositionMs: Long,
     ) {
-        serviceScope.launch {
-            val song = (libraryRepository.getSong(songId) as? AppResult.Success)?.value ?: return@launch
-            val item = MediaItemFactory.fromSong(song)
-            mainScope.launch { crossfadeController?.crossfadeTo(item, startPositionMs) }
+        val song = (libraryRepository.getSong(songId) as? AppResult.Success)?.value ?: return
+        val item = MediaItemFactory.fromSong(song)
+        withContext(dispatchers.main) {
+            val current = player ?: return@withContext
+            current.setMediaItem(item, startPositionMs.coerceAtLeast(0))
+            current.prepare()
+            current.play()
         }
     }
 
@@ -288,14 +260,24 @@ class PlaybackService : MediaLibraryService() {
      * (Plan Phase 4): BT-Reconnect und Notification-Resume stellen Queue
      * und Position aus dem PlayerStateStore wieder her.
      */
+    @OptIn(UnstableApi::class)
     private class LibrarySessionCallback(
         private val scope: CoroutineScope,
         private val stateStore: PlayerStateStore,
         private val libraryRepository: LibraryRepository,
         private val browseRepository: LibraryBrowseRepository,
         private val labels: BrowseLabels,
-        private val onCrossfade: (Long, Long) -> Unit,
+        private val ownPackageName: String,
+        private val onPlaySongAt: suspend (Long, Long) -> Unit,
     ) : MediaLibrarySession.Callback {
+        /**
+         * Das interne Drop-Landungs-Kommando wird nur dem eigenen Package
+         * freigegeben; fremde Controller (Android Auto, BT) bekommen
+         * ausschliesslich die Standard-Browse- und Transportkommandos.
+         */
+        private fun isOwnPackage(controller: MediaSession.ControllerInfo): Boolean =
+            controller.packageName == ownPackageName
+
         /** Meldet das eigene Drop-Landungs-Kommando als verfuegbar an. */
         override fun onConnect(
             session: MediaSession,
@@ -304,11 +286,13 @@ class PlaybackService : MediaLibraryService() {
             val sessionCommands =
                 MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
                     .buildUpon()
-                    .add(SessionCommand(PlaybackCommands.ACTION_CROSSFADE_TO, Bundle.EMPTY))
-                    .build()
+            if (isOwnPackage(controller)) {
+                sessionCommands
+                    .add(SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY))
+            }
             return MediaSession.ConnectionResult
                 .AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(sessionCommands)
+                .setAvailableSessionCommands(sessionCommands.build())
                 .build()
         }
 
@@ -318,11 +302,23 @@ class PlaybackService : MediaLibraryService() {
             customCommand: SessionCommand,
             args: Bundle,
         ): ListenableFuture<SessionResult> {
-            if (customCommand.customAction == PlaybackCommands.ACTION_CROSSFADE_TO) {
-                val songId = args.getLong(PlaybackCommands.ARG_SONG_ID, -1L)
-                val startPositionMs = args.getLong(PlaybackCommands.ARG_START_POSITION_MS, 0L)
-                if (songId >= 0) onCrossfade(songId, startPositionMs)
-                return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+            when (customCommand.customAction) {
+                PlaybackCommands.ACTION_PLAY_SONG_AT -> {
+                    if (!isOwnPackage(controller)) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                    }
+                    val songId = args.getLong(PlaybackCommands.ARG_SONG_ID, -1L)
+                    val startPositionMs = args.getLong(PlaybackCommands.ARG_START_POSITION_MS, 0L)
+                    if (songId < 0) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    }
+                    // Erst zurueckmelden, wenn die Operation wirklich
+                    // ausgefuehrt wurde.
+                    return scope.future {
+                        onPlaySongAt(songId, startPositionMs)
+                        SessionResult(SessionResult.RESULT_SUCCESS)
+                    }
+                }
             }
             return super.onCustomCommand(session, controller, customCommand, args)
         }

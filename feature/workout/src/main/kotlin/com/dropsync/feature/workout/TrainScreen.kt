@@ -6,6 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -13,11 +14,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
@@ -38,16 +44,26 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.dropsync.core.designsystem.component.BrandButtonPrimary
+import com.dropsync.core.designsystem.component.BrandButtonGhost
+import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
+import com.dropsync.core.designsystem.component.FlowRepSectionHeader
+import com.dropsync.core.designsystem.component.FlowRepSurface
+import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SignalQuality
 import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.ExerciseInfo
-import com.dropsync.feature.workout.TrainViewModel.SetPhase
 import java.util.Locale
 
 /**
@@ -79,8 +95,20 @@ fun TrainScreen(
     val countdownSeconds by viewModel.countdownSeconds.collectAsStateWithLifecycle()
     val liveCountedReps by viewModel.liveCountedReps.collectAsStateWithLifecycle()
     val hasCalibration by viewModel.hasCalibration.collectAsStateWithLifecycle()
+    val signalQuality by viewModel.signalQuality.collectAsStateWithLifecycle()
+    // Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): Health-Connect-Zustand.
+    val heartRateAvailability by viewModel.heartRateAvailability.collectAsStateWithLifecycle()
+    val heartRateSample by viewModel.heartRateSample.collectAsStateWithLifecycle()
 
     var showCreateDialog by remember { mutableStateOf(false) }
+
+    // Health-Connect-Berechtigung (Plan 3.2): der generische Contract kommt
+    // injiziert aus :data:health (Hilt-Qualifier); das Feature kennt kein
+    // SDK-Typ.
+    val healthPermissionLauncher =
+        rememberLauncherForActivityResult(viewModel.healthPermissionContract) {
+            viewModel.refreshHeartRate()
+        }
 
     // POST_NOTIFICATIONS runtime request (Phase 3 step 3). Denied -> the
     // foreground service keeps running and cues still fire (Xiaomi fallback).
@@ -106,10 +134,14 @@ fun TrainScreen(
         modifier =
             modifier
                 .fillMaxSize()
-                .padding(top = contentPadding.calculateTopPadding()),
+                .verticalScroll(rememberScrollState())
+                .padding(
+                    top = contentPadding.calculateTopPadding() + 8.dp,
+                    bottom = contentPadding.calculateBottomPadding() + 24.dp,
+                ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // Uebungs-Chips + "Neue Uebung"
+        // Übungs-Chips + "Neue Übung"
         ExerciseChipRow(
             exercises = exercises,
             selectedId = selectedExercise?.id,
@@ -117,30 +149,37 @@ fun TrainScreen(
             onCreateNew = { showCreateDialog = true },
         )
 
-        // FlowRep-Chip: Verbinden / Status / Kalibrieren (Phase 4).
-        SensorStatusCard(
-            connection = sensorConnection,
-            deviceId = connectedDeviceId,
-            sensorError = sensorError,
-            selectedExerciseId = selectedExercise?.id,
-            setPhase = setPhase,
-            countdownSeconds = countdownSeconds,
-            liveCountedReps = liveCountedReps,
-            hasCalibration = hasCalibration,
-            onConnect = { viewModel.connectSensor() },
-            onDisconnect = { viewModel.disconnectSensor() },
-            onOpenCalibration = onOpenCalibration,
-            onStartSet = { viewModel.startCountedSet() },
-            onStopSet = { viewModel.stopCountedSet() },
-            modifier = Modifier.padding(horizontal = 16.dp),
-        )
-
-        // Gewicht und Reps
-        Card(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            Column(modifier = Modifier.padding(16.dp)) {
+        val restActive =
+            timerState.status == TimerStatus.PREPARING ||
+                timerState.status == TimerStatus.RUNNING || timerState.status == TimerStatus.PAUSED
+        if (restActive) {
+            RestConsole(
+                remainingMs = timerState.remainingMs,
+                onAddTime = { viewModel.addRestTime() },
+                onSkip = { viewModel.skipRest() },
+                onFinish = { viewModel.finishExercise() },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        } else {
+            FlowRepSurface(modifier = Modifier.padding(horizontal = 16.dp)) {
+                Text(
+                    text = "SATZ EINGEBEN",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    text = selectedExercise?.displayName ?: "Übung wählen",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                )
+                Text(
+                    text = "Gewicht und Wiederholungen bestätigen",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+                Spacer(Modifier.height(28.dp))
                 // Gewicht mit +/- 2.5
                 WeightInput(
                     weightKg = weightInput,
@@ -150,7 +189,7 @@ fun TrainScreen(
                     onDecrement = { viewModel.adjustWeight(-2.5) },
                 )
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(28.dp))
 
                 // Reps
                 RepInput(
@@ -158,11 +197,11 @@ fun TrainScreen(
                     onRepsChange = { viewModel.setReps(it) },
                 )
 
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(28.dp))
 
-                // Satz speichern
-                BrandButtonPrimary(
-                    text = "Satz speichern",
+                // The console exposes a single primary completion action.
+                FlowRepPrimaryButton(
+                    text = "SATZ FERTIG",
                     onClick = { viewModel.logSet() },
                     enabled = selectedExercise != null && viewModel.canLog,
                 )
@@ -192,22 +231,34 @@ fun TrainScreen(
                         color = MaterialTheme.colorScheme.primary,
                     )
                 }
-
-                // Train-Pille (Phase 3 step 4): Countdown + Chips
-                val status = timerState.status
-                if (status == TimerStatus.PREPARING ||
-                    status == TimerStatus.RUNNING ||
-                    status == TimerStatus.PAUSED
-                ) {
-                    Spacer(Modifier.height(12.dp))
-                    RestTimerPill(
-                        remainingMs = timerState.remainingMs,
-                        onSkip = { viewModel.skipRest() },
-                        onFinish = { viewModel.finishExercise() },
-                    )
-                }
             }
         }
+
+        // Sensor remains supplemental to logging and never competes with the
+        // set-completion action.
+        SensorStatusCard(
+            connection = sensorConnection,
+            deviceId = connectedDeviceId,
+            sensorError = sensorError,
+            selectedExerciseId = selectedExercise?.id,
+            setPhase = setPhase,
+            countdownSeconds = countdownSeconds,
+            liveCountedReps = liveCountedReps,
+            hasCalibration = hasCalibration,
+            signalQuality = signalQuality,
+            heartRateAvailability = heartRateAvailability,
+            heartRateBpm = heartRateSample,
+            onRequestHeartRatePermission = {
+                healthPermissionLauncher.launch(viewModel.heartRatePermissions)
+            },
+            onHeartRateResume = { viewModel.refreshHeartRate() },
+            onConnect = { viewModel.connectSensor() },
+            onDisconnect = { viewModel.disconnectSensor() },
+            onOpenCalibration = onOpenCalibration,
+            onStartSet = { viewModel.startCountedSet() },
+            onStopSet = { viewModel.stopCountedSet() },
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
         // Live-Sensor-Waveform (Phase 4 step 5): sichtbar sobald der Chip
         // streamt; Blitz-Overlay bei erkanntem Wiederholungs-Peak.
@@ -221,17 +272,38 @@ fun TrainScreen(
 
         // Mini-Verlauf (letzte 5 Saetze)
         if (recentSets.isNotEmpty()) {
-            Text(
-                text = "Letzte Saetze",
-                style = MaterialTheme.typography.titleMedium,
+            FlowRepSurface(
                 modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            recentSets.take(5).forEach { set ->
-                Text(
-                    text = "${set.reps} x ${set.weightMilliKg / 1_000_000.0} kg",
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp),
-                )
+                contentPadding = PaddingValues(20.dp),
+            ) {
+                FlowRepSectionHeader(title = "Letzte Sätze")
+                Spacer(Modifier.height(12.dp))
+                recentSets.take(5).forEachIndexed { index, set ->
+                    Row(
+                        modifier =
+                            Modifier
+                                .fillMaxWidth()
+                                .heightIn(min = 48.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = "${(index + 1).toString().padStart(2, '0')}",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.width(40.dp),
+                        )
+                        Text(
+                            text = "${set.reps} REPS",
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            text = "${set.weightMilliKg / 1_000_000.0} kg",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
             }
         }
     }
@@ -254,21 +326,29 @@ private fun ExerciseChipRow(
     onSelect: (ExerciseInfo) -> Unit,
     onCreateNew: () -> Unit,
 ) {
+    val chipListState = remember { LazyListState() }
+    LaunchedEffect(Unit) {
+        chipListState.scrollToItem(0)
+    }
     LazyRow(
-        modifier = Modifier.padding(horizontal = 16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
+        state = chipListState,
     ) {
         items(exercises, key = { it.id }) { exercise ->
             FilterChip(
                 selected = selectedId == exercise.id,
                 onClick = { onSelect(exercise) },
                 label = { Text(exercise.displayName) },
+                modifier = Modifier.heightIn(min = 48.dp),
             )
         }
         item(key = "create_new") {
             AssistChip(
                 onClick = onCreateNew,
-                label = { Text("+ Neue Uebung") },
+                label = { Text("+ Neue Übung") },
+                modifier = Modifier.heightIn(min = 48.dp),
             )
         }
     }
@@ -282,30 +362,39 @@ private fun WeightInput(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        // -2.5
-        AssistChip(
-            onClick = onDecrement,
-            label = { Text("-2.5") },
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "GEWICHT · KG",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Spacer(Modifier.width(8.dp))
-
-        // Gewicht
         OutlinedTextField(
             value = weightKg,
             onValueChange = onWeightChange,
-            label = { Text("Gewicht (kg)") },
-            placeholder = { lastWeightKg?.let { Text("zuletzt $it") } },
+            placeholder = { lastWeightKg?.let { Text("Zuletzt $it kg", maxLines = 1) } },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-            modifier = Modifier.weight(1f),
+            singleLine = true,
+            textStyle = MaterialTheme.typography.displaySmall.copy(textAlign = TextAlign.Center),
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 72.dp),
         )
-        Spacer(Modifier.width(8.dp))
-
-        // +2.5
-        AssistChip(
-            onClick = onIncrement,
-            label = { Text("+2.5") },
-        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BrandButtonGhost(
+                text = "− 2,5",
+                onClick = onDecrement,
+                modifier = Modifier.weight(1f),
+            )
+            BrandButtonGhost(
+                text = "+ 2,5",
+                onClick = onIncrement,
+                modifier = Modifier.weight(1f),
+            )
+        }
     }
 }
 
@@ -314,42 +403,114 @@ private fun RepInput(
     reps: String,
     onRepsChange: (String) -> Unit,
 ) {
-    OutlinedTextField(
-        value = reps,
-        onValueChange = onRepsChange,
-        label = { Text("Wiederholungen") },
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        modifier = Modifier.fillMaxWidth(),
-    )
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(
+            text = "WIEDERHOLUNGEN",
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            BrandButtonGhost(
+                text = "−",
+                onClick = {
+                    val next = ((reps.toIntOrNull() ?: 0) - 1).coerceAtLeast(0)
+                    onRepsChange(next.toString())
+                },
+                modifier = Modifier.size(64.dp),
+            )
+            OutlinedTextField(
+                value = reps,
+                onValueChange = onRepsChange,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                textStyle = MaterialTheme.typography.displayMedium.copy(textAlign = TextAlign.Center),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = 80.dp),
+            )
+            BrandButtonGhost(
+                text = "+",
+                onClick = {
+                    val next = (reps.toIntOrNull() ?: 0) + 1
+                    onRepsChange(next.toString())
+                },
+                modifier = Modifier.size(64.dp),
+            )
+        }
+        Text(
+            text = "Wert antippen, um ihn direkt einzugeben",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 /**
  * Rest-timer pill inside the train card (Phase 3 step 4): countdown plus
- * Skip / Finish-exercise chips. Finish cancels the timer immediately
+ * End-rest / finish-exercise controls. Both actions cancel the timer immediately
  * (design rule step 5).
  */
 @Composable
-private fun RestTimerPill(
+private fun RestConsole(
     remainingMs: Long,
+    onAddTime: () -> Unit,
     onSkip: () -> Unit,
     onFinish: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-    ) {
-        Column(modifier = Modifier.padding(12.dp)) {
+    FlowRepSurface(modifier = modifier.fillMaxWidth()) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "PAUSE",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+            )
             Text(
                 text = formatRestRemaining(remainingMs),
-                style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                style = MaterialTheme.typography.displayLarge,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
             )
-            Row(
-                modifier = Modifier.padding(top = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                AssistChip(onClick = onSkip, label = { Text("Überspringen") })
-                AssistChip(onClick = onFinish, label = { Text("Übung abschließen") })
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                if (maxWidth < 480.dp) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BrandButtonGhost(
+                            text = "+15 SEKUNDEN",
+                            onClick = onAddTime,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        FlowRepPrimaryButton(text = "PAUSE BEENDEN", onClick = onSkip)
+                    }
+                } else {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        BrandButtonGhost(
+                            text = "+15 S",
+                            onClick = onAddTime,
+                            modifier = Modifier.weight(1f),
+                        )
+                        FlowRepPrimaryButton(
+                            text = "PAUSE BEENDEN",
+                            onClick = onSkip,
+                            modifier = Modifier.weight(1.5f),
+                        )
+                    }
+                }
             }
+            Spacer(Modifier.height(20.dp))
+            BrandButtonGhost(
+                text = "ÜBUNG BEENDEN",
+                onClick = onFinish,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
     }
 }
@@ -370,7 +531,7 @@ private fun CreateExerciseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Neue Uebung") },
+        title = { Text("Neue Übung") },
         text = {
             OutlinedTextField(
                 value = name,
@@ -406,10 +567,15 @@ private fun SensorStatusCard(
     deviceId: String?,
     sensorError: String?,
     selectedExerciseId: Long?,
-    setPhase: SetPhase,
+    setPhase: ActiveSetPhase,
     countdownSeconds: Int,
     liveCountedReps: Int,
     hasCalibration: Boolean,
+    signalQuality: SignalQuality,
+    heartRateAvailability: com.dropsync.domain.health.HeartRateAvailability,
+    heartRateBpm: Int?,
+    onRequestHeartRatePermission: () -> Unit,
+    onHeartRateResume: () -> Unit,
     onConnect: () -> Unit,
     onDisconnect: () -> Unit,
     onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit,
@@ -442,23 +608,30 @@ private fun SensorStatusCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (connection) {
                     SensorConnectionState.DISCONNECTED -> {
-                        AssistChip(onClick = onConnect, label = { Text("Chip verbinden") })
+                        AssistChip(
+                            onClick = onConnect,
+                            label = { Text("Chip verbinden") },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
                     }
 
-                    SensorConnectionState.CONNECTING -> {
-                        Unit
-                    }
+                    SensorConnectionState.CONNECTING -> {}
 
                     SensorConnectionState.CONNECTED,
                     SensorConnectionState.STREAMING,
                     -> {
-                        AssistChip(onClick = onDisconnect, label = { Text("Trennen") })
+                        AssistChip(
+                            onClick = onDisconnect,
+                            label = { Text("Trennen") },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
                         val exId = selectedExerciseId
                         val devId = deviceId
                         if (exId != null && devId != null) {
                             AssistChip(
                                 onClick = { onOpenCalibration(exId, devId) },
                                 label = { Text("Kalibrieren") },
+                                modifier = Modifier.heightIn(min = 48.dp),
                             )
                         }
                     }
@@ -473,8 +646,73 @@ private fun SensorStatusCard(
                     countdownSeconds = countdownSeconds,
                     liveCountedReps = liveCountedReps,
                     hasCalibration = hasCalibration,
+                    signalQuality = signalQuality,
                     onStartSet = onStartSet,
                     onStopSet = onStopSet,
+                )
+            }
+
+            // Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): Health-Connect
+            // als Quelle, Permission-Flow und Pulsanzeige.
+            HeartRateBadge(
+                availability = heartRateAvailability,
+                bpm = heartRateBpm,
+                onRequestPermission = onRequestHeartRatePermission,
+                onResume = onHeartRateResume,
+            )
+        }
+    }
+}
+
+/**
+ * Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): zeigt den letzten Puls
+ * aus Health Connect; ohne Berechtigung ein Chip zum Nachfragen, ohne
+ * Provider ein stiller Hinweis. Daten kommen nur im Foreground (Plan 3.4).
+ */
+@Composable
+private fun HeartRateBadge(
+    availability: com.dropsync.domain.health.HeartRateAvailability,
+    bpm: Int?,
+    onRequestPermission: () -> Unit,
+    onResume: () -> Unit,
+) {
+    LaunchedEffect(availability) {
+        if (availability == com.dropsync.domain.health.HeartRateAvailability.PERMISSION_REQUIRED ||
+            availability == com.dropsync.domain.health.HeartRateAvailability.NO_RECENT_DATA ||
+            availability == com.dropsync.domain.health.HeartRateAvailability.READY
+        ) {
+            onResume()
+        }
+    }
+    when (availability) {
+        com.dropsync.domain.health.HeartRateAvailability.HEALTH_CONNECT_NOT_AVAILABLE,
+        com.dropsync.domain.health.HeartRateAvailability.UPDATE_REQUIRED,
+        -> {
+            // Kein Provider oder Update noetig: bewusst kein UI-Element,
+            // der Nutzer hat die Funktion nicht aktiviert.
+        }
+
+        com.dropsync.domain.health.HeartRateAvailability.PERMISSION_REQUIRED -> {
+            AssistChip(
+                onClick = onRequestPermission,
+                label = { Text("Puls erlauben") },
+                modifier = Modifier.heightIn(min = 48.dp),
+            )
+        }
+
+        com.dropsync.domain.health.HeartRateAvailability.NO_RECENT_DATA -> {
+            Text(
+                text = "Kein aktueller Puls",
+                style = MaterialTheme.typography.bodySmall,
+            )
+        }
+
+        com.dropsync.domain.health.HeartRateAvailability.READY -> {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "♥ ${bpm ?: "--"} bpm",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.primary,
                 )
             }
         }
@@ -485,29 +723,40 @@ private fun SensorStatusCard(
  * Live-count set control (Fusion Phase 4): a start button begins a short
  * countdown, then the pipeline counts reps until the user stops. The counted
  * number is copied into the reps input on stop and can be corrected before
- * logging (learn loop in TrainViewModel.applyCorrection).
+ * logging. Umbauplan Phase 9: DEGRADED-Signal zeigt einen Hinweis, damit der
+ * Nutzer die Zahl vor dem Loggen prueft.
  */
 @Composable
 private fun LiveCountPanel(
-    setPhase: SetPhase,
+    setPhase: ActiveSetPhase,
     countdownSeconds: Int,
     liveCountedReps: Int,
     hasCalibration: Boolean,
+    signalQuality: SignalQuality,
     onStartSet: () -> Unit,
     onStopSet: () -> Unit,
 ) {
     when (setPhase) {
-        SetPhase.IDLE -> {
-            Button(
-                onClick = onStartSet,
-                enabled = hasCalibration,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(if (hasCalibration) "Satz starten (zählen)" else "Zuerst kalibrieren")
+        ActiveSetPhase.IDLE -> {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onStartSet,
+                    enabled = hasCalibration,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(if (hasCalibration) "Satz starten (zählen)" else "Zuerst kalibrieren")
+                }
+                if (signalQuality == SignalQuality.DEGRADED) {
+                    Text(
+                        text = "Signal schwach - Zahl bitte prüfen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
             }
         }
 
-        SetPhase.COUNTDOWN -> {
+        ActiveSetPhase.COUNTDOWN -> {
             Text(
                 text = "Start in $countdownSeconds …",
                 style = MaterialTheme.typography.headlineMedium,
@@ -515,19 +764,40 @@ private fun LiveCountPanel(
             )
         }
 
-        SetPhase.COUNTING -> {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(
-                    text = "$liveCountedReps",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.weight(1f),
-                )
-                Button(onClick = onStopSet) {
-                    Text("Stopp")
+        ActiveSetPhase.COUNTING -> {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    // TalkBack (Plan 6.2): Zaehlerstand als polite liveRegion,
+                    // jede neue Rep wird angesagt ohne den Fokus zu klauen.
+                    Text(
+                        text = "$liveCountedReps",
+                        style = MaterialTheme.typography.displayMedium,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier =
+                            Modifier
+                                .weight(1f)
+                                .semantics {
+                                    liveRegion = LiveRegionMode.Polite
+                                    contentDescription = "$liveCountedReps Wiederholungen"
+                                },
+                    )
+                    Button(onClick = onStopSet) {
+                        Text("Stopp")
+                    }
+                }
+                if (signalQuality == SignalQuality.DEGRADED) {
+                    Text(
+                        text = "Signal schwach - Zahl bitte prüfen",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier =
+                            Modifier.semantics {
+                                liveRegion = LiveRegionMode.Polite
+                            },
+                    )
                 }
             }
         }

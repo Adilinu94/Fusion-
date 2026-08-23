@@ -66,6 +66,15 @@ interface PlaybackRepository {
 
     suspend fun setRepeatMode(mode: RepeatMode): AppResult<Unit>
 
+    /**
+     * Setzt den Tempo-Faktor der Wiedergabe (0.5..2.0; 1.0 = Original).
+     * Wirkt player-global auf alle Titel der Session; Werte ausserhalb
+     * des Bereichs werden begrenzt (media3-Issue #1101: Extremwerte
+     * koennen Geraete-Ausnahmen ausloesen). Die Tonhoehe bleibt erhalten,
+     * soweit die Plattform Time-Stretch unterstuetzt.
+     */
+    suspend fun setPlaybackSpeed(speed: Float): AppResult<Unit>
+
     /** Zuletzt gespeicherter Wiederherstellungszustand (Schritt 5.5). */
     suspend fun lastPersistedState(): PersistedPlayerState?
 
@@ -77,14 +86,12 @@ interface PlaybackRepository {
     suspend fun snapshotNow(): AppResult<PlaybackState>
 
     /**
-     * Wechselt aktiv auf [song], vorgespult auf [startPositionMs], per
-     * Equal-Power-Crossfade (Musik-Workout-Plan Phase 4, "Drop-Landung").
-     * Der Wechsel laeuft dienstseitig ueber den vorhandenen
-     * Dual-Player-Crossfade (ADR-0007/0012); ist der Crossfade aus oder
-     * die Wiedergabe pausiert, erfolgt ein harter Uebergang auf dem einen
-     * sessionfuehrenden Player. Die App uebernimmt damit die Queue.
+     * Wechselt auf [song], vorgespult auf [startPositionMs], als harter
+     * Uebergang auf dem einen sessionfuehrenden Player. Das ist die
+     * einfache, stabile Drop-Landung ("Best Effort"): kein Crossfade,
+     * kein zweiter Player. Die App uebernimmt damit die Queue.
      */
-    suspend fun crossfadeTo(
+    suspend fun playSongAt(
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit>

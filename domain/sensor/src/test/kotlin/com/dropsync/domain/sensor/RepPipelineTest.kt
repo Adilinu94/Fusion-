@@ -25,16 +25,28 @@ class RepPipelineTest {
 
     @Test
     fun `quality scorer rewards ideal rep`() {
-        val scorer = QualityScorer(expectedProminence = 100.0, expectedDurationSamples = 50.0)
-        val result = scorer.score(correlation = 1.0, prominence = 100.0, durationSamples = 50, durationRatio = 0.5)
+        val scorer = QualityScorer(expectedProminence = 100.0, expectedDurationMs = 1_000.0)
+        val result =
+            scorer.score(
+                correlation = 1.0,
+                prominence = 100.0,
+                durationMs = 1_000,
+                durationRatio = 0.5,
+            )
         assertTrue(result.accepted)
         assertEquals(1.0, result.score, 1e-6)
     }
 
     @Test
     fun `quality scorer rejects far off rep`() {
-        val scorer = QualityScorer(expectedProminence = 100.0, expectedDurationSamples = 50.0)
-        val result = scorer.score(correlation = -1.0, prominence = 300.0, durationSamples = 200, durationRatio = 0.99)
+        val scorer = QualityScorer(expectedProminence = 100.0, expectedDurationMs = 1_000.0)
+        val result =
+            scorer.score(
+                correlation = -1.0,
+                prominence = 300.0,
+                durationMs = 4_000,
+                durationRatio = 0.99,
+            )
         assertTrue(!result.accepted)
     }
 
@@ -50,23 +62,34 @@ class RepPipelineTest {
         assertTrue(original.correlation > 0.95)
     }
 
-    @Test
-    fun `rep counter counts clean reps`() {
-        val counter =
-            RepCounter(
-                peakDetector = PeakDetector(),
-                templateMatcher = TemplateMatcher(), // no template -> accept all
-                phaseValidator = PhaseValidator(),
-                qualityScorer = QualityScorer(expectedProminence = 1.0, expectedDurationSamples = 25.0),
-            )
-        val peakShape = (0..10).map { 200.0 * it / 10.0 } + (1..14).map { 200.0 - 300.0 * it / 14.0 }
-        // Two excursions with enough distance (refractory 0.5 s = 25 samples).
-        val samples = peakShape + List(20) { 0.0 } + peakShape + List(10) { 0.0 }
+    /** Vollstaendiger Zyklus: positiv auf, negativ durch, zurueck auf 0. */
+    private fun fullCycle(): List<Double> =
+        (1..12).map { 200.0 * it / 12.0 } + // concentrich auf
+            (1..12).map { 200.0 - 400.0 * it / 12.0 } + // Richtungswechsel + exzentrisch
+            (1..8).map { -200.0 + 200.0 * it / 8.0 } // Rueckkehr Richtung Baseline
+
+    private fun newCounter(
+        expectedProminence: Double = 1.0,
+        expectedDurationMs: Double = 1_000.0,
+        templateMatcher: TemplateMatcher = TemplateMatcher(),
+        peakDetector: PeakDetector = PeakDetector(threshold = 32.5),
+    ) = RepCounter(
+        peakDetector = peakDetector,
+        templateMatcher = templateMatcher, // no template -> accept all
+        phaseValidator = PhaseValidator(),
+        qualityScorer = QualityScorer(expectedProminence = expectedProminence, expectedDurationMs = expectedDurationMs),
+    )
+
+    private fun feed(
+        counter: RepCounter,
+        samples: List<Double>,
+        startMs: Long = 0L,
+    ): Int {
         var counted = 0
         samples.forEachIndexed { i, v ->
             val frame =
                 ProcessedFrame(
-                    timestampMs = i * 20L,
+                    timestampMs = startMs + i * 20L,
                     rawGp = v,
                     filteredGp = v,
                     smoothedGp = v,
@@ -75,8 +98,26 @@ class RepPipelineTest {
                 )
             if (counter.process(frame).repCounted) counted++
         }
-        assertTrue("expected >= 1 counted rep, got $counted", counted >= 1)
+        return counted
+    }
+
+    @Test
+    fun `rep counter counts exactly two clean two-phase reps`() {
+        // P0-Fix: zwei vollstaendige Reps muessen EXAKT zwei ergeben.
+        val counter = newCounter(expectedDurationMs = 1_400.0)
+        val samples = fullCycle() + List(40) { 0.0 } + fullCycle() + List(20) { 0.0 }
+        val counted = feed(counter, samples)
+        assertEquals("zwei vollstaendige Reps muessen exakt 2 zaehlen", 2, counted)
         assertEquals(counted, counter.repCount)
+    }
+
+    @Test
+    fun `half rep is rejected`() {
+        // P0-Fix: reines Anheben ohne Rueckbewegung darf nicht zaehlen.
+        val counter = newCounter()
+        val halfRep = (1..15).map { 200.0 * it / 15.0 } + List(30) { 200.0 } + List(20) { 0.0 }
+        val counted = feed(counter, halfRep)
+        assertEquals("halbe Rep darf nicht zaehlen", 0, counted)
     }
 
     @Test
@@ -86,30 +127,22 @@ class RepPipelineTest {
         // gefuellt und haelt FIFO-Groesse.
         val matcher = TemplateMatcher(poolSize = 3)
         val counter =
-            RepCounter(
-                peakDetector = PeakDetector(),
+            newCounter(
+                expectedDurationMs = 1_400.0,
                 templateMatcher = matcher,
-                phaseValidator = PhaseValidator(),
-                qualityScorer = QualityScorer(expectedProminence = 1.0, expectedDurationSamples = 25.0),
+                peakDetector = PeakDetector(threshold = 32.5, expectedDurationMs = 1_400.0),
             )
         assertEquals(0, matcher.poolCount)
 
+        // Fortlaufende Zeitbasis ueber alle Reps (Refraktaerzeit ist
+        // timestampbasiert; ein Neustart bei 0 wuerde Reps unterdruecken).
+        var clockMs = 0L
+
         fun feedReps(count: Int) {
-            val peakShape = (0..10).map { 200.0 * it / 10.0 } + (1..14).map { 200.0 - 300.0 * it / 14.0 }
             repeat(count) {
-                val samples = peakShape + List(20) { 0.0 } + List(10) { 0.0 }
-                samples.forEachIndexed { i, v ->
-                    counter.process(
-                        ProcessedFrame(
-                            timestampMs = i * 20L,
-                            rawGp = v,
-                            filteredGp = v,
-                            smoothedGp = v,
-                            envelope = kotlin.math.abs(v),
-                            isSettled = true,
-                        ),
-                    )
-                }
+                val samples = fullCycle() + List(30) { 0.0 } + List(10) { 0.0 }
+                feed(counter, samples, clockMs)
+                clockMs += samples.size * 20L
             }
         }
 
@@ -125,42 +158,29 @@ class RepPipelineTest {
     fun `trackForAdaptation updates refractory`() {
         // Punkt 6: Nach 3 bestaetigten Reps mit kurzer Dauer muss die
         // Refraktaerzeit des PeakDetectors der echten Dauer folgen.
-        val peakDetector = PeakDetector()
+        val peakDetector = PeakDetector(threshold = 32.5, expectedDurationMs = 1_400.0)
         val counter =
-            RepCounter(
+            newCounter(
+                expectedDurationMs = 1_400.0,
                 peakDetector = peakDetector,
-                templateMatcher = TemplateMatcher(), // no template -> accept all
-                phaseValidator = PhaseValidator(),
-                qualityScorer = QualityScorer(expectedProminence = 1.0, expectedDurationSamples = 25.0),
             )
-        val peakShape = (0..10).map { 200.0 * it / 10.0 } + (1..14).map { 200.0 - 300.0 * it / 14.0 }
 
-        fun feedOneRep(startMs: Long) {
-            (peakShape + List(20) { 0.0 } + List(10) { 0.0 }).forEachIndexed { i, v ->
-                counter.process(
-                    ProcessedFrame(
-                        timestampMs = startMs + i * 20L,
-                        rawGp = v,
-                        filteredGp = v,
-                        smoothedGp = v,
-                        envelope = kotlin.math.abs(v),
-                        isSettled = true,
-                    ),
-                )
-            }
+        var clockMs = 0L
+
+        fun feedOneRep() {
+            val samples = fullCycle() + List(40) { 0.0 } + List(10) { 0.0 }
+            feed(counter, samples, clockMs)
+            clockMs += samples.size * 20L
         }
 
-        feedOneRep(0)
-        assertEquals("Refraktaerzeit vor 3 Reps bleibt Default", 25.0, peakDetector.expectedDurationSamples, 1e-6)
+        feedOneRep()
+        assertEquals("Refraktaerzeit vor 3 Reps bleibt Default", 1_400.0, peakDetector.expectedDurationMs, 1e-6)
 
-        feedOneRep(2_000)
-        feedOneRep(4_000)
-        // Fenstergroesse der Pending-Phase bestimmt die Dauer; hier ist
-        // nur wichtig: die Erwartung hat die Defaults verlassen und
-        // folgt den echten Fenstern.
+        feedOneRep()
+        feedOneRep()
         assertTrue(
-            "nach 3 Reps muss die erwartete Dauer adaptiert sein (war: ${peakDetector.expectedDurationSamples})",
-            peakDetector.expectedDurationSamples != 25.0,
+            "nach 3 Reps muss die erwartete Dauer adaptiert sein (war: ${peakDetector.expectedDurationMs})",
+            peakDetector.expectedDurationMs != 1_400.0,
         )
     }
 }

@@ -1,28 +1,48 @@
 package com.dropsync.data.sensor
 
 import android.content.Context
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
+import com.dropsync.domain.sensor.ProfileStatus
+import com.dropsync.domain.sensor.PromotionResult
+import com.dropsync.domain.sensor.RepEngineVersion
+import com.dropsync.domain.sensor.RepSignalKind
+import com.dropsync.domain.sensor.calibration.ProfileLearningPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.calibrationProfileDataStore by preferencesDataStore(name = "sensor_calibration")
+// Internal statt private: der Modul-Test schreibt v3-Legacy-Bloe be fuer die
+// Migration direkt in denselben DataStore.
+internal val Context.calibrationProfileDataStore by preferencesDataStore(name = "sensor_calibration")
 
 /**
  * DataStore-backed persistence of per-exercise+device calibration profiles
  * (Fusion Phase 4 step 3: "persist pro Übung+Gerät").
  *
- * Serialization is a compact semicolon-separated Double list — no JSON
- * library needed for the small, flat [CalibrationProfile] shape. Unknown or
- * corrupt entries are treated as "no profile" (load returns null) so a stale
- * blob never breaks the train flow.
+ * Umbauplan Phase 0.1/1.4: profiles are schema- and engine-versioned and the
+ * calibrated detection threshold is stored directly (no SPK/NPK roundtrip).
+ * Legacy blobs (schema < PROFILE_SCHEMA_VERSION) are treated as "no profile"
+ * so a stale blob never drives the pipeline with wrong parameters.
+ *
+ * Umbauplan Phase 7.4: profiles are revisioned. Key layout:
+ * - `cal_<ex>_<dev>_r<rev>`  -> encoded profile blob
+ * - `cal_<ex>_<dev>_active`  -> Int (active revision)
+ * - `cal_<ex>_<dev>_cand`    -> Int (candidate revision, optional)
+ * v3 blobs under the legacy key `cal_<ex>_<dev>` are migrated once to
+ * revision 1 ACTIVE; users never have to re-calibrate.
+ *
+ * Serialization is a compact semicolon-separated list — no JSON library
+ * needed for the small, flat [CalibrationProfile] shape. Unknown or corrupt
+ * entries are treated as "no profile" (load returns null).
  */
 @Singleton
 class DataStoreCalibrationProfileRepository
@@ -35,20 +55,147 @@ class DataStoreCalibrationProfileRepository
             deviceId: String,
         ): AppResult<CalibrationProfile?> =
             try {
-                val raw = context.calibrationProfileDataStore.data.first()[key(exerciseId, deviceId)]
-                AppResult.success(raw?.let { decode(it, exerciseId, deviceId) })
+                val prefs = context.calibrationProfileDataStore.data.first()
+                AppResult.success(
+                    activeRevision(prefs, exerciseId, deviceId)?.let { rev ->
+                        decode(prefs[revisionKey(exerciseId, deviceId, rev)].orEmpty(), exerciseId, deviceId)
+                            ?: migrateLegacyIfNeeded(prefs, exerciseId, deviceId, rev)
+                    },
+                )
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration load: ${e.message}"))
+            }
+
+        override suspend fun loadHistory(
+            exerciseId: Long,
+            deviceId: String,
+        ): AppResult<List<CalibrationProfile>> =
+            try {
+                val prefs = context.calibrationProfileDataStore.data.first()
+                val prefix = "cal_${exerciseId}_${deviceId}_r"
+                val profiles =
+                    prefs
+                        .asMap()
+                        .entries
+                        .filter { (key, _) -> key.name.startsWith(prefix) }
+                        .mapNotNull { (_, value) -> decode(value as? String ?: "", exerciseId, deviceId) }
+                        .sortedByDescending { it.revision }
+                AppResult.success(profiles)
+            } catch (e: Exception) {
+                AppResult.failure(AppError.Unknown("calibration history: ${e.message}"))
             }
 
         override suspend fun save(profile: CalibrationProfile): AppResult<Unit> =
             try {
                 context.calibrationProfileDataStore.edit { prefs ->
-                    prefs[key(profile.exerciseId, profile.deviceId)] = encode(profile)
+                    when (profile.status) {
+                        ProfileStatus.ACTIVE -> {
+                            // Bisherige aktive Revision -> RETIRED (Kette bleibt).
+                            activeRevision(prefs, profile.exerciseId, profile.deviceId)?.let { oldRev ->
+                                val oldRaw = prefs[revisionKey(profile.exerciseId, profile.deviceId, oldRev)]
+                                oldRaw?.let { raw ->
+                                    decode(raw, profile.exerciseId, profile.deviceId)?.let { old ->
+                                        prefs[revisionKey(profile.exerciseId, profile.deviceId, oldRev)] =
+                                            encode(old.copy(status = ProfileStatus.RETIRED))
+                                    }
+                                }
+                            }
+                            prefs[revisionKey(profile.exerciseId, profile.deviceId, profile.revision)] = encode(profile)
+                            prefs[activeKey(profile.exerciseId, profile.deviceId)] = profile.revision
+                        }
+
+                        ProfileStatus.CANDIDATE -> {
+                            prefs[revisionKey(profile.exerciseId, profile.deviceId, profile.revision)] = encode(profile)
+                            prefs[candidateKey(profile.exerciseId, profile.deviceId)] = profile.revision
+                        }
+
+                        ProfileStatus.RETIRED -> {
+                            prefs[revisionKey(profile.exerciseId, profile.deviceId, profile.revision)] = encode(profile)
+                        }
+                    }
                 }
                 AppResult.success(Unit)
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration save: ${e.message}"))
+            }
+
+        override suspend fun noteValidatedSet(
+            exerciseId: Long,
+            deviceId: String,
+        ): AppResult<PromotionResult> =
+            try {
+                var result = PromotionResult.NO_CANDIDATE
+                context.calibrationProfileDataStore.edit { prefs ->
+                    val candRev =
+                        prefs[candidateKey(exerciseId, deviceId)] ?: run {
+                            result = PromotionResult.NO_CANDIDATE
+                            return@edit
+                        }
+                    val raw =
+                        prefs[revisionKey(exerciseId, deviceId, candRev)] ?: run {
+                            result = PromotionResult.NO_CANDIDATE
+                            return@edit
+                        }
+                    val candidate =
+                        decode(raw, exerciseId, deviceId) ?: run {
+                            result = PromotionResult.NO_CANDIDATE
+                            return@edit
+                        }
+                    val incremented = candidate.copy(validatedSetCount = candidate.validatedSetCount + 1)
+                    if (incremented.validatedSetCount >= ProfileLearningPolicy.PROMOTION_SETS) {
+                        // Promotion: bisherige ACTIVE -> RETIRED, Kandidat wird aktiv.
+                        activeRevision(prefs, exerciseId, deviceId)?.let { oldRev ->
+                            val oldRaw = prefs[revisionKey(exerciseId, deviceId, oldRev)]
+                            oldRaw?.let { oldRawStr ->
+                                decode(oldRawStr, exerciseId, deviceId)?.let { old ->
+                                    prefs[revisionKey(exerciseId, deviceId, oldRev)] =
+                                        encode(old.copy(status = ProfileStatus.RETIRED))
+                                }
+                            }
+                        }
+                        prefs[revisionKey(exerciseId, deviceId, candRev)] =
+                            encode(
+                                incremented.copy(
+                                    status = ProfileStatus.ACTIVE,
+                                    validatedSetCount = 0,
+                                ),
+                            )
+                        prefs[activeKey(exerciseId, deviceId)] = candRev
+                        prefs.remove(candidateKey(exerciseId, deviceId))
+                        result = PromotionResult.PROMOTED
+                    } else {
+                        prefs[revisionKey(exerciseId, deviceId, candRev)] = encode(incremented)
+                        result = PromotionResult.PENDING
+                    }
+                }
+                AppResult.success(result)
+            } catch (e: Exception) {
+                AppResult.failure(AppError.Unknown("calibration promotion: ${e.message}"))
+            }
+
+        override suspend fun rollback(
+            exerciseId: Long,
+            deviceId: String,
+        ): AppResult<Boolean> =
+            try {
+                var rolledBack = false
+                context.calibrationProfileDataStore.edit { prefs ->
+                    val activeRev = activeRevision(prefs, exerciseId, deviceId) ?: return@edit
+                    val activeRaw = prefs[revisionKey(exerciseId, deviceId, activeRev)] ?: return@edit
+                    val active = decode(activeRaw, exerciseId, deviceId) ?: return@edit
+                    val parentRev = active.parentRevision ?: return@edit
+                    val parentRaw = prefs[revisionKey(exerciseId, deviceId, parentRev)] ?: return@edit
+                    val parent = decode(parentRaw, exerciseId, deviceId) ?: return@edit
+                    prefs[revisionKey(exerciseId, deviceId, activeRev)] =
+                        encode(active.copy(status = ProfileStatus.RETIRED))
+                    prefs[revisionKey(exerciseId, deviceId, parentRev)] =
+                        encode(parent.copy(status = ProfileStatus.ACTIVE))
+                    prefs[activeKey(exerciseId, deviceId)] = parentRev
+                    rolledBack = true
+                }
+                AppResult.success(rolledBack)
+            } catch (e: Exception) {
+                AppResult.failure(AppError.Unknown("calibration rollback: ${e.message}"))
             }
 
         override suspend fun delete(
@@ -57,38 +204,105 @@ class DataStoreCalibrationProfileRepository
         ): AppResult<Unit> =
             try {
                 context.calibrationProfileDataStore.edit { prefs ->
-                    prefs.remove(key(exerciseId, deviceId))
+                    val prefix = "cal_${exerciseId}_$deviceId"
+                    prefs.asMap().keys.filter { it.name.startsWith(prefix) }.forEach { key ->
+                        prefs.remove(key)
+                    }
                 }
                 AppResult.success(Unit)
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration delete: ${e.message}"))
             }
 
-        private fun key(
+        // --- Keys -------------------------------------------------------------
+
+        private fun revisionKey(
+            exerciseId: Long,
+            deviceId: String,
+            revision: Int,
+        ) = stringPreferencesKey("cal_${exerciseId}_${deviceId}_r$revision")
+
+        private fun activeKey(
+            exerciseId: Long,
+            deviceId: String,
+        ) = intPreferencesKey("cal_${exerciseId}_${deviceId}_active")
+
+        private fun candidateKey(
+            exerciseId: Long,
+            deviceId: String,
+        ) = intPreferencesKey("cal_${exerciseId}_${deviceId}_cand")
+
+        private fun legacyKey(
             exerciseId: Long,
             deviceId: String,
         ) = stringPreferencesKey("cal_${exerciseId}_$deviceId")
 
-        // Compact semicolon-separated Double lists (no JSON lib needed).
-        // v1 had 5 parts (no axis/bias); v2 has 8 parts. A v1 blob lacks the
-        // rotation axis, so it cannot drive the pipeline -> treated as absent.
+        private fun activeRevision(
+            prefs: Preferences,
+            exerciseId: Long,
+            deviceId: String,
+        ): Int? = prefs[activeKey(exerciseId, deviceId)] ?: prefs[legacyKey(exerciseId, deviceId)]?.let { 1 }
+
+        /** Migriert einen v3-Blob unter dem Legacy-Key zu Revision 1 ACTIVE. */
+        private suspend fun migrateLegacyIfNeeded(
+            prefs: Preferences,
+            exerciseId: Long,
+            deviceId: String,
+            fallbackRevision: Int,
+        ): CalibrationProfile? {
+            val legacyRaw = prefs[legacyKey(exerciseId, deviceId)] ?: return null
+            val migrated = decodeLegacy(legacyRaw, exerciseId, deviceId) ?: return null
+            context.calibrationProfileDataStore.edit { editable ->
+                editable[revisionKey(exerciseId, deviceId, 1)] =
+                    encode(migrated.copy(revision = 1, status = ProfileStatus.ACTIVE))
+                editable[activeKey(exerciseId, deviceId)] = 1
+                editable.remove(legacyKey(exerciseId, deviceId))
+            }
+            return migrated
+        }
+
+        // --- Codec ------------------------------------------------------------
+
+        /**
+         * Schema v4 layout (semicolon-separated):
+         * 0: schemaVersion, 1: engineVersion, 2: signalKind,
+         * 3: rotationAxis (csv), 4: gyroBias (csv), 5: repTemplate (csv),
+         * 6: expectedProminence, 7: qualityScore, 8: detectionThreshold,
+         * 9: noiseFloor, 10: expectedDurationMs,
+         * 11: revision, 12: parentRevision (-1 = null), 13: status,
+         * 14: validatedSetCount
+         */
         private fun encode(profile: CalibrationProfile): String =
             buildString {
+                append(profile.schemaVersion)
+                append(';')
+                append(profile.engineVersion.name)
+                append(';')
+                append(profile.signalKind.name)
+                append(';')
                 append(profile.rotationAxis.joinToString(","))
                 append(';')
                 append(profile.gyroBias.joinToString(","))
                 append(';')
                 append(profile.repTemplate.joinToString(","))
                 append(';')
-                append(profile.signalPeakLevel)
-                append(';')
-                append(profile.noisePeakLevel)
-                append(';')
                 append(profile.expectedProminence)
                 append(';')
-                append(profile.expectedDurationSamples)
-                append(';')
                 append(profile.qualityScore)
+                append(';')
+                append(profile.detectionThreshold)
+                append(';')
+                append(profile.noiseFloor)
+                append(';')
+                append(profile.expectedDurationMs)
+                append(';')
+                append(profile.revision)
+                append(';')
+                append(profile.parentRevision ?: -1)
+                append(';')
+                append(profile.status.name)
+                append(';')
+                append(profile.validatedSetCount)
             }
 
         private fun decode(
@@ -96,29 +310,109 @@ class DataStoreCalibrationProfileRepository
             exerciseId: Long,
             deviceId: String,
         ): CalibrationProfile? {
+            if (raw.isEmpty()) return null
             val parts = raw.split(';')
-            // v1 blobs (5 parts) have no rotation axis -> cannot calibrate.
-            if (parts.size != 8) return null
-            val axis = parts[0].split(',').mapNotNull { it.toDoubleOrNull() }
-            val bias = parts[1].split(',').mapNotNull { it.toDoubleOrNull() }
-            val template = parts[2].split(',').mapNotNull { it.toDoubleOrNull() }
-            val signalPeak = parts[3].toDoubleOrNull() ?: return null
-            val noisePeak = parts[4].toDoubleOrNull() ?: return null
-            val prominence = parts[5].toDoubleOrNull() ?: return null
-            val durationSamples = parts[6].toDoubleOrNull() ?: return null
-            val quality = parts[7].toDoubleOrNull() ?: 1.0
+            if (parts.size != 15) return null
+            val schema = parts[0].toIntOrNull() ?: return null
+            // Versioned read: only the current schema is interpreted.
+            if (schema != CalibrationProfile.PROFILE_SCHEMA_VERSION) return null
+            val engine =
+                parts[1].let { name ->
+                    RepEngineVersion.entries.firstOrNull { it.name == name }
+                } ?: return null
+            val signalKind =
+                parts[2].let { name ->
+                    RepSignalKind.entries.firstOrNull { it.name == name }
+                } ?: return null
+            val axis = parts[3].split(',').mapNotNull { it.toDoubleOrNull() }
+            val bias = parts[4].split(',').mapNotNull { it.toDoubleOrNull() }
+            val template = parts[5].split(',').mapNotNull { it.toDoubleOrNull() }
+            val prominence = parts[6].toDoubleOrNull() ?: return null
+            val quality = parts[7].toDoubleOrNull() ?: return null
+            val threshold = parts[8].toDoubleOrNull() ?: return null
+            val noiseFloor = parts[9].toDoubleOrNull() ?: return null
+            val durationMs = parts[10].toDoubleOrNull() ?: return null
+            val revision = parts[11].toIntOrNull() ?: return null
+            val parentRaw = parts[12].toIntOrNull() ?: return null
+            val status =
+                parts[13].let { name ->
+                    ProfileStatus.entries.firstOrNull { it.name == name }
+                } ?: return null
+            val validatedSets = parts[14].toIntOrNull() ?: return null
             if (axis.size != 3 || bias.size != 3 || template.isEmpty()) return null
+            if (!threshold.isFinite() || threshold < 0.0) return null
+            if (!durationMs.isFinite() || durationMs <= 0.0) return null
             return CalibrationProfile(
                 exerciseId = exerciseId,
                 deviceId = deviceId,
                 rotationAxis = axis,
                 gyroBias = bias,
                 repTemplate = template,
-                signalPeakLevel = signalPeak,
-                noisePeakLevel = noisePeak,
                 expectedProminence = prominence,
-                expectedDurationSamples = durationSamples,
                 qualityScore = quality,
+                schemaVersion = schema,
+                engineVersion = engine,
+                signalKind = signalKind,
+                detectionThreshold = threshold,
+                noiseFloor = noiseFloor,
+                expectedDurationMs = durationMs,
+                revision = revision,
+                parentRevision = parentRaw.takeIf { it >= 0 },
+                status = status,
+                validatedSetCount = validatedSets,
+            )
+        }
+
+        /**
+         * v3-Layout (11 Felder, keine Revisionsfelder). Wird bei der
+         * Migration einmalig zu Revision 1 ACTIVE hochgezogen.
+         */
+        private fun decodeLegacy(
+            raw: String,
+            exerciseId: Long,
+            deviceId: String,
+        ): CalibrationProfile? {
+            val parts = raw.split(';')
+            if (parts.size != 11) return null
+            val schema = parts[0].toIntOrNull() ?: return null
+            if (schema != 3) return null
+            val engine =
+                parts[1].let { name ->
+                    RepEngineVersion.entries.firstOrNull { it.name == name }
+                } ?: return null
+            val signalKind =
+                parts[2].let { name ->
+                    RepSignalKind.entries.firstOrNull { it.name == name }
+                } ?: return null
+            val axis = parts[3].split(',').mapNotNull { it.toDoubleOrNull() }
+            val bias = parts[4].split(',').mapNotNull { it.toDoubleOrNull() }
+            val template = parts[5].split(',').mapNotNull { it.toDoubleOrNull() }
+            val prominence = parts[6].toDoubleOrNull() ?: return null
+            val quality = parts[7].toDoubleOrNull() ?: return null
+            val threshold = parts[8].toDoubleOrNull() ?: return null
+            val noiseFloor = parts[9].toDoubleOrNull() ?: return null
+            val durationMs = parts[10].toDoubleOrNull() ?: return null
+            if (axis.size != 3 || bias.size != 3 || template.isEmpty()) return null
+            if (!threshold.isFinite() || threshold < 0.0) return null
+            if (!durationMs.isFinite() || durationMs <= 0.0) return null
+            return CalibrationProfile(
+                exerciseId = exerciseId,
+                deviceId = deviceId,
+                rotationAxis = axis,
+                gyroBias = bias,
+                repTemplate = template,
+                expectedProminence = prominence,
+                qualityScore = quality,
+                schemaVersion = CalibrationProfile.PROFILE_SCHEMA_VERSION,
+                engineVersion = engine,
+                signalKind = signalKind,
+                detectionThreshold = threshold,
+                noiseFloor = noiseFloor,
+                expectedDurationMs = durationMs,
+                revision = 1,
+                parentRevision = null,
+                status = ProfileStatus.ACTIVE,
+                validatedSetCount = 0,
             )
         }
     }

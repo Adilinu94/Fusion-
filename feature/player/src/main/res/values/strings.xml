@@ -21,6 +21,9 @@
     <string name="now_playing_marker_delete_message">\"%1$s\" at %2$s will be removed.</string>
     <string name="now_playing_marker_delete_confirm">Delete</string>
     <string name="now_playing_marker_cancel">Cancel</string>
+    <string name="now_playing_marker_status">%1$d confirmed markers</string>
+    <string name="now_playing_marker_legend">Solid ticks are active DropSync markers</string>
+    <string name="now_playing_marker_add_action">Add marker</string>
     <string name="player_queue_open">Open queue</string>
     <string name="player_queue_title">Queue</string>
     <string name="player_queue_empty">The queue is empty.</string>
@@ -41,4 +44,22 @@
     <string name="drop_rest_blocked_not_playing">Playback is paused.</string>
     <string name="drop_rest_blocked_no_marker">The current song has no upcoming drop marker.</string>
     <string name="drop_rest_blocked_too_close">The next drop is less than 5 seconds away.</string>
+
+    <!-- Aktions-Carousel + Sheets (Umbau 2026-08) -->
+    <string name="now_playing_action_eq">EQ</string>
+    <string name="now_playing_action_eq_on">EQ on</string>
+    <string name="now_playing_action_add_marker">Marker</string>
+    <string name="now_playing_action_mix_on">Mix %1$ds</string>
+    <string name="now_playing_action_mix_off">Mix off</string>
+    <string name="now_playing_action_queue">Queue (%1$d)</string>
+    <string name="now_playing_waveform_with_markers">Waveform: tap to jump, drag to preview, long-press to set or delete a marker. %1$d markers set.</string>
+    <string name="now_playing_tempo_title">Playback speed</string>
+    <string name="now_playing_tempo_original">Original</string>
+    <string name="now_playing_tempo_lock_title">Match BPM (lock)</string>
+    <string name="now_playing_tempo_lock_track_bpm">Track: %1$d BPM</string>
+    <string name="now_playing_tempo_lock_no_bpm">BPM analysis still pending for this track.</string>
+    <string name="now_playing_tempo_lock_target">Target: %1$d BPM</string>
+    <string name="now_playing_tempo_lock_effective">Lock speed: %1$.2fx</string>
+    <string name="quick_eq_title">Equalizer</string>
+    <string name="quick_eq_bands">%1$d bands · dB</string>
 </resources>

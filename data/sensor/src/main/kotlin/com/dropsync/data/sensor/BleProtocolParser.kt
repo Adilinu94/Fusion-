@@ -33,6 +33,9 @@ object BleProtocolParser {
     /** Sample spacing guaranteed by v2 firmware (protocol.yaml timing). */
     const val SAMPLE_INTERVAL_MS = 20L
 
+    /** Umbauplan Phase 2.4: einzig bekannte Protokollversion. */
+    const val PROTOCOL_VERSION_V2 = 2
+
     /**
      * Throws [BleProtocolException] on malformed packets: mis-parsed sensor
      * data would corrupt threshold calibration silently otherwise.
@@ -42,6 +45,15 @@ object BleProtocolParser {
         val gyroScaleUsed: Double
         when (bytes.size) {
             V2_TOTAL_BYTES -> {
+                // Umbauplan Phase 2.4: unbekannte Versionsbytes werden als
+                // Sensorfehler verworfen, nie als gueltige Samples gelesen.
+                val version = bytes[4].toInt() and 0xFF
+                if (version != PROTOCOL_VERSION_V2) {
+                    throw BleProtocolException(
+                        "Unbekannte Protokollversion $version (erwartet $PROTOCOL_VERSION_V2). " +
+                            "Firmware/App-Versionen pruefen.",
+                    )
+                }
                 samplesStart = 5
                 gyroScaleUsed = GYRO_SCALE_V2
             }

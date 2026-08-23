@@ -2,6 +2,7 @@ package com.dropsync.data.sensor
 
 import com.dropsync.domain.sensor.DeviceEvent
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +29,9 @@ class FakeSensorProvider
         override val deviceEvents: Flow<DeviceEvent> = emptyFlow()
 
         override val connectedDeviceId: StateFlow<String?> = MutableStateFlow(null)
+
+        private val _health = MutableStateFlow(SensorHealth())
+        override val health: StateFlow<SensorHealth> = _health.asStateFlow()
 
         override suspend fun connect(deviceId: String?): com.dropsync.core.common.AppResult<Unit> =
             com.dropsync.core.common.AppResult

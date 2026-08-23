@@ -10,8 +10,11 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.ChromaAccumulator
 import com.dropsync.domain.audio.EnergyAccumulator
+import com.dropsync.domain.audio.LoudnessAccumulator
 import com.dropsync.domain.audio.OnsetDetection
+import com.dropsync.domain.audio.TempoAccumulator
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalyzer
 import com.dropsync.domain.audio.WaveformAccumulator
@@ -34,16 +37,18 @@ class TrackAnalyzerImpl(
         detectOnsets: Boolean,
     ): AppResult<TrackAnalysis> =
         withContext(dispatchers.default) {
-            runCatching { decodeAndAccumulate(song, detectOnsets) }
-                .fold(
-                    onSuccess = { AppResult.success(it) },
-                    onFailure = { failure ->
-                        AppResult
-                            .failure(
-                                AppError.MediaUnavailable(mediaStoreId = song.mediaStoreId),
-                            ).also { failure.printStackTrace() }
-                    },
-                )
+            try {
+                AppResult.success(decodeAndAccumulate(song, detectOnsets))
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                // Umbauplan Phase 10.4: Abbruch ist KEIN Analysefehler und
+                // darf nie als Cache-Eintrag enden - weiterwerfen.
+                throw cancelled
+            } catch (failure: Throwable) {
+                AppResult
+                    .failure(
+                        AppError.MediaUnavailable(mediaStoreId = song.mediaStoreId),
+                    ).also { failure.printStackTrace() }
+            }
         }
 
     private fun decodeAndAccumulate(
@@ -76,16 +81,24 @@ class TrackAnalyzerImpl(
                 } else {
                     null
                 }
+            // Mix-Metadaten (Phase 1) laufen additiv im selben Durchgang.
+            val tempo = TempoAccumulator(sampleRateHz = sampleRate)
+            val chroma = ChromaAccumulator(sampleRateHz = sampleRate)
+            // Lautheit/True-Peak laufen additiv (Offtrack Phase 8); die
+            // Werte werden persistiert, aber erst nach Opt-in angewendet.
+            val loudness = LoudnessAccumulator(sampleRateHz = sampleRate)
 
             val codec = MediaCodec.createDecoderByType(mime)
             try {
                 codec.configure(format, null, null, 0)
                 codec.start()
-                drainDecoder(extractor, codec, waveform, energy)
+                drainDecoder(extractor, codec, waveform, energy, tempo, chroma, loudness)
             } finally {
                 codec.release()
             }
 
+            val tempoEstimate = tempo.finishEstimate()
+            val keyEstimate = chroma.finishEstimate()
             return TrackAnalysis(
                 waveformBuckets = waveform.finish(),
                 // Onset-Kandidaten nur im explizit angeforderten Fall (Phase 5);
@@ -101,6 +114,12 @@ class TrackAnalyzerImpl(
                     },
                 // Track-Peak fuer die visuelle Lautheits-Normalisierung (Phase 8).
                 peakLinear = waveform.peak(),
+                bpm = tempoEstimate?.bpm,
+                camelotKey = keyEstimate?.camelotKey,
+                bpmConfidence = tempoEstimate?.confidence,
+                keyConfidence = keyEstimate?.confidence,
+                integratedLufs = loudness.integratedLufs(),
+                truePeakDb = truePeakDb(loudness.truePeakLinear()),
             )
         } finally {
             extractor.release()
@@ -120,6 +139,9 @@ class TrackAnalyzerImpl(
         codec: MediaCodec,
         waveform: WaveformAccumulator,
         energy: EnergyAccumulator?,
+        tempo: TempoAccumulator,
+        chroma: ChromaAccumulator,
+        loudness: LoudnessAccumulator,
     ) {
         val bufferInfo = MediaCodec.BufferInfo()
         var inputDone = false
@@ -170,7 +192,7 @@ class TrackAnalyzerImpl(
                                 repeat(outputChannels) { ch ->
                                     sum += floats.get(frame * outputChannels + ch).toDouble()
                                 }
-                                feed(sum / outputChannels, waveform, energy)
+                                feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
                             }
                         } else {
                             val shorts = outputBuffer.asShortBuffer()
@@ -180,7 +202,7 @@ class TrackAnalyzerImpl(
                                 repeat(outputChannels) { ch ->
                                     sum += shorts.get(frame * outputChannels + ch) / 32_768.0
                                 }
-                                feed(sum / outputChannels, waveform, energy)
+                                feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
                             }
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
@@ -197,9 +219,20 @@ class TrackAnalyzerImpl(
         monoSample: Double,
         waveform: WaveformAccumulator,
         energy: EnergyAccumulator?,
+        tempo: TempoAccumulator,
+        chroma: ChromaAccumulator,
+        loudness: LoudnessAccumulator,
     ) {
         waveform.accept(monoSample)
         energy?.accept(monoSample)
+        tempo.accept(monoSample)
+        chroma.accept(monoSample)
+        loudness.accept(monoSample)
+    }
+
+    private fun truePeakDb(peakLinear: Double): Float? {
+        if (peakLinear <= 0.0) return null
+        return (20.0 * kotlin.math.log10(peakLinear)).toFloat()
     }
 
     companion object {

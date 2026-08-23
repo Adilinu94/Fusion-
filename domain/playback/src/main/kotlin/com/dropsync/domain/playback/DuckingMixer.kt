@@ -30,6 +30,33 @@ object DuckingMixer {
 }
 
 /**
+ * Expliziter Ducking-Zustand (Offtrack Phase 10, Abschnitt 13.2):
+ * Rest- und TTS-/Cue-Ducking werden an einer Stelle als dB gebuendelt,
+ * statt als verstreute Multiplikatoren `gain *= ...` an verschiedenen
+ * unkontrollierten Orten. `minOf` = das staerkste Ducking gewinnt.
+ */
+data class DuckingState(
+    val restDuckDb: Double = 0.0,
+    val cueDuckDb: Double = 0.0,
+) {
+    /** Kombinierter Ducking-Gain 0..1 (nie additiv). */
+    val combinedGain: Double
+        get() = DuckingMixer.effectiveGain(restDuckDb, cueDuckDb)
+}
+
+/**
+ * ReplayGain-/R128-Metadaten (Offtrack Phase 10, Abschnitt 13.3).
+ * Bewusst nur Analyse-Information; die Anwendung erfolgt erst nach
+ * expliziter Nutzer-Aktivierung, nie als v1-Standard.
+ */
+data class LoudnessInfo(
+    val trackGainDb: Float? = null,
+    val albumGainDb: Float? = null,
+    val truePeakDb: Float? = null,
+    val integratedLufs: Float? = null,
+)
+
+/**
  * Rampe fuer Ducking-Uebergaenge (Design Phase 7.1): Attack schnell
  * (20-50 ms), Release langsamer (150-300 ms), damit Ducking nicht
  * knackst. [next] liefert den Gain nach [elapsedMs] seit dem Start

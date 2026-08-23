@@ -281,3 +281,188 @@ Anlass: Hardware-Testplan Teile D und E auf dem Medium_Phone-Emulator
 - [x] Verifiziert: App installiert, First-Start, Library-Import,
   Wiedergabe, Theme, A11y auf Medium_Phone (Android 16) - alle grün.
   Doku: `docs/STATUS_FORTSCHRITT.md` Abschnitt R.
+
+## S. Musik-Recherche 2026 + Waveform-Performance-Umbauplan (2026-08-21, Session: ZCode-4d9f2a7b)
+
+Anlass: Recherche "Music-Funktion verbessern (technisch + UI/UX), Best
+Practices 2026" und vertiefte Analyse der Waveform-Generierung
+("schleppend"). Kein Produktionscode geaendert — nur Doku.
+
+- [x] Zwei Research-Dokumente mit Quellenzitaten je Aussage erstellt:
+  `docs/research/RESEARCH_MUSIC_UIUX_2026.md` (M3 Expressive, YTM/Spotify/
+  Apple-Redesigns 2025-26, Now-Playing/Queue/Mini-Player, Fitness-Hybrid,
+  36 DropSync-Empfehlungen + Quick Wins) und
+  `docs/research/RESEARCH_MUSIC_TECHNIK_2026.md` (Media3 1.11, AudioStack,
+  BT/LE-Audio, FGS-Regeln 14-16, Compose-Performance, Waveform, Testing).
+- [x] Flaschenhals-Analyse der Analyse-Pipeline (fuenf Befunde, mit
+  file:line belegt): All-or-nothing-Analyse (Interface verspricht
+  Nur-Waveform-Pfad, `AnalysisProfile` existiert unbenutzt),
+  Per-Sample-Schleife, Chroma-Detailkosten (Modulo je Sample, cos je
+  Fenster), WorkManager-Dispatch-Latenz im UI-Pfad, kein Prewarming/
+  keine Prioritaet. Rendering explizit KEIN Problem (bereits
+  allokerungsfrei).
+- [x] Umbauplan `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md` (Root, analog zu den
+  anderen Ausbauplaenen) geschrieben: Ziel/metrisch, 7 Phasen (0 Messung
+  + Baseline, 1 Block-API/Float, 2 Profile + zwei Stufen +
+  MIGRATION_8_9, 3 In-Process-Prioritaet, 4 Queue-Prewarming, 5 optional
+  Decode-Overlap, 6 optional FFmpeg-JNI, 7 Doku + ADR-0015),
+  Grundregel "Ausgaben aendern sich nicht => kein ANALYZER_VERSION-Bump =>
+  kein Re-Analyse-Sturm", Verifikation und Eskalationen.
+- [ ] Naechster Schritt gemaess Plan: Phase 0 (Messinfrastruktur +
+  Baseline), danach Phase 1-4 als ein Umsetzungsblock.
+
+## T. Musik-UI/UX-Mittelfrist-Paket umgesetzt (2026-08-22, Session: ZCode-4d9f2a7b, Fortsetzung)
+
+Anlass: /goal mit den Mittelfrist-Punkten aus der Recherche (Abschnitt
+S). Umsetzung als ein Block; Builds/Tests/Lint der beruehrten Module
+gruen, nichts committet (Arbeitsbaum wie zuvor uncommittet).
+
+- [x] **Expressive ohne Alpha:** Kein `MaterialExpressiveTheme` —
+  material3 1.5.0 ist laut Material-Blog erst mit dessen Stable-Release
+  oeffentlich, aktuell nur alpha/beta; Projektregel verbietet Alpha
+  (Quellen in `Theme.kt`-Kommentar dokumentiert). Umgesetzt stattdessen:
+  Play/Pause-Shape-Morph Kreis<->Squircle (Feder) im Now-Playing,
+  Icon-Puls im Mini-Player, Sheet-Routen-Transition (Slide-up/Fade,
+  Feder) fuer `now_playing` in `DropSyncApp`, Cover-Hero-Pop-in.
+- [x] **YTM-Layout:** Cover-Karussell 0.40 der Hoehe (240-420 dp statt
+  0.52/320-520), Abstande straffen — Controls daumenerreichbar im
+  oberen Drittel.
+- [x] **Swipe-down-dismiss:** `SwipeDismissBox` am Cover (vertikales
+  Ziehen, 140-dp-Schwelle, Feder-Rueckstellung, Fade am Fortschritt);
+  horizontale Pager-Wische unberuehrt.
+- [x] **Artwork-adaptives Theming:** `ArtworkColors.kt` (feature/player)
+  — dominante/vibrierendste Deckfarbe per 4-Bit-Histogramm aus dem
+  gecachten 512er-Cover (nutzt denselben CoverArtLoader-Cache wie der
+  Blur-Hintergrund; bewusst KEINE neue Palette-Abhaengigkeit, Plan-Regel
+  "keine neue Dependency"). Pure Funktion `colorsFromPixels` ist
+  JVM-testbar angelegt. Scrim/Text/Akzent/Play-Button im Now-Playing
+  adaptiv statt festem `Color.White`.
+- [x] **Aktions-Carousel + Quick-EQ:** `PlayerActionRow` (EQ, Tempo,
+  Marker, Mix an/aus mit Sekunden, Queue mit Anzahl) + `QuickEqSheet`
+  mit eigenen vertikalen Band-Slidern (48-dp-Flaeche, 0,5-dB-Raster,
+  Haptik am Nulldurchgang, Tap+Drag) — schreibt live ueber
+  `AudioEngineRepository` in die DSP-Kette.
+- [x] **Tempo/BPM-Lock:** `PlaybackState.playbackSpeed` +
+  `setPlaybackSpeed` (impl: `Player.setPlaybackSpeed`, begrenzt
+  0.5-2.0x wg. media3-Issue #1101, `EVENT_PLAYBACK_PARAMETERS_CHANGED`
+  im Listener) + `TempoSheet` (0,05-Raster, Presets, BPM-Lock: Ziel-
+  Kadenz 60-200, Oktav-Faltung gegen Track-BPM via `trackBpm`,
+  automatisches Nachziehen bei Titelwechseln; manuelle Wahl hebt den
+  Lock). Restzeit-Anzeige im Player tempo-korrigiert. PlayerViewModel
+  injiziert zusaetzlich `AudioEngineRepository`.
+- [x] **Marker Beat-Snap/A11y:** `MarkerSnapping` (250-ms-Fenster aufs
+  Beat-Raster bei analysiertem BPM, Haptik beim Einrasten beim Setzen
+  UND Verschieben; `MarkerSnappingTest` 6 Faelle), Trefferzone ~24 dp
+  (Slop 0.06 statt 0.03, per Parameter an `Waveform`), 3-dp-Ticks,
+  TalkBack-Beschreibung nennt Marker-Anzahl
+  (`now_playing_waveform_with_markers`, DE+EN).
+- [x] **Shared-Element (Ersatzloesung):** Echte
+  `SharedTransitionLayout`-Elemente MiniPlayer->NowPlaying sind mit der
+  heutigen Shell nicht erreichbar (Mini-Player sitzt im Scaffold-
+  bottomBar ausserhalb des NavHost; der AnimatedVisibilityScope der
+  Route erreicht ihn nicht). Umgesetzt: Sheet-Transition + Cover-Pop-in
+  (visuell aequivale Hero-Wirkung). **Folgearbeit:** Player als
+  Overlay/Bottom-Sheet in der Shell statt NavRoute — dann echte Shared
+  Elements moeglich.
+- [x] Verifikation: `:feature:player:testDebugUnitTest` (28 gruen, incl.
+  neuer `MarkerSnappingTest`), `:data:playback`,
+  `:data:workout`, `:core:designsystem` Unit-Tests gruen;
+  `:app:assembleDebug` gruen; lintDebug der beruehrten Module ohne
+  Befunde. Interface-Erweiterung `setPlaybackSpeed` in allen drei
+  Test-Fakes nachgezogen (PlayerViewModelTest, RestMusicCoordinatorTest,
+  WorkoutRepositoryImplTest).
+- [ ] Geraeteabnahme offen: Time-Stretch-Qualitaet der Plattform bei
+  0.5-2.0x (Sonic/AudioTrack-PlaybackParams), Haptik, adaptive
+  Kontraste auf hellen Covern, Swipe-dismiss im Zusammenspiel mit dem
+  Karussell am echten Geraet.
+
+---
+
+## U. Flowtimer-Integration: Spec-Korrekturen, ADR und UI-Vertrag (2026-08-22)
+
+Vorarbeit am Dokumentenbestand. **Kein Code geaendert** - die Integration
+selbst startet erst nach Flowtimer v2 (Phase 15 + 16), siehe
+Implementierungsreihenfolge im Design-Dokument.
+
+- [x] `docs/design/2026-08-22-flowtimer-integration-design.md` gegen beide
+  Repos geprueft: sechs Falschaussagen korrigiert (archived-Flag existiert
+  bereits, millikg-Exaktheit, Testanzahl 40 statt 33, 29 Module / 29
+  Entities, Richtung der PR-Mathematik, Hosting). Neuer Abschnitt
+  "Revisionen" haelt die Aenderungen fest.
+- [x] `docs/design/2026-08-22-flowtimer-integration-CONTEXT.md` angelegt:
+  neun gesperrte Umsetzungsentscheidungen (E1-E9) plus acht offene
+  Recherchepunkte. Bei Widerspruch zum Design-Dokument gilt CONTEXT.
+- [x] `docs/adr/0016-flowtimer-integration-hebt-fusionsdesign-punkte-auf.md`
+  geschrieben (Muster ADR-0010/0013): loest den Vorrang-Widerspruch zum
+  Fusionsdesign fuer vier Punkte formal auf. Erste ADR dieser Reihe mit
+  Code-Folgen (Submodule, CI-Checkout, Architekturtest-Liste). Nummer
+  0015 ist im Waveform-Umbauplan Phase 7 vorbelegt, daher 0016.
+- [x] Kopftabelle "Verbundene Dokumente" im Fusionsdesign ergaenzt
+  (Mobile Design System + Flowtimer-Integration), Geltungsordnung dort um
+  die ADR-0016-Einschraenkung erweitert.
+- [x] `docs/design/2026-08-22-flowtimer-integration-UI.md` angelegt:
+  Screen-Vertrag des Progress-Dashboards, recherchegestuetzt. Kernpunkte:
+  eine Aussage statt vier gleichwertiger Kacheln, Lime genau einmal,
+  Distanz statt Stand, kein PR-Konfetti im Dashboard.
+- [x] **Entscheidungen von Adi eingearbeitet (2026-08-22):** Tages-Streak
+  (kein Wochen-Streak) mit Bruch erst nach 3 zusammenhaengenden
+  Ruhetagen; Gewichte ganzzahlig ohne Dezimalstelle (nie `95,0 kg`);
+  Volumen in kg unter 1000, darueber Tonnen mit einer Stelle; kein
+  Ziel-Balken je Uebungszeile (nur Textdifferenz). Uebriges Design
+  liegt beim Umsetzer, Abschnitt "Entschieden" im UI-Dokument.
+- [x] Folgearbeit aus dem Tages-Streak notiert: `streakCount` in
+  `Streak.kt` braucht einen Parameter `maxGapDays` (Default 0, damit
+  Flowtimers Verhalten unveraendert bleibt; Fusion uebergibt 2). Tests
+  fuer Luecke 1, 2 und 3 sind Pflicht.
+- [x] **Zweite Adi-Runde (2026-08-22):** Segmented Control "Uebersicht |
+  Verlauf" gestrichen (Design-Entscheidung 17 aufgehoben) — der
+  Satz-Verlauf ist der letzte Tile mit eigener Route, damit kein
+  Modus-Zustand und Android-Back funktioniert normal. Layout auf
+  **Bento-Grid** umgestellt (zwei Spalten, Tiles unterschiedlich gross,
+  einspaltig ab fontScale 1.5). Tiles ohne Aussage werden
+  **ausgeblendet** statt leer gezeigt (Streak ab 2 Tagen, Chart ab 2
+  Wochen, Volumen nur bei Saetzen dieser Woche).
+- [x] Palette erweitert, je Farbe eine Rolle: `756FFA` = Ziele
+  (`secondary`), `141414` = Grund (`background`/`surface`), `E7E6FB` =
+  genau ein heller Tile (`secondaryContainer`). Lime bleibt
+  ausschliesslich Aktion. Kontraste gemessen: dunkler Text auf Violett
+  (4,75) statt weissem (3,73); Lime auf `E7E6FB` ist 1,08 und damit
+  verboten. `AccentColor` wird NICHT erweitert — Violett ist semantische
+  Rolle, keine waehlbare Akzentfarbe.
+- [x] Folgearbeit Designsystem notiert: `Theme.kt` `DarkColors` um
+  `secondary`/`onSecondary`/`secondaryContainer`/`onSecondaryContainer`
+  erweitern, `background`/`surface` auf `141414`;
+  `ThemeColorSnapshotTest` um drei Faelle (Violett bleibt `756FFA`,
+  `onSecondary` dunkel, Lime nie mit `secondaryContainer` gepaart).
+- [x] **HTML-Prototyp** `docs/design/prototypes/progress-dashboard.html`
+  (Entscheidung 24, Schritt 0 der Implementierungsreihenfolge). Eine
+  Datei, fuenf Datenzustaende (kein Satz / Tag 2 / zwei Wochen / voll /
+  Wochenziel uebertroffen) in je einem 393x852-dp-Rahmen mit
+  eingezeichneter Faltlinie. Zwei Pruefschalter: fontScale 2.0 (Grid
+  einspaltig, Ring 120 dp mit Zahl darunter) und 8-dp-Raster. Keine
+  externen Assets, keine Logik. **Entscheidungswerkzeug, keine
+  Spezifikation** — bei Abweichung gilt das UI-Dokument. Grund:
+  `:feature:progress` existiert nicht, eine Compose-Preview kostet neues
+  Modul + `settings.gradle.kts` + `ModuleDependencyRulesTest` + Build
+  ueber 29 Module je Layoutfrage. Poppins per `@font-face` aus
+  `core/designsystem`; Chrome braucht dafuer `python -m http.server`.
+- [x] Zwei inhaltliche Aenderungen aus dem Vergleich mit einem
+  Referenz-Design derselben Palette: (1) Chart hebt die aktuelle Woche
+  hervor — Violett-Balken plus Lime-Wertpille, weil acht graue Balken
+  ohne Anker offenlassen, welcher jetzt gilt. (2) Regel
+  "Lime nie neben Violett" praezisiert: 3,42 unterschreitet 4,5:1 fuer
+  Text, ueberschreitet aber 3:1 fuer grafische Objekte. Lime-**Text** auf
+  Violett bleibt verboten, Lime-**Grafik** ist erlaubt; der Pillen-Text
+  steht auf Lime, nicht auf Violett.
+- [x] Fremde Abschnitte S und T nebst ihren vier untracked Dateien
+  (`docs/research/RESEARCH_MUSIC_*.md`,
+  `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md`) als **eigener** Commit
+  nachgetragen, damit die Flowtimer-Arbeit nicht mit ihnen vermischt
+  wird. Der in T beschriebene Produktionscode bleibt uncommittet und
+  braucht eine eigene Verifikation durch den Urheber.
+- [x] `docs/design/FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`
+  nachgetragen. Die Datei war untracked, wird aber von fuenf committeten
+  Dokumenten verlinkt — der Link-Check lief nur in diesem Arbeitsbaum
+  gruen, in einem frischen Clone fuenffach rot. Mit Testclone verifiziert.
+- [x] `python3 tools/doku_links_check.py` gruen — auch aus einem frischen
+  `git clone` heraus, was vorher nicht der Fall war.

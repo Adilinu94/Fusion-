@@ -1,30 +1,38 @@
 package com.dropsync.domain.sensor.calibration
 
 import com.dropsync.domain.sensor.CalibrationProfile
+import com.dropsync.domain.sensor.ExerciseEngineConfig
+import com.dropsync.domain.sensor.ExerciseEnginePipeline
+import com.dropsync.domain.sensor.ProfileStatus
 import com.dropsync.domain.sensor.SensorSample
 import kotlin.math.abs
-import kotlin.math.sqrt
+import kotlin.math.max
+import kotlin.math.min
 
 /**
  * Learn loop (Fusion Phase 4): when the user corrects the live-counted reps,
  * the buffered set is re-analysed so the pipeline parameters would reproduce
  * the TRUE count, and the stored profile is nudged towards the new evidence.
  *
- * Approach: project the set's gyro signal onto the stored rotation axis
- * (bias-corrected), detect [correctedReps] peaks, and derive the prominence
- * and rep-duration they imply. The template is re-extracted from the
- * corrected peaks. New values are smoothed into the profile (the calibration
- * still dominates, so one odd set never wrecks it).
+ * Umbauplan Phase 7: der Refiner lernt NUR, wenn exakt [correctedReps]
+ * plausible, zweiphasige Peaks gefunden wurden. Das angepasste Profil wird
+ * anschliessend durch die echte Live-Pipeline geschickt und nur gespeichert,
+ * wenn sie den bestaetigten Count reproduziert. Parameteraenderungen sind
+ * pro Set begrenzt.
  */
 object CalibrationRefiner {
     /** Fraction of the new estimate blended into the stored profile. */
     private const val ADAPT_RATE = 0.3
 
+    /** Umbauplan Phase 7.3: maximale relative Parameteraenderung pro Set. */
+    private const val MAX_RELATIVE_STEP = 0.25
+
     private const val SAMPLE_RATE_HZ = 50.0
 
     /**
      * Returns an improved [CalibrationProfile] for [correctedReps] performed
-     * in [samples], or null when the set is too short to re-analyse.
+     * in [samples], or null when the set is too short, the peak structure is
+     * implausible, or the revalidated pipeline does not reproduce the count.
      */
     fun refine(
         samples: List<SensorSample>,
@@ -33,12 +41,21 @@ object CalibrationRefiner {
     ): CalibrationProfile? {
         if (correctedReps < 1 || samples.size < SAMPLE_RATE_HZ) return null
         val signal = project(samples, profile.rotationAxis, profile.gyroBias)
-        val peaks = detectPeaks(signal, correctedReps)
-        if (peaks.isEmpty()) return null
+
+        // P0-Fix: es muessen GENAU correctedReps plausible Peaks gefunden
+        // werden - eine Teil- oder Uebererkennung darf nichts lernen.
+        val peaks = detectPeaks(signal, correctedReps + 1)
+        if (peaks.size != correctedReps) return null
+
+        // Jeder Kandidat muss zweiphasig sein (signiertes GP): um den Peak
+        // herum muessen sowohl positive als auch negative Anteile liegen.
+        val plausible = peaks.all { isTwoPhasePeak(signal, it) }
+        if (!plausible) return null
 
         // Rep duration from the spacing between consecutive corrected peaks.
         val intervals = (1 until peaks.size).map { peaks[it] - peaks[it - 1] }
-        val newDuration = if (intervals.isNotEmpty()) median(intervals.map { it.toDouble() }) else null
+        val newDurationSamples = if (intervals.isNotEmpty()) median(intervals.map { it.toDouble() }) else null
+        val newDurationMs = newDurationSamples?.let { it * (1_000.0 / SAMPLE_RATE_HZ) }
 
         // Prominence implied by the corrected peaks.
         val newProminence = median(peaks.map { prominenceAt(signal, it) })
@@ -46,16 +63,81 @@ object CalibrationRefiner {
         // Template re-extracted around the corrected peaks.
         val newTemplate = extractTemplate(signal, peaks)
 
-        return profile.copy(
-            expectedProminence = blend(profile.expectedProminence, newProminence),
-            expectedDurationSamples =
-                if (newDuration != null) {
-                    blend(profile.expectedDurationSamples, newDuration)
-                } else {
-                    profile.expectedDurationSamples
-                },
-            repTemplate = newTemplate ?: profile.repTemplate,
-        )
+        val candidate =
+            profile.copy(
+                expectedProminence = blend(profile.expectedProminence, newProminence),
+                expectedDurationMs =
+                    if (newDurationMs != null) {
+                        blend(profile.expectedDurationMs, newDurationMs)
+                    } else {
+                        profile.expectedDurationMs
+                    },
+                repTemplate = newTemplate ?: profile.repTemplate,
+                // Umbauplan Phase 7.4: der Refiner erzeugt nur noch Kandidaten.
+                // Aktivierung erst nach genug validierten Sets (Promotion).
+                revision = profile.revision + 1,
+                parentRevision = profile.revision,
+                status = ProfileStatus.CANDIDATE,
+                validatedSetCount = 0,
+            )
+
+        // Umbauplan Phase 7.3: begrenzte Parameteraenderung pro Set.
+        if (!withinStepLimits(profile, candidate)) return null
+
+        // Umbauplan Phase 7.3: das angepasste Profil muss den bestaetigten
+        // Count durch die ECHTE Live-Pipeline reproduzieren.
+        if (!revalidates(samples, correctedReps, candidate)) return null
+
+        return candidate
+    }
+
+    /**
+     * Runs [samples] through the real [ExerciseEnginePipeline] configured
+     * with [candidate]. Only returns true when it counts exactly
+     * [correctedReps] reps.
+     */
+    private fun revalidates(
+        samples: List<SensorSample>,
+        correctedReps: Int,
+        candidate: CalibrationProfile,
+    ): Boolean {
+        val pipeline =
+            ExerciseEnginePipeline(
+                ExerciseEngineConfig(
+                    sampleRateHz = SAMPLE_RATE_HZ,
+                    rotationAxis = candidate.rotationAxis,
+                    gyroBias = candidate.gyroBias,
+                    expectedProminence = candidate.expectedProminence,
+                    expectedDurationMs = candidate.expectedDurationMs,
+                    detectionThreshold = candidate.detectionThreshold,
+                    hasValidCalibration = true,
+                ),
+            ).also { it.setTemplate(candidate.repTemplate) }
+        for (s in samples) {
+            pipeline.processSample(
+                s.timestampMs,
+                s.gx,
+                s.gy,
+                s.gz,
+                s.ax,
+                s.ay,
+                s.az,
+            )
+        }
+        return pipeline.repCount.value == correctedReps
+    }
+
+    /** Umbauplan Phase 7.3: begrenzte relative Parameteraenderung. */
+    private fun withinStepLimits(
+        old: CalibrationProfile,
+        new: CalibrationProfile,
+    ): Boolean {
+        fun limited(
+            oldValue: Double,
+            newValue: Double,
+        ): Boolean = abs(newValue - oldValue) <= max(oldValue, 1e-9) * MAX_RELATIVE_STEP
+        return limited(old.expectedProminence, new.expectedProminence) &&
+            limited(old.expectedDurationMs, new.expectedDurationMs)
     }
 
     // --- Signal projection (bias-corrected, onto the rotation axis) --------
@@ -99,6 +181,23 @@ object CalibrationRefiner {
             }
         }
         return chosen.sorted()
+    }
+
+    /** Umbauplan Phase 4/7: both half-waves around the peak are required. */
+    private fun isTwoPhasePeak(
+        signal: DoubleArray,
+        index: Int,
+    ): Boolean {
+        val half = (SAMPLE_RATE_HZ * 0.6).toInt() // ~0.6 s window each side
+        val start = max(0, index - half)
+        val end = min(signal.size, index + half)
+        var sawPositive = false
+        var sawNegative = false
+        for (i in start until end) {
+            if (signal[i] > 0) sawPositive = true
+            if (signal[i] < 0) sawNegative = true
+        }
+        return sawPositive && sawNegative
     }
 
     /** Local prominence: peak height above the surrounding baseline. */

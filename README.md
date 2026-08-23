@@ -36,10 +36,10 @@ Bauplan sind nur ueber ADRs in [`docs/adr/`](docs/adr/) erlaubt.
 | 1 (Schritt 15) | Audio-Engine-Fundament: Float-Output, DSP-Kette (64-Bit-Double), Preamp+Limiter, Audioinformationen | Abgeschlossen (`:domain:audio`, `:data:audio`, Service-Wiring; Audioinformationen-Panel in `:feature:audio`; Cue-Ducking auf dem Preamp-Knoten der DSP-Kette statt Player-Lautstaerke, kollisionsfrei zu DVC) |
 | 2 (Schritt 16) | EQ (32 Baender), Bass/Hoehen, Stereo Expansion, Reverb, Dither, Resampler, DVC, Presets | Abgeschlossen (`MasterDspProcessor`, EQ-Presets in Room + Seeder/CRUD; UI in `:feature:audio`: EQ grafisch/parametrisch mit Presets, Klangregler, Stereobreite, Reverb, Resampler, Dither, DVC, Crossfade) |
 | 3 (Schritt 17) | FFmpeg-Formate (ALAC/AIFF/WMA/APE/TAK/TTA/DSD), CUE, M3U, SAF-Ordnerscan | Codeseitig abgeschlossen: Parser, Formatkatalog, SAF-Ordnerscan, `cue_tracks` + Clipping-MediaItems, Renderer-Extension-Mode (`DspRenderersFactory`, `EXTENSION_RENDERER_MODE_PREFER`), M3U/M3U8-Playlisten-Import. FFmpeg-Extension ist artifact-ready: Gradle-Flag `dropsync.enableFfmpeg` (Default aus), automatisches Wiring in `settings.gradle.kts` + `:data:audio`, Build-Skript `scripts/build-ffmpeg.sh` + Anleitung `docs/ffmpeg-build.md`. Code-seitig vollstaendig und verifiziert (Wiring, Lizenz, Renderer-Prioritaet); das native Artefakt erfordert einen Entwickler-Host mit NDK r28+ (16-KB-Page-Alignment, siehe `docs/ffmpeg-build.md`) — kein Projektrueckstand, sondern strukturelle Voraussetzung nativer Android-Builds |
-| 4 (Schritt 18) | Gapless-Absicherung, Crossfade (Dual-Player), Auto-Resume, MusicFX | Abgeschlossen: `CrossfadeController` (Equal-Power, Gapless-/CUE-Ausschluss, Fallback harter Uebergang), `onPlaybackResumption` aus `PlayerStateStore`, Option "Bei BT-Verbindung automatisch fortsetzen", MusicFX-Session-Broadcasts + `useSystemEffects`-Bypass |
+| 4 (Schritt 18) | Gapless-Absicherung, Crossfade (Dual-Player), Auto-Resume, MusicFX | Abgeschlossen; spaeter refactored (ADR-Konsolidierung): der eigene `CrossfadeController` (Dual-Player) wurde entfernt, Uebergaenge laufen jetzt als harter Wechsel ueber den einen sessionfuehrenden Player (`PlaybackRepositoryImpl.playSongAt` -> Custom-Kommando `ACTION_PLAY_SONG_AT`). Erhalten: Equal-Power-Kurven (`CrossfadeCurves`, `MixPreset`) in `:domain:audio`, `onPlaybackResumption` aus `PlayerStateStore`, Option "Bei BT-Verbindung automatisch fortsetzen", MusicFX-Session-Broadcasts + `useSystemEffects`-Bypass |
 | 5 (Schritt 19) | Pro-Ausgang-Profile, Bit-Perfect (USB, Android 14+), BT-Anzeige | Abgeschlossen: Profile je Geraet (`DeviceProfileStore` + `OutputProfileController`, automatischer Wechsel + Save-Through), `BitPerfectGateway` (AudioMixerAttributes, API 34+), Bit-Perfect-Bypass (DSP aus, Float-Output aus, Crossfade aus), Vertrag `activeOutputProfileKey`/`bitPerfectSupport`; UI in `:feature:audio` (Bit-Perfect-Panel mit DAC-Faehigkeiten, aktives Ausgabeprofil, BT-Hinweis + Link zu den System-Toneinstellungen), erreichbar ueber Einstellungen -> Audio & DSP |
 | 6 (Schritt 20) | Bibliothek: Kuenstler/Alben/Genres/Ordner, Statistiken, Favoriten, Suche, Queue | Datenschicht + UI-Ansichten abgeschlossen: Room (`play_stats`, `favorites`, `playlists`/`playlist_items`, FTS4 `song_fts`, `genre`-Spalte), `LibraryBrowseRepository` (Alben/Kuenstler/Genres/Ordner, zuletzt/meistgespielt, Favoriten, Volltextsuche, Playlisten-CRUD/Move, M3U-Import); `LibraryScreen`/`LibraryContent` mit Ansichts-Chips, Volltextsuche, Sortierung, Filtern nach Format/Dauer/Hi-Res, Favoriten-Toggle, Alphabet-Schnellscroller, horizontalem Swipen zwischen Ansichten (`HorizontalPager`) und Sammlungs-Drilldown; konfigurierbare Ansichten (ein-/ausblenden + Reihenfolge, persistiert via `LibraryViewPreferencesRepository`); Queue-Editor (verschieben/entfernen/als Naechstes/zur Queue) ueber `PlaybackRepository` als Bottom-Sheet am Mini-Player; `MediaLibraryService`-Browse-Baum (Root -> Titel/Alben/Interpreten/Ordner -> Songs) fuer Android Auto/BT |
-| 7 (Schritt 21) | Feinschliff, Barrierefreiheit, Performance, Geraetetests | Codeseitig abgeschlossen: Barrierefreiheit (Slider mit `stateDescription`, 48-dp-Schaltflaechen, Schaltererklaerungen), DE/EN-Strings, Akku-Hinweis bei Hi-Res-Resampling, DSP-Durchsatz-/Stabilitaetswaechter (`DspPerformanceTest`: 32 Baender/48 kHz > 2x Echtzeit, keine NaN/Inf). Geraeteabhaengig offen (nicht automatisierbar): Baseline-Profile-Generierung (Macrobenchmark auf Geraet), reale CPU-Messung Mittelklasse, USB-DAC-Bit-Perfect, BT-Codec-Verhalten, MusicFX mit/ohne Systemequalizer |
+| 7 (Schritt 21) | Feinschliff, Barrierefreiheit, Performance, Geraetetests | Codeseitig abgeschlossen: Barrierefreiheit (Slider mit `stateDescription`, 48-dp-Schaltflaechen, Schaltererklaerungen), DE/EN-Strings, Akku-Hinweis bei Hi-Res-Resampling, DSP-Durchsatz-/Stabilitaetswaechter (`DspPerformanceTest`: 32 Baender/48 kHz > 2x Echtzeit, keine NaN/Inf). Baseline-Profile-Infrastruktur ist seit Verbesserungsplan Phase 4 vorhanden (`:benchmarks` + `:app:generateBaselineProfile`, siehe Build-Abschnitt); reale CPU-Messung Mittelklasse, USB-DAC-Bit-Perfect, BT-Codec-Verhalten, MusicFX mit/ohne Systemequalizer bleiben Geraeteabnahme |
 
 ### Workout-Funktionen-Ausbau (Plan `WORKOUT_FUNKTIONEN_AUSBAU_PLAN.md`)
 
@@ -69,7 +69,7 @@ Bauplan sind nur ueber ADRs in [`docs/adr/`](docs/adr/) erlaubt.
 | 1 | Playlist-Oberflaeche (F1): anlegen/umbenennen/loeschen, Titel hinzufuegen/entfernen, Reihenfolge (Auf/Ab), "Zu Playlist hinzufuegen" im Songmenue | Abgeschlossen |
 | 2 | Playlist-Labels "Rest/Pause" und "Work" (F2): additive Spalte `label`, DB v3->v4 (`MIGRATION_3_4`, `4.json`), Label-Auswahl + Badge in der UI | Abgeschlossen |
 | 3 | Rest-Musik-Domain + Einstellungen: `RestMusicBehavior`, reiner `DropLandingPlanner` (`:domain:timer`), `RestMusicSettingsRepository`/-`Store` (DataStore), Abschnitt "Musik in Pausen" in den Einstellungen | Abgeschlossen |
-| 4 | Rest-Musik-Orchestrierung + Drop-Landung (F3): `RestMusicCoordinator` (`:feature:player`) beobachtet `TimerEngine`+Einstellung, setzt Rest-Queue bei Pausenbeginn, terminiert die Drop-Landung und wechselt per `crossfadeTo` (MediaSession-Custom-Kommando -> erweiterter `CrossfadeController`), Fallback-Kette + Nutzer-Vorrang; ADR-0012 | Abgeschlossen |
+| 4 | Rest-Musik-Orchestrierung + Drop-Landung (F3): `RestMusicCoordinator` (`:feature:player`) beobachtet `TimerEngine`+Einstellung, setzt Rest-Queue bei Pausenbeginn, terminiert die Drop-Landung und wechselt per `playSongAt` (MediaSession-Custom-Kommando `ACTION_PLAY_SONG_AT`); Fallback-Kette + Nutzer-Vorrang; ADR-0012 | Abgeschlossen |
 | 5 | Hardware-/Touch-Control (F4): Verifikation MediaSession-Standardbefehle, Override-Absicherung, Doku `docs/hardware-control.md` | Abgeschlossen (codeseitig: Standardkommandos + Notification-Aktionen ueber `MediaLibrarySession`, Nutzer-Vorrang der Automatik getestet, Doku; Geraeteabnahme wie Schritt 13 offen) |
 | 6 | Extras: Intelligentes Shuffle (A5, reiner `SmartShuffle` in `:domain:library` ueber play_stats/Favoriten, Schalter in den Einstellungen, `shufflePlay` in der Titelliste), Rest-Timer-Presets (B8, `RestTimerPreferencesRepository`/-`Store` (DataStore), Schnellwahl-Chips im Rest-Dialog + Editor in den Einstellungen), Get-Ready-Countdown 3-2-1 (B9, `prepMs`/`PREPARING` in `TimerEngine`, Schalter+Dauer in den Einstellungen) | Abgeschlossen |
 
@@ -78,21 +78,36 @@ Bauplan sind nur ueber ADRs in [`docs/adr/`](docs/adr/) erlaubt.
 | Phase | Inhalt | Status |
 | ----- | ------ | ------ |
 | 1 | BPM-/Tonart-Analyse additiv im bestehenden `TrackAnalyzer`-Durchgang (`track_analysis.bpm`/`camelot_key`), Migration v4->v5 | Entwurf |
-| 2 | `MixPreset`-Enum (Fade/Rise/Blend/Wave/Melt/Slam) als Volume-Kurven mit Equal-Power-Invariante (`sqrt(1 - fadeIn^2)`), `CrossfadeController` auf Preset-Strategie (beide Rampen), SLAM-Klickschutz per Mikro-Rampe, `DspConfig.mixPreset` (DataStore + Profil-Codec) | Abgeschlossen |
+| 2 | `MixPreset`-Enum (Fade/Rise/Blend/Wave/Melt/Slam) als Volume-Kurven mit Equal-Power-Invariante (`sqrt(1 - fadeIn^2)`, Basis `CrossfadeCurves` in `:domain:audio`), SLAM-Klickschutz per Mikro-Rampe, `DspConfig.mixPreset` (DataStore + Profil-Codec) | Abgeschlossen |
 | 3 | UI: Abschnitt "Mix-Uebergaenge" in den Einstellungen — an/aus, Uebergangsstil (6 Chips mit Erklaertext), Dauer 1-12 s, Bit-Perfect-Hinweis; Strings DE/EN. Steuerung global statt pro Playlist (Nutzerentscheidung); BPM/Key-Badges folgen mit Phase 1 | Abgeschlossen |
-| 4 | Tests: `MixPresetTest` (Equal-Power-Eigenschaftstest, FADE bitidentisch zum Bestand, Monotonie, paarweise verschieden), `CrossfadeControllerTest` (Mikro-Rampe), `DspConfigCodecTest` (Roundtrip/Rueckfall) | Abgeschlossen (Analyzer-/Migrationstests folgen mit Phase 1) |
+| 4 | Tests: `MixPresetTest` (Equal-Power-Eigenschaftstest, FADE bitidentisch zum Bestand, Monotonie, paarweise verschieden), `CrossfadeCurvesTest`, `DspConfigCodecTest` (Roundtrip/Rueckfall) | Abgeschlossen |
 | 5 | Optional: zweite DSP-Kette fuer echte EQ-/Filter-Uebergaenge (ADR-0013-pflichtig) | Nicht geplant, nur beschrieben |
-| 6 | Optional: Drop-Landung (`crossfadeTo`) mit waehlbarem Preset | Nicht geplant, nur beschrieben |
+| 6 | Optional: Drop-Landung mit waehlbarem Preset | Nicht geplant, nur beschrieben (Landung laeuft heute als harter Wechsel via `playSongAt`) |
 
 ### Herzfrequenz ueber Health Connect (Plan `HERZFREQUENZ_HEALTH_CONNECT_PLAN.md`)
 
 | Phase | Inhalt | Status |
 | ----- | ------ | ------ |
 | 1 | `:domain:health` + `:data:health`: `HeartRateSource`-Vertrag (Permission-Contract via `@HealthPermissionContract`-Qualifier, kein SDK-Leak in Features), `getSdkStatus`-Verfuegbarkeit inkl. `UPDATE_REQUIRED`, Changes-API mit Token-Ablauf-Fallback, `connect-client` 1.1.0; JVM-Tests gegen Fake-Gateway | Abgeschlossen |
-| 2 | Berechtigungs-UI in `:feature:settings`, Manifest (`health.READ_HEART_RATE` + Rationale-Intent-Filter), Datenschutz-/Rationale-Seite | Offen |
+| 2 | Berechtigungs-UI + Badge im Train-Tab (Verbesserungsplan Phase 5, 2026-08-21): generischer Contract per Hilt-Qualifier injiziert, `rememberLauncherForActivityResult` ohne SDK-Leak, `HeartRateBadge` in der SensorCard (Puls-Chip / "Puls erlauben" / still bei fehlendem Provider), Refresh nach Dialog und Resume nur im Foreground; `FakeHeartRateSource` in `:core:testing` | Abgeschlossen (Train-Tab); Einstellungs-/Rationale-Seite und Now-Playing-Einbindung folgen |
 | 3 | `HeartRateBadge` in `:core:designsystem` (bpm + "zuletzt aktualisiert vor X min"), Einbindung Now-Playing + Session-Screen, Latenz-Messung am Geraet | Offen |
 
 Grundsatz: Lesen nur im Foreground (kein `READ_HEALTH_DATA_IN_BACKGROUND`), keine eigene Persistenz ausser dem `changesToken`; Quelle ist Mi Fitness -> Health Connect, die App selbst bleibt offline.
+
+### Musik-UI/UX-Modernisierung 2026 (Recherche `docs/research/RESEARCH_MUSIC_UIUX_2026.md` / `RESEARCH_MUSIC_TECHNIK_2026.md`)
+
+| Punkt | Inhalt | Status |
+| ----- | ------ | ------ |
+| Expressive Motion | Kein `MaterialExpressiveTheme` (material3 1.5.0 weiterhin nicht stable; Projektregel nur stabile Versionen — Entscheidung in `Theme.kt` dokumentiert). Expressive-Ziele stattdessen stabil umgesetzt: Play/Pause-Shape-Morph (Kreis<->Squircle mit Feder-Physik) im Now-Playing, Icon-Puls im Mini-Player, Sheet-artige Routen-Transition (Slide-up + Fade) fuer Now-Playing, Cover-Hero-Pop-in | Abgeschlossen (Geraeteabnahme ausstehend) |
+| YTM-Layout | Controls hoeher: Cover-Karussell 0.40 statt 0.52 der Bildschirmhoehe (240-420 dp), Waveform/Transport frueh im oberen Drittel | Abgeschlossen |
+| Swipe-down-dismiss | Vertikales Ziehen am Cover verschiebt/blendet aus, ab 140 dp schliesst die Geste den Screen, darunter Feder-Rueckstellung | Abgeschlossen |
+| Artwork-adaptives Theming | `ArtworkColors` (feature/player): dominante/vibrierendste Farbe per 4-Bit-Histogramm aus dem gecachten 512er-Cover (keine neue Abhaengigkeit, Palette-Funktion nachgebaut, JVM-testbare Pure-Funktion); Scrim/Texte/Akzent im Now-Playing adaptiv statt festem `Color.White` | Abgeschlossen |
+| Aktions-Carousel + Quick-EQ | Horizontale Chip-Leiste (EQ an/aus, Tempo, Marker, Mix an/aus mit Dauer, Queue mit Anzahl); `QuickEqSheet` mit eigenen vertikalen Band-Slidern (48-dp-Bedienflaeche, 0,5-dB-Raster, Haptik am Nulldurchgang), live in die DSP-Kette | Abgeschlossen |
+| Tempo/BPM-Lock | `PlaybackState.playbackSpeed` + `setPlaybackSpeed` (0.5-2.0x begrenzt, `EVENT_PLAYBACK_PARAMETERS_CHANGED`), `TempoSheet` mit 0,05-Raster, Presets und BPM-Lock (Ziel-Kadenz 60-200, Oktav-Faltung gegen Track-BPM, zieht bei Titelwechseln nach); Restzeit im Player tempo-korrigiert | Abgeschlossen (Time-Stretch-Qualitaet am Geraet verifizieren; SMPTE-haette eigene DSP-Stufe noetig) |
+| Marker: Beat-Snap/A11y | `MarkerSnapping` (250-ms-Fenster auf Beat-Raster bei analysiertem BPM, Haptik beim Einrasten; `MarkerSnappingTest`), ~24-dp-Trefferzone fuer Long-Press/Drag (Slop-Parameter an `Waveform`, 3-dp-Ticks), TalkBack-Beschreibung nennt Marker-Anzahl | Abgeschlossen |
+| Shared-Element MiniPlayer->Player | Echte `SharedTransitionLayout`-Elemente erreichen den Mini-Player ausserhalb des NavHost nicht; visuell aequivale Sheet-Transition + Cover-Pop-in umgesetzt, echte Loesung (Player als Overlay/Sheet in der Shell) als Folgearbeit notiert (STATUS_FORTSCHRITT Abschnitt T) | Teilweise (Ersatzloesung) |
+
+Grundsatz: keine Alpha-Abhaengigkeiten (material3 1.5.0-alpha verworfen), keine neue Library fuer Palette/Farbextraktion, bestehende Modulgrenzen (feature -> domain) eingehalten.
 
 ## Build
 
@@ -107,8 +122,7 @@ unter einem Pfad mit Leerzeichen (`C:\Program Files\...`), schlaegt jeder
 Unit-Test mit "Hauptklasse Files konnte nicht gefunden werden" fehl. Abhilfe:
 eine Junction ohne Leerzeichen anlegen und maschinenlokal in
 `~/.gradle/gradle.properties` eintragen -- nicht in `gradle.properties` des
-Projekts, weil ein Windows-Pfad dort die Linux-CI bricht
-("Java home supplied is invalid").
+Projekts, weil ein Windows-Pfad dort die Linux-CI bricht.
 
 ```
 mklink /J C:\dev\jbr17 "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.8-hotspot"
@@ -121,6 +135,12 @@ mklink /J C:\dev\jbr17 "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.8-hotspot"
 ./gradlew assembleRelease    # Release-Build (R8, unsigniert)
 ./gradlew test               # Unit-Tests aller Module
 ./gradlew spotlessCheck      # Formatierung und Lint
+./gradlew lintDebug          # Android-Lint (CI-Gate, Umbauplan Phase 11)
+./gradlew detekt             # Detekt-Codeanalyse (CI-Gate, Umbauplan Phase 11)
+
+# Performance (Verbesserungsplan Phase 4; braucht Geraet/Emulator):
+./gradlew :app:generateBaselineProfile          # Baseline Profile generieren
+./gradlew :benchmarks:connectedBenchmarkAndroidTest   # Startup-Messung
 ```
 
 ## Architektur

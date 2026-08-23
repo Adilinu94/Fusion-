@@ -11,9 +11,13 @@ data class PhaseResult(
 )
 
 /**
- * Validates the phase structure of a rep peak: a valid rep has a
- * concentric (g_p > 0) and an eccentric (g_p < 0) phase with a sane
- * duration ratio. Pure-envelope windows pass the simplified check.
+ * Validates the phase structure of a rep window: a valid rep on the SIGNED
+ * gyro projection requires BOTH phases - a concentric (g_p > 0) and an
+ * eccentric (g_p < 0) phase with a sane duration ratio (Umbauplan Phase 4).
+ *
+ * The single-phase shortcut is REMOVED: half reps (lift only, no return)
+ * must never count on a signed signal. Unipolar envelope signals get their
+ * own validator later (EnvelopeCycleValidator).
  */
 class PhaseValidator(
     private val minDurationRatio: Double = 0.15,
@@ -42,14 +46,15 @@ class PhaseValidator(
         }
         val total = positiveCount + negativeCount
 
-        // Single phase only (e.g. pure envelope): accept, phase info comes
-        // from the sign of the smoothed g_p elsewhere.
+        // Umbauplan Phase 4: signed GP needs BOTH half-waves.
         if (negativeCount == 0 || positiveCount == 0) {
+            val missing = if (negativeCount == 0) "exzentrische" else "konzentrische"
             return PhaseResult(
-                valid = true,
+                valid = false,
                 positiveDuration = positiveCount,
                 negativeDuration = negativeCount,
                 durationRatio = if (total > 0) positiveCount.toDouble() / total else 0.5,
+                rejectionReason = "Keine $missing Phase (halbe Rep)",
             )
         }
 

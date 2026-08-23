@@ -4,6 +4,7 @@ import app.cash.turbine.test
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.sensor.DeviceEvent
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -28,6 +29,9 @@ private class StubProvider(
 
     val eventFlow = MutableSharedFlow<DeviceEvent>(extraBufferCapacity = 8)
     override val deviceEvents = eventFlow
+
+    val healthFlow = MutableStateFlow(SensorHealth(connectionState = initialState))
+    override val health = healthFlow
 
     val deviceId = MutableStateFlow<String?>(null)
     override val connectedDeviceId = deviceId

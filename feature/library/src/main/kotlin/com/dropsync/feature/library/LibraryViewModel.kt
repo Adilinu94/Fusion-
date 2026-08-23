@@ -7,6 +7,7 @@ import com.dropsync.core.common.onFailure
 import com.dropsync.core.common.onSuccess
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.Song
+import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformBucket
 import com.dropsync.domain.audio.WaveformDisplayGain
@@ -19,6 +20,7 @@ import com.dropsync.domain.library.LibraryListConfig
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.LibraryViewConfig
 import com.dropsync.domain.library.LibraryViewPreferencesRepository
+import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.MusicFolderFilterRepository
 import com.dropsync.domain.library.Playlist
 import com.dropsync.domain.library.SmartShuffle
@@ -102,6 +104,7 @@ class LibraryViewModel
         private val viewPreferences: LibraryViewPreferencesRepository,
         private val trackAnalysisRepository: TrackAnalysisRepository,
         private val folderFilter: MusicFolderFilterRepository,
+        private val markerRepository: MarkerRepository,
     ) : ViewModel() {
         private val _error = MutableStateFlow(LibraryError.NONE)
         val error: StateFlow<LibraryError> = _error.asStateFlow()
@@ -159,6 +162,13 @@ class LibraryViewModel
         /** Aktuelle Warteschlange (Kategorie "Warteschlange", Poweramp-Umbau). */
         val queue: StateFlow<List<QueueItem>> =
             playbackRepository.state.map { it.queue }.asState(emptyList())
+
+        /** Vollstaendiger Player-Zustand fuer den Now-Playing-Einstieg auf Music Home. */
+        val playbackState: StateFlow<PlaybackState> = playbackRepository.state.asState(PlaybackState())
+
+        /** Unbestaetigte Drop-Kandidaten werden dort geprueft, wo Musik verwaltet wird. */
+        val pendingMarkerReviews: StateFlow<List<SongMarker>> =
+            markerRepository.pendingAutoDetectedMarkers.asState(emptyList())
 
         /**
          * Fortschritt des laufenden Titels fuer die Library-Waveform
@@ -494,6 +504,14 @@ class LibraryViewModel
          */
         fun detectDrops(song: Song) {
             viewModelScope.launch { trackAnalysisRepository.requestOnsetDetection(song) }
+        }
+
+        fun confirmMarker(markerId: Long) {
+            viewModelScope.launch { markerRepository.confirmMarker(markerId) }
+        }
+
+        fun discardMarker(markerId: Long) {
+            viewModelScope.launch { markerRepository.deleteMarker(markerId) }
         }
 
         // --- Playlist-Aktionen (Musik-Workout-Kopplung Phase 1) ---------------

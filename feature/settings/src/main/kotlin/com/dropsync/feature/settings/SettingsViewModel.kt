@@ -25,6 +25,10 @@ import com.dropsync.domain.playback.RestMusicSettingsRepository
 import com.dropsync.domain.settings.AccentColorRepository
 import com.dropsync.domain.settings.ThemeSettingsRepository
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
+import com.dropsync.domain.workout.ExportFormat
+import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.WorkoutExporter
+import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -68,24 +72,13 @@ class SettingsViewModel
         private val restTimerPreferences: RestTimerPreferencesRepository,
         private val libraryViewPreferences: LibraryViewPreferencesRepository,
         private val audioEngine: AudioEngineRepository,
+        private val flatSetRepository: FlatSetRepository,
+        private val workoutRepository: WorkoutRepository,
         private val dispatchers: DispatcherProvider,
     ) : ViewModel() {
         /** Nicht zugeordnete Marker fuer die manuelle Zuordnung (Schritt 6.6). */
         val unmatchedMarkers: StateFlow<List<SongMarker>> =
             markerRepository.unmatchedMarkers.stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5_000),
-                emptyList(),
-            )
-
-        /**
-         * Unbestaetigte Onset-Kandidaten (Marker/Waveform-Plan Phase 5,
-         * source = AUTO_DETECTED, isEnabled = false) fuer die Review-Liste:
-         * Bestaetigen aktiviert den Marker, Verwerfen loescht ihn — nie
-         * Automatik.
-         */
-        val pendingAutoDetectedMarkers: StateFlow<List<SongMarker>> =
-            markerRepository.pendingAutoDetectedMarkers.stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5_000),
                 emptyList(),
@@ -170,6 +163,103 @@ class SettingsViewModel
         private val mutableImportState = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
         val importState: StateFlow<ImportUiState> = mutableImportState.asStateFlow()
 
+        /** Sichtbares Ergebnis eines Exportversuchs (Phase 3 Datenexport). */
+        sealed interface ExportUiState {
+            data object Idle : ExportUiState
+
+            data object InProgress : ExportUiState
+
+            /** Anzahl exportierter Saetze. */
+            data class Done(
+                val setCount: Int,
+            ) : ExportUiState
+
+            data class Failed(
+                val reason: ExportFailReason,
+            ) : ExportUiState
+        }
+
+        enum class ExportFailReason { NOTHING_TO_EXPORT, WRITE_FAILED }
+
+        private val mutableExportState = MutableStateFlow<ExportUiState>(ExportUiState.Idle)
+        val exportState: StateFlow<ExportUiState> = mutableExportState.asStateFlow()
+
+        /**
+         * Exportiert das Satz-Log an die vom Nutzer gewaehlte SAF-Datei
+         * (Verbesserungsplan Phase 3). Uebungsnamen kommen aus der
+         * Bibliothek, damit der Export lesbar bleibt.
+         */
+        fun exportTo(
+            uri: Uri,
+            format: ExportFormat,
+        ) {
+            viewModelScope.launch {
+                mutableExportState.value = ExportUiState.InProgress
+                val outcome =
+                    withContext(dispatchers.io) {
+                        try {
+                            val sets =
+                                when (val result = flatSetRepository.getRecentSets(Int.MAX_VALUE)) {
+                                    is AppResult.Success -> result.value
+                                    is AppResult.Failure -> return@withContext ExportOutcome.WriteFailed
+                                }
+                            if (sets.isEmpty()) return@withContext ExportOutcome.NothingToExport
+                            val exercises =
+                                workoutRepository
+                                    .observeExercises("de")
+                                    .first()
+                                    .associate { it.id to (it.slug to it.displayName) }
+                            val document =
+                                WorkoutExporter.buildDocument(
+                                    sets = sets,
+                                    exercises = exercises,
+                                    exportedAtEpochMs = System.currentTimeMillis(),
+                                )
+                            val content =
+                                when (format) {
+                                    ExportFormat.JSON -> WorkoutExporter.toJson(document)
+                                    ExportFormat.CSV -> WorkoutExporter.toCsv(document)
+                                }
+                            writeContent(uri, content)
+                            ExportOutcome.Done(document.sets.size)
+                        } catch (e: Exception) {
+                            ExportOutcome.WriteFailed
+                        }
+                    }
+                mutableExportState.value =
+                    when (outcome) {
+                        ExportOutcome.WriteFailed -> ExportUiState.Failed(ExportFailReason.WRITE_FAILED)
+                        ExportOutcome.NothingToExport -> ExportUiState.Failed(ExportFailReason.NOTHING_TO_EXPORT)
+                        is ExportOutcome.Done -> ExportUiState.Done(outcome.setCount)
+                    }
+            }
+        }
+
+        /** Internes Ergebnis des Exportlaufs. */
+        private sealed interface ExportOutcome {
+            data object NothingToExport : ExportOutcome
+
+            data object WriteFailed : ExportOutcome
+
+            data class Done(
+                val setCount: Int,
+            ) : ExportOutcome
+        }
+
+        private fun writeContent(
+            uri: Uri,
+            content: String,
+        ) {
+            context.contentResolver.openOutputStream(uri, "wt")?.use { stream ->
+                stream.write(content.toByteArray(Charsets.UTF_8))
+                stream.flush()
+            } ?: throw java.io.IOException("SAF-Output-Stream null")
+        }
+
+        fun dismissExportResult() {
+            mutableExportState.value = ExportUiState.Idle
+        }
+
         /**
          * Liest die SAF-Datei (Limit 5 MB, 6.1), parst und importiert
          * transaktional; jeder Fehler laesst die Tabellen unveraendert.
@@ -225,16 +315,6 @@ class SettingsViewModel
             songId: Long,
         ) {
             viewModelScope.launch { markerRepository.linkManually(markerId, songId) }
-        }
-
-        /** Bestaetigt einen AUTO_DETECTED-Kandidaten (Phase 5): isEnabled = true. */
-        fun confirmMarker(markerId: Long) {
-            viewModelScope.launch { markerRepository.confirmMarker(markerId) }
-        }
-
-        /** Verwirft einen Kandidaten endgueltig (Phase 5): loeschen statt behalten. */
-        fun discardMarker(markerId: Long) {
-            viewModelScope.launch { markerRepository.deleteMarker(markerId) }
         }
 
         /** Setzt das Pausen-Musik-Verhalten (Musik-Workout-Plan Phase 3). */
@@ -317,7 +397,18 @@ class SettingsViewModel
             try {
                 context.contentResolver.openInputStream(uri)?.use { stream ->
                     val limit = MarkerDocumentParser.MAX_DOCUMENT_BYTES.toInt() + 1
-                    val bytes = stream.readNBytes(limit)
+                    // Lint-Phase 11: readNBytes braucht API 33 (minSdk 26);
+                    // ByteArrayOutputStream funktioniert ueberall.
+                    val out = java.io.ByteArrayOutputStream()
+                    val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                    var total = 0
+                    while (total < limit) {
+                        val read = stream.read(buffer, 0, minOf(buffer.size, limit - total))
+                        if (read < 0) break
+                        out.write(buffer, 0, read)
+                        total += read
+                    }
+                    val bytes = out.toByteArray()
                     if (bytes.size >= limit) {
                         ReadResult.TooLarge
                     } else {

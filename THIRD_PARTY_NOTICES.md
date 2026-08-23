@@ -44,7 +44,8 @@ Die Marken-Schriftfamilie Poppins wird unter der SIL Open Font License 1.1
 als statische TTF (Gewichte 400/500/700) in `:core:designsystem`
 (`src/main/res/font/`) gebuendelt und offline ausgeliefert - kein
 Google-Fonts-Provider, kein Netzzugriff. Der vollstaendige Lizenztext liegt
-unter `UI/Poppins/OFL.txt`. OFL erlaubt das Einbetten in Anwendungen; die
+unter `UI/Raleway/OFL.txt`; die SIL OFL 1.1 ist fuer die hier gebuendelten,
+unveraenderten Poppins-Dateien ebenfalls massgeblich. OFL erlaubt das Einbetten in Anwendungen; die
 Fonts werden nicht separat verkauft und der Lizenztext begleitet die Dateien.
 
 ## FFmpeg (LGPL 2.1+)

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
+import com.dropsync.domain.sensor.ProfileStatus
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.calibration.CalibrationController
@@ -111,6 +112,10 @@ class CalibrationViewModel
                     return
                 }
             viewModelScope.launch {
+                // Umbauplan Phase 1.4: theta wird DIREKT persistiert - keine
+                // verlustbehaftete SPK/NPK-Rekonstruktion mehr.
+                // Umbauplan Phase 7.4: eine neue Kalibrierung startet als
+                // Revision 1 ACTIVE (ersetzt die vorherige aktive Revision).
                 val profile =
                     CalibrationProfile(
                         exerciseId = exerciseId,
@@ -118,11 +123,15 @@ class CalibrationViewModel
                         rotationAxis = result.rotationAxis,
                         gyroBias = result.gyroBias,
                         repTemplate = result.repTemplate,
-                        signalPeakLevel = result.theta + result.expectedProminence,
-                        noisePeakLevel = result.theta * 0.5,
                         expectedProminence = result.expectedProminence,
-                        expectedDurationSamples = result.expectedDurationSamples,
                         qualityScore = result.qualityScore,
+                        detectionThreshold = result.theta,
+                        noiseFloor = result.noiseFloor,
+                        expectedDurationMs = result.expectedDurationMs,
+                        revision = 1,
+                        parentRevision = null,
+                        status = ProfileStatus.ACTIVE,
+                        validatedSetCount = 0,
                     )
                 when (calibrationProfileRepository.save(profile)) {
                     is AppResult.Success -> _saved.value = true
