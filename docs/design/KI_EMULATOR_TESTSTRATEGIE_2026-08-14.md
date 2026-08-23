@@ -38,6 +38,7 @@ Performance, Barrierefreiheit).
 
 ---
 
+<a name="werkzeug-empfehlung"></a>
 ## 2. Werkzeug-Empfehlung
 
 **Nicht:** Enterprise-SaaS-Plattformen (Autify Aximo, TestSprite,
@@ -120,7 +121,8 @@ scrollt, würde (g) direkt in eine Zahl verwandeln.
 1. `HARDWARE_TESTPLAN.md` Teil A (manuell, echtes Gerät + M5Stick) —
    unverändert, zuerst, weil das zentrale Feature.
 2. Frische Claude-Code-Session (kein Kontext aus den Bau-Sessions),
-   Android Emulator Skill (oder Alternative aus Abschnitt 2)
+   Android Emulator Skill (oder Alternative aus
+   [Werkzeug-Empfehlung](#werkzeug-empfehlung))
    einrichten, Emulator hochfahren, Debug-APK installieren.
 3. Agent bekommt `HARDWARE_TESTPLAN.md` Teile C/D/E/G als Auftrag
    (natürlichsprachig: "gehe jeden Screen durch, prüfe X, Y, Z"),
