@@ -1,4 +1,17 @@
 // DropSync Projektstruktur gemaess Bauplan Abschnitt 3.2.
+
+// Windows-Workaround (Gradle #6164): AGP propagiert den Daemon-Wert von
+// java.library.path unquotiert in die JVM-Kommandozeile der Test-Worker.
+// Enthaelt der Wert Leerzeichen ("C:\Program Files\..."), zerlegt die JVM das
+// Argument und meldet fehlerhaft "ClassNotFoundException: Files" -- jeder
+// Unit-Test scheitert. Das Settings-Script laeuft vor allen Plugins; der hier
+// gesetzte Wert wird von AGP unveraendert uebernommen. Auf Linux/macOS
+// unwirksam, weil die Bedingung dort nicht greift.
+if (System.getProperty("os.name").startsWith("Windows", ignoreCase = true)) {
+    val systemRoot = System.getenv("SystemRoot") ?: "C:\\Windows"
+    System.setProperty("java.library.path", "$systemRoot\\System32")
+}
+
 pluginManagement {
     repositories {
         google {

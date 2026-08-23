@@ -99,8 +99,22 @@ Grundsatz: Lesen nur im Foreground (kein `READ_HEALTH_DATA_IN_BACKGROUND`), kein
 Voraussetzungen:
 
 - JDK 17 oder neuer (empfohlen: das mit Android Studio ausgelieferte JBR)
-- Android SDK mit Platform `android-37` (Pfad in `local.properties` als
+- Android SDK mit Platform `android-37.0` (Pfad in `local.properties` als
   `sdk.dir`, wird nicht eingecheckt)
+
+Windows: Gradle 9.5 quotet die Test-Executor-Kommandozeile nicht. Liegt das JDK
+unter einem Pfad mit Leerzeichen (`C:\Program Files\...`), schlaegt jeder
+Unit-Test mit "Hauptklasse Files konnte nicht gefunden werden" fehl. Abhilfe:
+eine Junction ohne Leerzeichen anlegen und maschinenlokal in
+`~/.gradle/gradle.properties` eintragen -- nicht in `gradle.properties` des
+Projekts, weil ein Windows-Pfad dort die Linux-CI bricht
+("Java home supplied is invalid").
+
+```
+mklink /J C:\dev\jbr17 "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.8-hotspot"
+# dann in %USERPROFILE%\.gradle\gradle.properties:
+# org.gradle.java.home=C\:\\dev\\jbr17
+```
 
 ```
 ./gradlew assembleDebug      # Debug-Build
