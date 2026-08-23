@@ -79,6 +79,18 @@ data class TrackAnalysis(
      * hochskalieren), ohne laute Tracks zu verzerren.
      */
     val peakLinear: Double = 0.0,
+    /** Geschaetztes Tempo; null, solange die Erkennung nicht sicher ist. */
+    val bpm: Float? = null,
+    /** Camelot-Notation (z. B. "8A"); null, wenn nicht sicher bestimmbar. */
+    val camelotKey: String? = null,
+    /** Konfidenz der Tempo-Schaetzung 0..1; null wenn kein BPM. */
+    val bpmConfidence: Float? = null,
+    /** Konfidenz der Tonart-Schaetzung 0..1; null wenn kein Key. */
+    val keyConfidence: Float? = null,
+    /** Integrierte Lautheit (LUFS); null wenn nicht laut genug messbar. */
+    val integratedLufs: Float? = null,
+    /** True-Peak-Naeherung in dBFS; null wenn kein Peak vorhanden. */
+    val truePeakDb: Float? = null,
 )
 
 /** Ein Waveform-Bucket: Mono-Min/Max, auf Int8 normalisiert. */
@@ -88,12 +100,23 @@ data class WaveformBucket(
 )
 
 /**
+ * Analyseprofil (Offtrack Phase 8): nicht jeder Track muss alle
+ * Akkumulatoren berechnen. Der Worker waehlt damit den Aufwand.
+ */
+enum class AnalysisProfile {
+    WAVEFORM_ONLY,
+    WAVEFORM_AND_ONSETS,
+    MIX_METADATA,
+    FULL,
+}
+
+/**
  * Packt Waveform-Buckets verlustfrei in einen BLOB fuer den
  * `track_analysis`-Cache (interleaved min,max — 2 Bytes je Bucket).
  */
 object WaveformCodec {
     /** Version des Analyse-Algorithmus; invalidiert den Cache bei Aenderung. */
-    const val ANALYZER_VERSION: Int = 3
+    const val ANALYZER_VERSION: Int = 4
 
     fun pack(buckets: List<WaveformBucket>): ByteArray {
         val bytes = ByteArray(buckets.size * 2)

@@ -59,7 +59,7 @@ interface MarkerRepository {
 
     /**
      * Unbestaetigte Onset-Kandidaten (Phase 5: source = AUTO_DETECTED,
-     * isEnabled = false) fuer die Review-Liste in den Einstellungen —
+     * isEnabled = false) fuer die Review-Liste im Music-Bereich —
      * dieselbe Interaktion wie bei [unmatchedMarkers]: Bestaetigen
      * aktiviert, Verwerfen loescht ([deleteMarker]).
      */

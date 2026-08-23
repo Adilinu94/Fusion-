@@ -95,7 +95,7 @@ class MasterDspProcessorTest {
     @Test
     fun `preamp plus 6 db verdoppelt float samples`() {
         val processor =
-            processor(DspConfig(preampDb = 6.0206, limiterEnabled = false))
+            processor(DspConfig(enabled = true, preampDb = 6.0206, limiterEnabled = false))
         processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_FLOAT))
         processor.flush()
 
@@ -109,7 +109,7 @@ class MasterDspProcessorTest {
     fun `dvc reduziert die lautstaerke verlustfrei im floatpfad`() {
         val processor =
             processor(
-                DspConfig(dvcEnabled = true, dvcVolume = 0.5, limiterEnabled = false),
+                DspConfig(enabled = true, dvcEnabled = true, dvcVolume = 0.5, limiterEnabled = false),
             )
         processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_FLOAT))
         processor.flush()
@@ -140,7 +140,7 @@ class MasterDspProcessorTest {
         // Plan Phase 1.5: Ducking (Preamp-Knoten) x DVC (Kettenende).
         val processor =
             processor(
-                DspConfig(dvcEnabled = true, dvcVolume = 0.5, limiterEnabled = false),
+                DspConfig(enabled = true, dvcEnabled = true, dvcVolume = 0.5, limiterEnabled = false),
             )
         processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_FLOAT))
         processor.flush()
@@ -154,6 +154,7 @@ class MasterDspProcessorTest {
     fun `eq band senkt einen sinus im band messbar ab`() {
         val config =
             DspConfig(
+                enabled = true,
                 eq =
                     EqSettings(
                         enabled = true,
@@ -217,7 +218,9 @@ class MasterDspProcessorTest {
         repeat(frames) { buffer.putShort(100) }
         buffer.flip()
         // Preamp +0,01 dB verschiebt die Werte minimal von der Stufe weg.
-        processor.submitConfig(DspConfig(preampDb = 0.05, ditherMode = DitherMode.TPDF, limiterEnabled = false))
+        processor.submitConfig(
+            DspConfig(enabled = true, preampDb = 0.05, ditherMode = DitherMode.TPDF, limiterEnabled = false),
+        )
         processor.queueInput(buffer)
         val output = readShorts(processor.output)
         val distinct = output.toSet()

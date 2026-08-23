@@ -63,6 +63,8 @@ dependencies {
     // Rest-Timer der Uebung nutzt die eine TimerEngine (Praezedenz
     // :feature:timer/:feature:player); DropSync-Rest via DropRestRequestBus.
     implementation(project(":domain:timer"))
+    // Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): Port ohne SDK-Leak.
+    implementation(project(":domain:health"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

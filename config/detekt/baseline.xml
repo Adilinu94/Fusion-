@@ -1,0 +1,34 @@
+<?xml version="1.0" ?>
+<SmellBaseline>
+  <ManuallySuppressedIssues/>
+  <CurrentIssues>
+    <ID>CyclomaticComplexMethod:CalibrationController.kt:CalibrationController$internal fun knownCountSweep: SweepCfg?</ID>
+    <ID>CyclomaticComplexMethod:CueSheetParser.kt:CueSheetParser$fun parse: ParsedCueSheet</ID>
+    <ID>CyclomaticComplexMethod:DataStoreCalibrationProfileRepository.kt:DataStoreCalibrationProfileRepository$private fun decode: CalibrationProfile?</ID>
+    <ID>CyclomaticComplexMethod:OutputProfiles.kt:DspConfigCodec$fun decode: DspConfig?</ID>
+    <ID>DestructuringDeclarationWithTooManyEntries:CalibrationController.kt:CalibrationController$val (theta, _, _, _) = medianMinusKMad(cfg.peakHoehen, cfg.theta)</ID>
+    <ID>LongMethod:DetailScreens.kt:@Composable internal fun FolderTreeScreen</ID>
+    <ID>LongMethod:LibraryContent.kt:@Composable internal fun LibraryContent</ID>
+    <ID>LongMethod:LibraryHomeScreen.kt:@Composable internal fun LibraryHomeScreen</ID>
+    <ID>LongMethod:NowPlayingScreen.kt:@Composable private fun WaveformProgress</ID>
+    <ID>LongMethod:NowPlayingScreen.kt:@OptIn(ExperimentalMaterial3Api::class) @Composable fun NowPlayingScreen</ID>
+    <ID>LongMethod:SettingsScreen.kt:@Composable fun SettingsScreen</ID>
+    <ID>LongMethod:TimerSection.kt:@OptIn(ExperimentalLayoutApi::class) @Composable fun TimerSection</ID>
+    <ID>LongMethod:TrainScreen.kt:@Composable fun TrainScreen</ID>
+    <ID>LongMethod:Waveform.kt:@Composable fun Waveform</ID>
+    <ID>LoopWithTooManyJumpStatements:BleSensorProvider.kt:BleSensorProvider$while</ID>
+    <ID>LoopWithTooManyJumpStatements:CalibrationController.kt:CalibrationController$for</ID>
+    <ID>LoopWithTooManyJumpStatements:FolderHierarchy.kt:FolderHierarchy$for</ID>
+    <ID>LoopWithTooManyJumpStatements:LibraryRepositoryImpl.kt:LibraryRepositoryImpl$for</ID>
+    <ID>LoopWithTooManyJumpStatements:M3uPlaylistParser.kt:M3uPlaylistParser$for</ID>
+    <ID>LoopWithTooManyJumpStatements:StreamingResampler.kt:StreamingResampler$for</ID>
+    <ID>MatchingDeclarationName:CoverImage.kt:CoverArtLoader</ID>
+    <ID>MatchingDeclarationName:DropSyncApp.kt:TopLevelDestination</ID>
+    <ID>MatchingDeclarationName:Pca.kt:JacobiResult</ID>
+    <ID>PrintStackTrace:TrackAnalyzerImpl.kt:TrackAnalyzerImpl$failure</ID>
+    <ID>UnusedParameter:ActiveSetController.kt:ActiveSetController$reason: SetAbortReason</ID>
+    <ID>UnusedParameter:BleSensorProvider.kt:BleSensorProvider$device: BluetoothDevice</ID>
+    <ID>UnusedParameter:DataStoreCalibrationProfileRepository.kt:DataStoreCalibrationProfileRepository$fallbackRevision: Int</ID>
+    <ID>UnusedParameter:RepCounter.kt:RepCounter$peak: PeakEvent</ID>
+  </CurrentIssues>
+</SmellBaseline>

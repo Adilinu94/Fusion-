@@ -81,7 +81,7 @@
     <string name="library_cat_most_played">Meistgespielt</string>
     <string name="library_queue_empty">leer</string>
     <string name="library_play_all">Abspielen</string>
-    <string name="library_select">Auswaehlen</string>
+    <string name="library_select">Auswählen</string>
     <string name="library_rescan">Neu scannen</string>
     <string name="library_list_options">Listen-Optionen</string>
     <string name="library_list_options_title">Listen-Optionen: %1$s</string>
@@ -127,4 +127,12 @@
     <string name="library_select_folders_save">Speichern</string>
     <string name="library_categories">Kategorien</string>
     <string name="library_categories_title">Kategorien anzeigen</string>
+    <string name="library_now_playing">Laeuft gerade</string>
+    <string name="library_open_now_playing">Now Playing oeffnen</string>
+    <string name="library_marker_review_title">Marker pruefen</string>
+    <string name="library_marker_review_count">Noch %1$d Drop-Kandidaten pruefen</string>
+    <string name="library_marker_review_position">Drop bei %1$s</string>
+    <string name="library_marker_confirm">Bestaetigen</string>
+    <string name="library_marker_discard">Verwerfen</string>
+    <string name="library_unknown_track">Unbekannter Titel</string>
 </resources>

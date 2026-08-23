@@ -23,9 +23,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.RadioButton
@@ -44,16 +42,20 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
+import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.model.AccentColor
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.core.model.ThemeMode
 import com.dropsync.domain.audio.MixPreset
+import com.dropsync.domain.workout.ExportFormat
 import kotlin.math.roundToInt
 
 /**
@@ -70,7 +72,6 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val unmatched by viewModel.unmatchedMarkers.collectAsStateWithLifecycle()
-    val pendingCandidates by viewModel.pendingAutoDetectedMarkers.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
     val restMusicBehavior by viewModel.restMusicBehavior.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
@@ -90,16 +91,28 @@ fun SettingsScreen(
             uri?.let(viewModel::importFrom)
         }
 
+    // Datenexport (Phase 3): Speicherort vom Nutzer waehlen lassen (SAF),
+    // keine Speicher-Permission noetig.
+    val exportState by viewModel.exportState.collectAsStateWithLifecycle()
+    val createJson =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            uri?.let { viewModel.exportTo(it, ExportFormat.JSON) }
+        }
+    val createCsv =
+        rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/csv")) { uri ->
+            uri?.let { viewModel.exportTo(it, ExportFormat.CSV) }
+        }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
-            Text(
-                text = stringResource(R.string.settings_appearance_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+            SettingsScreenTitle()
+        }
+        item {
+            SettingsSectionTitle(stringResource(R.string.settings_appearance_section))
         }
         items(ThemeMode.entries, key = { it.name }) { option ->
             ThemeModeOption(
@@ -114,13 +127,8 @@ fun SettingsScreen(
                 onSelect = viewModel::setAccentColor,
             )
         }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
-            Text(
-                text = stringResource(R.string.settings_audio_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+            SettingsSectionTitle(stringResource(R.string.settings_audio_section))
         }
         item {
             ListItem(
@@ -133,7 +141,6 @@ fun SettingsScreen(
                         .clickable(onClick = onOpenAudioSettings),
             )
         }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
             MixTransitionsSection(
                 crossfadeSeconds = dspConfig.crossfadeSeconds,
@@ -144,13 +151,8 @@ fun SettingsScreen(
                 onSetSeconds = viewModel::setMixSeconds,
             )
         }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
-            Text(
-                text = stringResource(R.string.settings_rest_music_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+            SettingsSectionTitle(stringResource(R.string.settings_rest_music_section))
         }
         item {
             Text(
@@ -182,7 +184,6 @@ fun SettingsScreen(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
             WorkoutExtrasSection(
                 getReadyEnabled = getReadyEnabled,
@@ -194,29 +195,49 @@ fun SettingsScreen(
                 onSetSmartShuffle = viewModel::setSmartShuffleEnabled,
             )
         }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
+        item {
+            SettingsSectionTitle(stringResource(R.string.settings_data_section))
+        }
         item {
             Text(
-                text = stringResource(R.string.settings_markers_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                text = stringResource(R.string.settings_data_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
             )
         }
         item {
-            Button(
+            FlowRepPrimaryButton(
+                text = stringResource(R.string.settings_export_json),
+                onClick = { createJson.launch("flowrep-training.json") },
+                enabled = exportState != SettingsViewModel.ExportUiState.InProgress,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+        item {
+            FlowRepPrimaryButton(
+                text = stringResource(R.string.settings_export_csv),
+                onClick = { createCsv.launch("flowrep-training.csv") },
+                enabled = exportState != SettingsViewModel.ExportUiState.InProgress,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
+        item {
+            ExportResultText(exportState)
+        }
+        item {
+            SettingsSectionTitle(stringResource(R.string.settings_markers_section))
+        }
+        item {
+            FlowRepPrimaryButton(
+                text = stringResource(R.string.settings_import_button),
                 onClick = {
                     openDocument.launch(
                         arrayOf("application/json", "text/plain", "application/octet-stream"),
                     )
                 },
                 enabled = importState != ImportUiState.InProgress,
-                modifier =
-                    Modifier
-                        .padding(horizontal = 16.dp)
-                        .heightIn(min = 48.dp),
-            ) {
-                Text(stringResource(R.string.settings_import_button))
-            }
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
         }
         item { ImportResultText(importState) }
         item {
@@ -252,38 +273,8 @@ fun SettingsScreen(
                 },
             )
         }
-        // Review-Liste der Onset-Kandidaten (Marker/Waveform-Plan Phase 5):
-        // AUTO_DETECTED + isEnabled = false; Bestaetigen aktiviert,
-        // Verwerfen loescht — Kandidaten werden nie automatisch aktiv.
-        if (pendingCandidates.isNotEmpty()) {
-            item {
-                Text(
-                    text =
-                        pluralStringResource(
-                            R.plurals.settings_pending_candidates,
-                            pendingCandidates.size,
-                            pendingCandidates.size,
-                        ),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                )
-            }
-            items(pendingCandidates, key = { "pending-${it.id}" }) { marker ->
-                PendingCandidateItem(
-                    marker = marker,
-                    songs = songs,
-                    onConfirm = { viewModel.confirmMarker(marker.id) },
-                    onDiscard = { viewModel.discardMarker(marker.id) },
-                )
-            }
-        }
-        item { HorizontalDivider(Modifier.padding(vertical = 12.dp)) }
         item {
-            Text(
-                text = stringResource(R.string.settings_privacy_section),
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            )
+            SettingsSectionTitle(stringResource(R.string.settings_privacy_section))
         }
         item {
             Text(
@@ -307,46 +298,20 @@ fun SettingsScreen(
     }
 }
 
-/**
- * Ein unbestaetigter Onset-Kandidat (Phase 5) mit Songtitel, Position
- * und den beiden einzigen Aktionen: Bestaetigen oder Verwerfen.
- */
 @Composable
-private fun PendingCandidateItem(
-    marker: SongMarker,
-    songs: List<Song>,
-    onConfirm: () -> Unit,
-    onDiscard: () -> Unit,
-) {
-    val songName =
-        songs.firstOrNull { it.mediaStoreId == marker.linkedSongId }?.displayName
-            ?: stringResource(R.string.settings_candidate_unknown_song)
-    ListItem(
-        headlineContent = { Text("${marker.label} — $songName") },
-        supportingContent = {
-            Text(
-                stringResource(
-                    R.string.settings_marker_position,
-                    marker.positionMs / 1000,
-                ),
-            )
-        },
-        trailingContent = {
-            Row {
-                TextButton(
-                    onClick = onConfirm,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.settings_candidate_confirm))
-                }
-                TextButton(
-                    onClick = onDiscard,
-                    modifier = Modifier.heightIn(min = 48.dp),
-                ) {
-                    Text(stringResource(R.string.settings_candidate_discard))
-                }
-            }
-        },
+private fun SettingsScreenTitle() {
+    Text(
+        text = "Einstellungen",
+        style = MaterialTheme.typography.headlineMedium,
+        modifier = Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp),
+    )
+}
+
+@Composable
+private fun SettingsSectionTitle(title: String) {
+    FlowRepSectionHeader(
+        title = title,
+        modifier = Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp),
     )
 }
 
@@ -395,6 +360,42 @@ private fun ImportResultText(state: ImportUiState) {
 
                     ImportFailReason.STORE_FAILED -> {
                         stringResource(R.string.settings_import_store_failed)
+                    }
+                }
+            }
+        }
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodyMedium,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+    )
+}
+
+/** Sichtbares Ergebnis des Datenexports (Phase 3). */
+@Composable
+private fun ExportResultText(state: SettingsViewModel.ExportUiState) {
+    val text =
+        when (state) {
+            SettingsViewModel.ExportUiState.Idle -> {
+                return
+            }
+
+            SettingsViewModel.ExportUiState.InProgress -> {
+                stringResource(R.string.settings_export_running)
+            }
+
+            is SettingsViewModel.ExportUiState.Done -> {
+                stringResource(R.string.settings_export_done, state.setCount)
+            }
+
+            is SettingsViewModel.ExportUiState.Failed -> {
+                when (state.reason) {
+                    SettingsViewModel.ExportFailReason.NOTHING_TO_EXPORT -> {
+                        stringResource(R.string.settings_export_nothing)
+                    }
+
+                    SettingsViewModel.ExportFailReason.WRITE_FAILED -> {
+                        stringResource(R.string.settings_export_failed)
                     }
                 }
             }
@@ -819,6 +820,9 @@ private fun AccentSwatch(
                 .background(color)
                 .border(if (selected) 3.dp else 1.dp, ring, CircleShape)
                 .clickable(onClick = onClick)
-                .semantics { contentDescription = label },
+                .semantics {
+                    contentDescription = label
+                    this.selected = selected
+                },
     )
 }

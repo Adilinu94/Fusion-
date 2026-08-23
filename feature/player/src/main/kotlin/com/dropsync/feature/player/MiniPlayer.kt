@@ -1,5 +1,8 @@
 package com.dropsync.feature.player
 
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -26,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -53,34 +57,13 @@ fun MiniPlayer(
     var showQueue by remember { mutableStateOf(false) }
 
     Surface(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
+        shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 3.dp,
+        tonalElevation = 0.dp,
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
-            val progress =
-                if (state.durationMs > 0) {
-                    (state.positionMs.toFloat() / state.durationMs).coerceIn(0f, 1f)
-                } else {
-                    0f
-                }
-            Box(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .background(MaterialTheme.colorScheme.surfaceVariant),
-            ) {
-                if (progress > 0f) {
-                    Box(
-                        modifier =
-                            Modifier
-                                .fillMaxWidth(progress)
-                                .fillMaxHeight()
-                                .background(MaterialTheme.colorScheme.primary),
-                    )
-                }
-            }
+            MiniPlayerProgressBar(positionMs = state.positionMs, durationMs = state.durationMs)
             Row(
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -128,26 +111,7 @@ fun MiniPlayer(
                     // Grosse Touch-Ziele (12.5).
                     modifier = Modifier.size(48.dp),
                 ) {
-                    if (state.isPlaying) {
-                        Icon(
-                            painterResource(BrandIcons.Pause),
-                            contentDescription = stringResource(R.string.player_pause),
-                        )
-                    } else {
-                        Icon(
-                            painterResource(BrandIcons.Play),
-                            contentDescription = stringResource(R.string.player_play),
-                        )
-                    }
-                }
-                IconButton(
-                    onClick = viewModel::skipToNext,
-                    modifier = Modifier.size(48.dp),
-                ) {
-                    Icon(
-                        painterResource(BrandIcons.SkipNext),
-                        contentDescription = stringResource(R.string.player_next),
-                    )
+                    MiniPlayerPlayPauseIcon(isPlaying = state.isPlaying)
                 }
                 IconButton(
                     onClick = { showQueue = true },
@@ -170,6 +134,76 @@ fun MiniPlayer(
             onPlay = viewModel::playQueueItem,
             onMove = viewModel::moveQueueItem,
             onRemove = viewModel::removeQueueItem,
+        )
+    }
+}
+
+/**
+ * Duenne Fortschrittsleiste am oberen Rand des Mini-Players. Ausgelagert,
+ * damit [MiniPlayer] unter der Detekt-Grenze fuer LongMethod bleibt.
+ */
+@Composable
+private fun MiniPlayerProgressBar(
+    positionMs: Long,
+    durationMs: Long,
+) {
+    val progress =
+        if (durationMs > 0) {
+            (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+        } else {
+            0f
+        }
+    Box(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+    ) {
+        if (progress > 0f) {
+            Box(
+                modifier =
+                    Modifier
+                        .fillMaxWidth(progress)
+                        .fillMaxHeight()
+                        .background(MaterialTheme.colorScheme.primary),
+            )
+        }
+    }
+}
+
+/**
+ * Play/Pause-Icon des Mini-Players. Expressive-Ziel im Kleinen: Der
+ * Icon-Zustandswechsel pulst ueber eine Feder-Skalierung statt hart zu
+ * springen.
+ */
+@Composable
+private fun MiniPlayerPlayPauseIcon(isPlaying: Boolean) {
+    val iconScale by animateFloatAsState(
+        targetValue = if (isPlaying) 1.15f else 1f,
+        animationSpec =
+            spring(
+                dampingRatio = Spring.DampingRatioMediumBouncy,
+                stiffness = Spring.StiffnessMedium,
+            ),
+        label = "mini_player_play_scale",
+    )
+    val scaleModifier =
+        Modifier.graphicsLayer {
+            scaleX = iconScale
+            scaleY = iconScale
+        }
+    if (isPlaying) {
+        Icon(
+            painterResource(BrandIcons.Pause),
+            contentDescription = stringResource(R.string.player_pause),
+            modifier = scaleModifier,
+        )
+    } else {
+        Icon(
+            painterResource(BrandIcons.Play),
+            contentDescription = stringResource(R.string.player_play),
+            modifier = scaleModifier,
         )
     }
 }

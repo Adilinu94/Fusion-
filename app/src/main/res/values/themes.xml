@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Systemtheme; das eigentliche Material-3-Theme kommt aus Compose
-         (:core:designsystem, DropSyncTheme). -->
-    <style name="Theme.DropSync" parent="android:Theme.Material.Light.NoActionBar" />
+         (:core:designsystem, DropSyncTheme). windowLightNavigationBar
+         braucht API 27 und liegt deshalb in values-v27. -->
+    <style name="Theme.DropSync" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ic_launcher_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
 </resources>

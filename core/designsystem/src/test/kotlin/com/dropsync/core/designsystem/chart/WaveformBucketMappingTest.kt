@@ -121,4 +121,15 @@ class WaveformBucketMappingTest {
         assertTrue(WaveformMapping.toFlatBars(listOf(0f to 1f), 0f, 50f).isEmpty())
         assertTrue(WaveformMapping.toFlatBars(listOf(0f to 1f), 100f, 0f).isEmpty())
     }
+
+    @Test
+    fun `waveform geometry cacht buckets und liefert gleiche balken`() {
+        // Offtrack Phase 9: die vorbereitete Geometrie ist ein unveraenderliches
+        // Modell; bei gleicher Groesse liefert sie identische Float-Arrays.
+        val geometry = WaveformGeometry(listOf(-0.5f to 0.5f, 0f to 0f, -1f to 1f))
+        val bars = geometry.bars(width = 120f, height = 60f, gapFraction = 0.25f)
+
+        assertEquals(WaveformMapping.toFlatBars(geometry.buckets, 120f, 60f, 0.25f).size, bars.size)
+        assertTrue(WaveformGeometry.EMPTY.bars(120f, 60f, 0.25f).isEmpty())
+    }
 }

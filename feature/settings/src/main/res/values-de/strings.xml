@@ -61,6 +61,14 @@
     <string name="settings_rest_duck_desc">Senkt die Musik waehrend der Pause ab. Der Countdown-Hinweis duckt nie doppelt, der staerkere Wert gewinnt.</string>
     <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geraete bringen eigene Verzoegerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
+    <string name="settings_data_section">Daten</string>
+    <string name="settings_data_desc">Exportiere dein Trainingstagebuch als Datei. Die App speichert alles nur auf diesem Gerät.</string>
+    <string name="settings_export_json">Als JSON exportieren</string>
+    <string name="settings_export_csv">Als CSV exportieren</string>
+    <string name="settings_export_running">Export läuft …</string>
+    <string name="settings_export_done">%1$d Sätze exportiert.</string>
+    <string name="settings_export_nothing">Keine Sätze vorhanden. Logge zuerst ein Training.</string>
+    <string name="settings_export_failed">Die Datei konnte nicht geschrieben werden.</string>
     <string name="settings_get_ready_title">Get-Ready-Countdown</string>
     <string name="settings_get_ready_desc">Spielt vor dem Start eines Pausen-Timers einen kurzen 3-2-1-Vorlauf (Haptik + Ton).</string>
     <string name="settings_get_ready_seconds">Vorlauf: %1$d s</string>

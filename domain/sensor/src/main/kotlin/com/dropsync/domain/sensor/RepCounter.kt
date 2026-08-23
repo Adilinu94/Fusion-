@@ -7,7 +7,10 @@ data class RepResult(
     val qualityScore: Double? = null,
     val correlation: Double? = null,
     val rejectionReason: String? = null,
+    /** Diagnostic: window size in samples (time decisions use ms). */
     val durationSamples: Int? = null,
+    /** Rep duration in milliseconds (time basis: timestamps). */
+    val durationMs: Long? = null,
     val prominence: Double? = null,
 ) {
     companion object {
@@ -19,9 +22,10 @@ data class RepResult(
  * Orchestrator of the full rep-detection pipeline:
  * PeakDetector -> TemplateMatcher -> PhaseValidator -> QualityScorer.
  *
- * SHADOW ONLY (design doc Phase 4 step 6): this counter runs alongside the
- * classic engine once a calibration profile exists, but never counts live.
- * Promoted to live counting only after its own shadow DoD (section 11b).
+ * Umbauplan Phase 4: the pending window is only finalised after a COMPLETE
+ * cycle was observed (positive phase, direction change into the negative
+ * phase, return toward the baseline). A pure lift without a return never
+ * counts. Window extension and durations use TIMESTAMPS.
  *
  * Befund-C fix applied: TemplateMatcher.match() receives `peak.window`,
  * NOT the extended window used by PhaseValidator (see
@@ -45,35 +49,39 @@ class RepCounter(
     private val phaseValidator: PhaseValidator,
     private val qualityScorer: QualityScorer,
     private val accelPeakDetector: PeakDetector? = null,
-    private val accelVoteWindowSamples: Int = 5,
+    /** Punkt 4: Vote-Fenster in ms (Zeitbasis, nicht Sample-Index). */
+    private val accelVoteWindowMs: Long = 800,
 ) {
     var repCount: Int = 0
         private set
 
-    private val recentDurations = mutableListOf<Double>()
+    private val recentDurationsMs = mutableListOf<Double>()
     private val recentProminences = mutableListOf<Double>()
 
     // Pending phase-window extension: the peak-detector window ends shortly
     // after the falling edge and mostly covers the concentric half-wave.
     // PhaseValidator needs both half-waves, so the counting decision is
-    // deferred until the eccentric half-wave completed (or the safety
-    // limit hit). Peak detection itself is untouched.
+    // deferred until the eccentric half-wave completed AND the signal
+    // returned toward the baseline (or the safety limit hit).
     private var pendingPeak: PeakEvent? = null
     private var pendingWindow: MutableList<Double>? = null
+    private var pendingStartMs: Long = 0L
     private var pendingStartMin: Double = 0.0
     private var pendingWentBelowStartMin = false
-    private var pendingExtraSamples = 0
+    private var pendingSawNegative = false
 
-    /** Punkt 4: Accel-Peaks (Sample-Index) der letzten Frames. */
-    private val recentAccelPeakIndexes = ArrayDeque<Int>()
+    /** Punkt 4: Accel-Peaks (Timestamp) der letzten Frames. */
+    private val recentAccelPeakTimestamps = ArrayDeque<Long>()
 
     /** Processes ONE frame through the whole pipeline. */
     fun process(frame: ProcessedFrame): RepResult {
         val peak = peakDetector.process(frame)
         accelPeakDetector?.process(frame)?.let { accelPeak ->
-            recentAccelPeakIndexes.addLast(accelPeak.sampleIndex)
-            while (recentAccelPeakIndexes.size > 600) {
-                recentAccelPeakIndexes.removeFirst()
+            recentAccelPeakTimestamps.addLast(accelPeak.timestampMs)
+            while (recentAccelPeakTimestamps.isNotEmpty() &&
+                frame.timestampMs - recentAccelPeakTimestamps.first() > accelVoteWindowMs
+            ) {
+                recentAccelPeakTimestamps.removeFirst()
             }
         }
 
@@ -84,17 +92,17 @@ class RepCounter(
             }
             startPending(peak)
             if (finishedOld != null) return finishedOld
-            if (pendingComplete()) return finalizePending()
+            if (pendingComplete(frame.timestampMs)) return finalizePending()
             return RepResult.NONE
         }
 
         val window = pendingWindow ?: return RepResult.NONE
         val value = frame.smoothedGp
         window.add(value)
-        pendingExtraSamples++
+        if (value < 0) pendingSawNegative = true
         if (value < pendingStartMin) pendingWentBelowStartMin = true
 
-        if (pendingComplete()) return finalizePending()
+        if (pendingComplete(frame.timestampMs)) return finalizePending()
         return RepResult.NONE
     }
 
@@ -106,36 +114,41 @@ class RepCounter(
      */
     private fun accelVotePassed(peak: PeakEvent): Boolean {
         val accel = accelPeakDetector ?: return true
-        return recentAccelPeakIndexes.any { kotlin.math.abs(it - peak.sampleIndex) <= accelVoteWindowSamples }
+        return recentAccelPeakTimestamps.any { kotlin.math.abs(it - peak.timestampMs) <= accelVoteWindowMs }
     }
 
     private fun startPending(peak: PeakEvent) {
         pendingPeak = peak
         pendingWindow = peak.window.toMutableList()
+        pendingStartMs = peak.timestampMs
         pendingStartMin = peak.window.min()
         pendingWentBelowStartMin = false
-        pendingExtraSamples = 0
+        pendingSawNegative = false
     }
 
-    private fun pendingComplete(): Boolean {
+    private fun pendingComplete(nowMs: Long): Boolean {
         val window = pendingWindow ?: return false
         // Punkt 4: bei aktivem Accel-Voting erst schliessen, wenn der
         // Accel-Peak im Toleranzfenster liegt - er feuert wegen seiner
         // Falling-Debounce einige Samples spaeter als der Gyro-Peak.
         if (accelPeakDetector != null && !accelVotePassed(pendingPeak!!)) {
-            return pendingExtraSamples >= maxExtraPhaseSamples()
+            return (nowMs - pendingStartMs) >= maxExtraPhaseMs()
         }
-        val hasNegative = window.any { it < 0 }
-        if (!hasNegative) return true
-        return (pendingWentBelowStartMin && window.last() >= 0) ||
-            pendingExtraSamples >= maxExtraPhaseSamples()
+        // Umbauplan Phase 4: full cycle = negative phase seen AND return
+        // toward the start level. A lift without a return never completes
+        // early; only the time-based safety limit forces finalisation.
+        // Toleranz gegen Filter-Nachschwingen knapp unter 0 (Float-Artefakt).
+        if (!pendingSawNegative) return false
+        val returnTolerance = kotlin.math.max(1e-9, kotlin.math.abs(pendingPeak?.peakValue ?: 1.0) * 0.05)
+        return (pendingWentBelowStartMin && window.last() >= -returnTolerance) ||
+            (nowMs - pendingStartMs) >= maxExtraPhaseMs()
     }
 
     /**
      * Punkt 6: Pending-Fenster-Grenze dynamisch aus der erwarteten
-     * Rep-Dauer (2x, begrenzt auf 60-300 Samples), statt fix 120.
+     * Rep-Dauer in ms (2x, begrenzt auf 1200-6000 ms).
      */
-    private fun maxExtraPhaseSamples(): Int = (peakDetector.expectedDurationSamples * 2.0).toInt().coerceIn(60, 300)
+    private fun maxExtraPhaseMs(): Long = (peakDetector.expectedDurationMs * 2.0).toLong().coerceIn(1_200, 6_000)
 
     private fun finalizePending(): RepResult {
         val peak = pendingPeak!!
@@ -180,11 +193,12 @@ class RepCounter(
             )
         }
 
+        val durationMs = windowDurationMs(peak, window)
         val qualityResult =
             qualityScorer.score(
                 correlation = if (matchResult.noTemplate) 1.0 else matchResult.correlation,
                 prominence = peak.prominence,
-                durationSamples = window.size,
+                durationMs = durationMs,
                 durationRatio = phaseResult.durationRatio,
             )
         if (!qualityResult.accepted) {
@@ -197,62 +211,90 @@ class RepCounter(
 
         repCount++
         templateMatcher.addToPool(peak.window)
-        trackForAdaptation(peak.prominence, window.size)
+        trackForAdaptation(peak.prominence, durationMs)
         return RepResult(
             repCounted = true,
             repNumber = repCount,
             qualityScore = qualityResult.score,
             correlation = if (matchResult.noTemplate) null else matchResult.correlation,
             durationSamples = window.size,
+            durationMs = durationMs,
             prominence = peak.prominence,
         )
     }
 
+    /**
+     * Umbauplan Phase 2.5: rep duration from the frame timestamps, not the
+     * sample count. The pending extension collects only values, so the
+     * duration in ms is reconstructed from the window size and sample rate.
+     */
+    private fun windowDurationMs(
+        peak: PeakEvent,
+        window: List<Double>,
+    ): Long = (window.size * (1_000.0 / peakDetector.sampleRateHz)).toLong()
+
     private fun trackForAdaptation(
         prominence: Double,
-        durationSamples: Int,
+        durationMs: Long,
     ) {
-        recentDurations.add(durationSamples.toDouble())
+        recentDurationsMs.add(durationMs.toDouble())
         recentProminences.add(prominence)
-        if (recentDurations.size > 10) {
-            recentDurations.removeAt(0)
+        if (recentDurationsMs.size > 10) {
+            recentDurationsMs.removeAt(0)
             recentProminences.removeAt(0)
         }
-        if (recentDurations.size >= 3) {
-            val avgDuration = recentDurations.average()
+        if (recentDurationsMs.size >= 3) {
+            val avgDurationMs = recentDurationsMs.average()
             val avgProminence = recentProminences.average()
             qualityScorer.updateExpectations(
-                expectedDurationSamples = avgDuration,
+                expectedDurationMs = avgDurationMs,
                 expectedProminence = avgProminence,
             )
             // Punkt 6: adaptive Refraktaerzeit folgt der echten Rep-Dauer.
-            peakDetector.updateExpectedDuration(avgDuration)
+            peakDetector.updateExpectedDurationMs(avgDurationMs)
         }
+    }
+
+    /**
+     * Umbauplan Phase 2.6: verwirft einen laufenden Peak/Pending-Rep nach
+     * einer grossen Zeitluecke. Der Filterzustand wird vom Aufrufer
+     * (Pipeline) separat neu eingeschwungen.
+     */
+    fun abortPending() {
+        pendingPeak = null
+        pendingWindow = null
+        pendingStartMs = 0L
+        pendingStartMin = 0.0
+        pendingWentBelowStartMin = false
+        pendingSawNegative = false
+        recentAccelPeakTimestamps.clear()
+        peakDetector.reset()
+        accelPeakDetector?.reset()
     }
 
     /** Resets counter and detector state (new session / exercise switch). */
     fun reset() {
         repCount = 0
-        recentDurations.clear()
+        recentDurationsMs.clear()
         recentProminences.clear()
         pendingPeak = null
         pendingWindow = null
+        pendingStartMs = 0L
         pendingStartMin = 0.0
         pendingWentBelowStartMin = false
-        pendingExtraSamples = 0
-        recentAccelPeakIndexes.clear()
+        pendingSawNegative = false
+        recentAccelPeakTimestamps.clear()
         peakDetector.reset()
         accelPeakDetector?.reset()
     }
 
     fun setTemplate(template: List<Double>) = templateMatcher.setTemplate(template)
 
-    /** Feeds the calibration levels (SPK/NPK) into the peak detector. */
-    fun updateLevels(
-        spk: Double? = null,
-        npk: Double? = null,
-        expectedDurationSamples: Double? = null,
-    ) = peakDetector.updateLevels(spk, npk, expectedDurationSamples)
+    /** Umbauplan Phase 1.4: feeds the calibrated threshold directly. */
+    fun updateThreshold(
+        theta: Double,
+        expectedDurationMs: Double? = null,
+    ) = peakDetector.updateThreshold(theta, expectedDurationMs)
 
     val hasTemplate: Boolean
         get() = templateMatcher.hasTemplate

@@ -31,6 +31,24 @@ interface AudioClock {
 }
 
 /**
+ * Liefert eine Clock-Momentaufnahme fuer Transition-States (Offtrack
+ * Phase 5/8). Die Domain sieht nur diese Schnittstelle; die Data-Schicht
+ * entscheidet, ob sie die Werte aus Media3, einem AudioTrack-Wrapper oder
+ * einem Route-Profil bezieht.
+ */
+interface AudioClockSnapshotProvider {
+    suspend fun snapshot(): AudioClockSnapshot?
+}
+
+/** Abbildung der [AudioClock.Mode] auf die grobere ClockConfidence. */
+fun AudioClock.Mode.toConfidence(): ClockConfidence =
+    when (this) {
+        AudioClock.Mode.EXACT -> ClockConfidence.AUDIO_TRACK_ESTIMATE
+        AudioClock.Mode.BEST_EFFORT -> ClockConfidence.SOFTWARE_ESTIMATE
+        AudioClock.Mode.UNAVAILABLE -> ClockConfidence.UNKNOWN
+    }
+
+/**
  * Latenzprofil einer Audio-Route (Design Phase 6, Abschnitt 10):
  * interner Lautsprecher / USB / Kabel / BT-Geraet + Codec + Sample-Rate.
  * Ohne Loopback-Messung (kein Mikrofon) entsteht das Profil aus
@@ -60,6 +78,26 @@ data class AudioRouteProfile(
     val isReliable: Boolean
         get() = confidence == Confidence.CALIBRATED
 }
+
+/** Grobe Vertrauensstufe einer Audio-Zeitbasis (fuer Timing-Hinweise). */
+enum class ClockConfidence {
+    UNKNOWN,
+    SOFTWARE_ESTIMATE,
+    AUDIO_TRACK_ESTIMATE,
+    ROUTE_CALIBRATED,
+}
+
+/** Momentaufnahme der Audio-Zeitbasis fuer Timing- und Diagnosehinweise. */
+data class AudioClockSnapshot(
+    val capturedAtElapsedRealtimeMs: Long,
+    val playerPositionMs: Long,
+    val isPlaying: Boolean,
+    val isLoading: Boolean,
+    val outputLatencyMs: Long?,
+    val routeId: String?,
+    val confidence: ClockConfidence,
+    val hadRecentUnderrun: Boolean,
+)
 
 /**
  * Invalidierungs-Token fuer geplante Audio-Events (Design Phase 6):

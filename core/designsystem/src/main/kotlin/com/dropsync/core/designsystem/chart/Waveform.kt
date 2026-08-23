@@ -14,6 +14,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,8 +24,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
@@ -140,20 +142,40 @@ object WaveformMapping {
     private val EMPTY_FLOATS = FloatArray(0)
 }
 
-/** Anteil der Hoehe fuer die gespiegelte Reflexion unter der Grundlinie. */
-private const val REFLECTION_RATIO = 0.35f
+/**
+ * Vorbereitete Waveform-Geometrie (Offtrack Phase 9, Abschnitt 12.1/12.2):
+ * die normalisierten Buckets werden einmal als unveraenderliches Modell
+ * gecacht; der Canvas rechnet nur noch die aktuelle Breite/Hoehe in das
+ * flache Float-Array um. Dadurch entstehen im Zeichenpfad keine
+ * Objekt-Allokationen je Bucket und kein Decoder-/DB-Zugriff.
+ */
+data class WaveformGeometry(
+    val buckets: List<Pair<Float, Float>>,
+) {
+    /** Flache Balken fuer die konkrete Canvas-Groesse (0,0 = leer). */
+    fun bars(
+        width: Float,
+        height: Float,
+        gapFraction: Float,
+    ): FloatArray = WaveformMapping.toFlatBars(buckets, width, height, gapFraction)
 
-/** Stauchung der Reflexion gegenueber der Hauptwellenform (Poweramp-Optik). */
-private const val REFLECTION_SCALE = 0.42f
-
-/** Grundstaerke der Reflexion direkt unter der Grundlinie (blendet nach unten aus). */
-private const val REFLECTION_ALPHA = 0.30f
+    companion object {
+        val EMPTY = WaveformGeometry(emptyList())
+    }
+}
 
 /** Glaettungsdauer des Fortschritts zwischen den 200ms-Ticks (weicher Lauf). */
 private const val PROGRESS_SMOOTH_MS = 240
 
 /** Maximaler Abstand (als Anteil der Breite) zum Start des Marker-Drags. */
 private const val MARKER_DRAG_SLOP = 0.03f
+
+/**
+ * Breite der Marker-Ticks: 3 dp bleiben optisch duenn, zusammen mit der
+ * Trefferzone des Aufrufers (~24 dp) entsteht ein ~48-dp-Bedienziel
+ * (A11y-Mindestgroesse, Recherche 2026).
+ */
+private val MARKER_TICK_WIDTH = 3.dp
 
 /**
  * Interaktive Waveform. [buckets] sind Min/Max-Paare in [-1..1];
@@ -167,8 +189,9 @@ private const val MARKER_DRAG_SLOP = 0.03f
  * Marker-Tick, wird die Position laufend gemeldet statt zu scrubbenn.
  *
  * Poweramp-Optik: die Hauptwellenform blendet beim Erscheinen sanft ein, der
- * Fortschritt gleitet weich zwischen den Ticks, und unter der Grundlinie liegt
- * eine gestauchte, nach unten ausblendende Spiegelung.
+ * Fortschritt gleitet weich zwischen den Ticks. Die Balken werden als
+ * vorbereitete [WaveformGeometry] gezeichnet und der gespielte Anteil ueber
+ * einen Clip eingefaerbt (keine zweite, frische Path-Allokation).
  */
 @Composable
 fun Waveform(
@@ -181,10 +204,19 @@ fun Waveform(
     onLongPress: ((Float) -> Unit)? = null,
     onMoveMarker: ((Float) -> Unit)? = null,
     contentDescription: String? = null,
+    gapFraction: Float = 0.15f,
+    markerDragSlopFraction: Float = MARKER_DRAG_SLOP,
 ) {
     val playedColor = MaterialTheme.colorScheme.primary
-    val restColor = MaterialTheme.colorScheme.outlineVariant
+    // Rest-Balken mit deutlich hoeherem Kontrast als outlineVariant:
+    // im Light-Mode waere #EAEAEA auf Weiss fast unsichtbar (P0-Befund).
+    val restColor = MaterialTheme.colorScheme.onSurfaceVariant
     val markerColor = MaterialTheme.colorScheme.tertiary
+    // Vorbereitete Geometrie: nur bei neuen Buckets neu aufbauen, nie je
+    // Draw-Frame (Offtrack Phase 9). Die `derivedStateOf`-Boxen sind billig
+    // und verhindern, dass das Bucket-Copying bei jedem Ticker-Recompose
+    // wiederholt wird.
+    val geometry by remember(buckets) { derivedStateOf { WaveformGeometry(buckets) } }
     var scrubFraction by remember { mutableFloatStateOf(-1f) }
     // Drag-Modus: true, sobald die Geste an einem Marker-Tick startet.
     // Dann wird der Marker gezogen statt gescrubbt (Phase 5 "verschiebbar").
@@ -250,7 +282,7 @@ fun Waveform(
                             draggingMarker =
                                 onMoveMarker != null &&
                                 markerFractions.any {
-                                    abs(it - fraction) <= MARKER_DRAG_SLOP
+                                    abs(it - fraction) <= markerDragSlopFraction
                                 }
                             if (draggingMarker) {
                                 onMoveMarker?.invoke(fraction)
@@ -284,58 +316,30 @@ fun Waveform(
                     }
                 },
     ) {
-        // Oberer Bereich traegt die Hauptwellenform, darunter liegt die Reflexion.
-        val gap = 2.dp.toPx()
-        val mainHeight = size.height * (1f - REFLECTION_RATIO)
-        // Flaches Float-Array statt Objektliste: keine Allokation im
-        // Zeichenpfad (Wissensdoku Abschnitt 25, Scrubbing-Performance).
-        val bars = WaveformMapping.toFlatBars(buckets, size.width, mainHeight)
+        // Volle Hoehe fuer die Balken: keine Reflexion (die Referenz-Optik
+        // zeigt nur eine Balkenlinie, kein Spiegelbild darunter).
+        val bars = geometry.bars(size.width, size.height, gapFraction)
         if (bars.isEmpty()) return@Canvas
 
         val playedX = shownFraction * size.width
         val corner = CornerRadius(1.dp.toPx(), 1.dp.toPx())
-        val baselineY = mainHeight
-        val reflectionTop = baselineY + gap
 
-        // Vertikaler Alpha-Verlauf der Reflexion: unter der Grundlinie am
-        // kraeftigsten, nach unten hin ausblendend (gemeinsam fuer alle Balken).
-        val fade = REFLECTION_ALPHA * appear
-        val playedReflection =
-            Brush.verticalGradient(
-                colors = listOf(playedColor.copy(alpha = fade), Color.Transparent),
-                startY = reflectionTop,
-                endY = size.height,
+        // Gespielter Anteil per Clip: die Rest-Balken werden einmal gezeichnet
+        // und nur der linke Bereich in Akzentfarbe ueberlagert (12.5). Kein
+        // zweiter, komplett neuer Path je Frame.
+        drawWaveformBars(
+            bars = bars,
+            color = restColor,
+            alpha = appear,
+            corner = corner,
+        )
+        clipRect(right = playedX) {
+            drawWaveformBars(
+                bars = bars,
+                color = playedColor,
+                alpha = appear,
+                corner = corner,
             )
-        val restReflection =
-            Brush.verticalGradient(
-                colors = listOf(restColor.copy(alpha = fade), Color.Transparent),
-                startY = reflectionTop,
-                endY = size.height,
-            )
-
-        var offset = 0
-        while (offset < bars.size) {
-            val left = bars[offset]
-            val top = bars[offset + 1]
-            val barWidth = bars[offset + 2]
-            val barHeight = bars[offset + 3]
-            val played = left + barWidth / 2f <= playedX
-            val color = if (played) playedColor else restColor
-            // Hauptbalken (blendet ueber [appear] ein).
-            drawRoundRect(
-                color = color.copy(alpha = appear),
-                topLeft = Offset(left, top),
-                size = Size(barWidth, barHeight),
-                cornerRadius = corner,
-            )
-            // Reflexion: gestauchter Balken, an der Grundlinie haengend.
-            drawRoundRect(
-                brush = if (played) playedReflection else restReflection,
-                topLeft = Offset(left, reflectionTop),
-                size = Size(barWidth, barHeight * REFLECTION_SCALE),
-                cornerRadius = corner,
-            )
-            offset += 4
         }
         // Marker-Ticks (Phase 4): duenne Linien in Akzentfarbe im Hauptbereich.
         markerFractions.forEach { fraction ->
@@ -343,17 +347,33 @@ fun Waveform(
             drawLine(
                 color = markerColor.copy(alpha = appear),
                 start = Offset(x, 0f),
-                end = Offset(x, baselineY),
-                strokeWidth = 2.dp.toPx(),
+                end = Offset(x, size.height),
+                strokeWidth = MARKER_TICK_WIDTH.toPx(),
             )
         }
-        // Positionslinie als klarer Anker der Bedienflaeche (ueber beide Zonen).
-        drawLine(
-            color = playedColor.copy(alpha = appear),
-            start = Offset(playedX, 0f),
-            end = Offset(playedX, size.height),
-            strokeWidth = 2.dp.toPx(),
+    }
+}
+
+/** Zeichnet vorbereitete Balken mit einer gemeinsamen Farbe und Deckkraft. */
+private fun DrawScope.drawWaveformBars(
+    bars: FloatArray,
+    color: Color,
+    alpha: Float,
+    corner: CornerRadius,
+) {
+    var offset = 0
+    while (offset < bars.size) {
+        val left = bars[offset]
+        val top = bars[offset + 1]
+        val barWidth = bars[offset + 2]
+        val barHeight = bars[offset + 3]
+        drawRoundRect(
+            color = color.copy(alpha = alpha),
+            topLeft = Offset(left, top),
+            size = Size(barWidth, barHeight),
+            cornerRadius = corner,
         )
+        offset += 4
     }
 }
 
@@ -366,7 +386,7 @@ fun WaveformPlaceholder(
     modifier: Modifier = Modifier,
     contentDescription: String? = null,
 ) {
-    val color = MaterialTheme.colorScheme.outlineVariant
+    val color = MaterialTheme.colorScheme.onSurfaceVariant
     val transition = rememberInfiniteTransition(label = "waveform_placeholder")
     val alpha by transition.animateFloat(
         initialValue = 0.35f,
@@ -411,7 +431,7 @@ fun MiniWaveform(
     contentDescription: String? = null,
 ) {
     val playedColor = MaterialTheme.colorScheme.primary
-    val restColor = MaterialTheme.colorScheme.outlineVariant
+    val restColor = MaterialTheme.colorScheme.onSurfaceVariant
     val desc = contentDescription
     val semanticsModifier =
         if (desc != null) {

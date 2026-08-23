@@ -98,6 +98,10 @@ private class FakePlaybackRepository : PlaybackRepository {
         com.dropsync.core.common.AppResult
             .success(Unit)
 
+    override suspend fun setPlaybackSpeed(speed: Float): com.dropsync.core.common.AppResult<Unit> =
+        com.dropsync.core.common.AppResult
+            .success(Unit)
+
     override suspend fun setRepeatMode(mode: RepeatMode): com.dropsync.core.common.AppResult<Unit> =
         com.dropsync.core.common.AppResult
             .success(Unit)
@@ -108,7 +112,7 @@ private class FakePlaybackRepository : PlaybackRepository {
         com.dropsync.core.common.AppResult
             .success(snapshot)
 
-    override suspend fun crossfadeTo(
+    override suspend fun playSongAt(
         song: Song,
         startPositionMs: Long,
     ): com.dropsync.core.common.AppResult<Unit> =

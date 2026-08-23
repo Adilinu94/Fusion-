@@ -2,7 +2,7 @@
 <resources>
     <string name="app_name" translatable="false">FlowRep</string>
     <string name="nav_train">Train</string>
-    <string name="nav_music">Music</string>
+    <string name="nav_music">Musik</string>
     <string name="nav_history">Verlauf</string>
-    <string name="nav_settings">Einstellungen</string>
+    <string name="nav_settings">Optionen</string>
 </resources>

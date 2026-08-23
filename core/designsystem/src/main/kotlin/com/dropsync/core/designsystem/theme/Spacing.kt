@@ -21,4 +21,9 @@ object Spacing {
     val space80 = 80.dp
     val space96 = 96.dp
     val space120 = 120.dp
+    val touchTarget = 48.dp
+    val primaryControlHeight = 56.dp
+    val radiusSmall = 12.dp
+    val radiusCard = 20.dp
+    val radiusHero = 28.dp
 }

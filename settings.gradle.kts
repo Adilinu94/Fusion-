@@ -39,6 +39,9 @@ rootProject.name = "DropSync"
 // :app
 include(":app")
 
+// :benchmarks - Macrobenchmark + Baseline Profiles (Verbesserungsplan Phase 4)
+include(":benchmarks")
+
 // :core
 include(":core:common")
 include(":core:model")

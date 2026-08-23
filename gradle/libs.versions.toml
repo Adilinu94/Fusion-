@@ -8,9 +8,15 @@
 # Build-Toolchain
 agp = "9.3.1"
 kotlin = "2.4.10"
-ksp = "2.3.10"
+# KSP seit 2.3.0 eigenstaendig versioniert ("loosely tied", google/ksp#2660):
+# die 2.3.x-Reihe laeuft mit Kotlin 2.4.x; kein Versions-Matching mehr noetig.
+ksp = "2.3.11"
 spotless = "8.8.0"
 ktlint = "1.8.0"
+# Detekt 2.0.0-alpha.6 ist explizit gegen Kotlin 2.4.10 / AGP 9.3.1 /
+# Gradle 9.6 gebaut (Release-Notes 2026-08-04); die stabile 1.x unterstuetzt
+# diese Toolchain nicht. Wechsel auf stabil, sobald Detekt 2.0 final ist.
+detekt = "2.0.0-alpha.6"
 
 # Android SDK
 compileSdk = "37"
@@ -29,6 +35,13 @@ workManager = "2.11.2"
 datastore = "1.2.1"
 hiltNavigationCompose = "1.4.0"
 healthConnect = "1.1.0"
+
+# Performance (Verbesserungsplan Phase 4): Macrobenchmark + Baseline Profiles.
+# Das baselineprofile-Plugin ist erst ab 1.5.0-alpha01 mit AGP 9 kompatibel
+# (agp-status.frybits.com: Fixed 1.5.0-alpha01); Wechsel auf stabil, sobald
+# verfuegbar.
+benchmark = "1.5.0-alpha01"
+profileinstaller = "1.4.1"
 
 # DI
 hilt = "2.60.1"
@@ -88,6 +101,10 @@ androidx-datastore-preferences = { group = "androidx.datastore", name = "datasto
 # Health Connect (Herzfrequenz-Plan; stabil seit 11/2025)
 androidx-health-connect-client = { group = "androidx.health.connect", name = "connect-client", version.ref = "healthConnect" }
 
+# Performance (Phase 4)
+androidx-profileinstaller = { group = "androidx.profileinstaller", name = "profileinstaller", version.ref = "profileinstaller" }
+androidx-benchmark-macro-junit4 = { group = "androidx.benchmark", name = "benchmark-macro-junit4", version.ref = "benchmark" }
+
 # Hilt
 hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
 hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
@@ -113,6 +130,7 @@ androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-co
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
 android-library = { id = "com.android.library", version.ref = "agp" }
+android-test = { id = "com.android.test", version.ref = "agp" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
@@ -121,3 +139,5 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 room = { id = "androidx.room", version.ref = "room" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }
+androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }

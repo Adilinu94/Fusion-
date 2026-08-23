@@ -4,6 +4,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.getOrNull
 import com.dropsync.core.model.SongMarker
+import com.dropsync.domain.audio.AudioEngineRepository
+import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformDisplayGain
 import com.dropsync.domain.library.LibraryRepository
@@ -25,6 +27,7 @@ import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 /** Zustand des Mini-Players (Schritt 12.2). */
 data class MiniPlayerState(
@@ -91,6 +94,7 @@ class PlayerViewModel
         private val libraryRepository: LibraryRepository,
         private val trackAnalysisRepository: TrackAnalysisRepository,
         private val markerRepository: MarkerRepository,
+        private val audioEngineRepository: AudioEngineRepository,
     ) : ViewModel() {
         init {
             // Waveform-Analyse fruehzeitig anstossen (Plan Phase 2/3): sobald ein
@@ -103,6 +107,102 @@ class PlayerViewModel
                     .distinctUntilChanged()
                     .collect { songId -> requestAnalysis(songId) }
             }
+            // BPM-Lock: Ziel-Kadenz x aktuellem Track-BPM -> Tempo-Faktor.
+            // Laeuft reaktiv: Titelwechsel oder neue BPM-Analyse ziehen die
+            // Geschwindigkeit automatisch nach (nur solange der Lock an ist).
+            viewModelScope.launch {
+                combine(
+                    bpmLock,
+                    targetBpm,
+                    trackBpm,
+                ) { lock, target, bpm -> Triple(lock, target, bpm) }
+                    .collect { (lock, target, bpm) ->
+                        if (lock && bpm != null) {
+                            playbackRepository.setPlaybackSpeed(speedForBpmLock(target, bpm))
+                        }
+                    }
+            }
+        }
+
+        /** Aktive DSP-Konfiguration fuer den EQ-Schnellzugriff im Player. */
+        val dspConfig: StateFlow<DspConfig> =
+            audioEngineRepository.dspConfig
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DspConfig())
+
+        /** Aktiviert/deaktiviert den EQ ohne Umweg ueber die Audio-Einstellungen. */
+        fun setEqEnabled(enabled: Boolean) {
+            viewModelScope.launch {
+                audioEngineRepository.updateDspConfig(
+                    dspConfig.value.copy(eq = dspConfig.value.eq.copy(enabled = enabled)),
+                )
+            }
+        }
+
+        /** Setzt den Gain eines EQ-Bandes (Quick-EQ-Sheet, vertikale Slider). */
+        fun setEqBandGain(
+            bandIndex: Int,
+            gainDb: Double,
+        ) {
+            val config = dspConfig.value
+            val bands =
+                config.eq.bands.mapIndexed { index, band ->
+                    if (index == bandIndex) band.copy(gainDb = gainDb) else band
+                }
+            viewModelScope.launch {
+                audioEngineRepository.updateDspConfig(config.copy(eq = config.eq.copy(bands = bands)))
+            }
+        }
+
+        /** Crossfade an/aus im Player-Aktions-Carousel (Mix-Chip). */
+        fun setCrossfadeEnabled(enabled: Boolean) {
+            val config = dspConfig.value
+            viewModelScope.launch {
+                audioEngineRepository.updateDspConfig(
+                    config.copy(crossfadeSeconds = if (enabled) DEFAULT_CROSSFADE_SECONDS else 0),
+                )
+            }
+        }
+
+        /** Aktueller Tempo-Faktor der Wiedergabe (0.5..2.0; 1.0 = Original). */
+        val playbackSpeed: StateFlow<Float> =
+            playbackRepository.state
+                .map { it.playbackSpeed }
+                .distinctUntilChanged()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 1f)
+
+        /** Setzt den Tempo-Faktor; ausserhalb 0.5..2.0 begrenzt die Implementation. */
+        fun setPlaybackSpeed(speed: Float) {
+            viewModelScope.launch { playbackRepository.setPlaybackSpeed(speed) }
+        }
+
+        /** BPM des laufenden Titels aus der Analyse (null bis Analyse fertig). */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val trackBpm: StateFlow<Float?> =
+            playbackRepository.state
+                .map { it.currentSongId }
+                .distinctUntilChanged()
+                .flatMapLatest { songId ->
+                    if (songId == null) {
+                        flowOf(null)
+                    } else {
+                        trackAnalysisRepository.observeAnalysis(songId).map { it?.bpm }
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+        /** BPM-Lock-Zustand (Ziel-Kadenz haelt das Wiedergabetempo nach). */
+        private val bpmLock = MutableStateFlow(false)
+        val isBpmLockEnabled: StateFlow<Boolean> = bpmLock.asStateFlow()
+
+        /** Ziel-Kadenz des BPM-Locks in BPM (60..200, Default 160). */
+        private val targetBpm = MutableStateFlow(DEFAULT_TARGET_BPM)
+        val lockTargetBpm: StateFlow<Int> = targetBpm.asStateFlow()
+
+        fun setBpmLock(enabled: Boolean) {
+            bpmLock.value = enabled
+        }
+
+        fun setLockTargetBpm(bpm: Int) {
+            targetBpm.value = bpm.coerceIn(MIN_TARGET_BPM, MAX_TARGET_BPM)
         }
 
         @OptIn(ExperimentalCoroutinesApi::class)
@@ -332,5 +432,41 @@ class PlayerViewModel
 
         fun removeQueueItem(index: Int) {
             viewModelScope.launch { playbackRepository.removeFromQueue(index) }
+        }
+
+        companion object {
+            /** Sicherer Tempo-Bereich, identisch zur Playback-Implementation. */
+            const val MIN_PLAYBACK_SPEED = 0.5f
+            const val MAX_PLAYBACK_SPEED = 2.0f
+
+            /** Crossfade-Dauer des Mix-Chips im Aktions-Carousel (Sekunden). */
+            const val DEFAULT_CROSSFADE_SECONDS = 4
+
+            const val MIN_TARGET_BPM = 60
+            const val MAX_TARGET_BPM = 200
+            const val DEFAULT_TARGET_BPM = 160
+
+            /**
+             * Tempo-Faktor fuer den BPM-Lock: Ziel-Kadenz / Track-BPM, in den
+             * sicheren Bereich 0.5..2.0 gefaltet (Oktavfehler wie bei der
+             * Tempo-Schaetzung: Halb-/Doppeltempo ist ein Treffer).
+             */
+            fun speedForBpmLock(
+                targetBpm: Int,
+                trackBpm: Float,
+            ): Float {
+                var target = targetBpm.toFloat()
+                if (trackBpm <= 0f) return 1f
+                var speed = target / trackBpm
+                while (speed < MIN_PLAYBACK_SPEED) {
+                    target *= 2f
+                    speed = target / trackBpm
+                }
+                while (speed > MAX_PLAYBACK_SPEED) {
+                    target /= 2f
+                    speed = target / trackBpm
+                }
+                return (speed * 100).roundToInt() / 100f
+            }
         }
     }

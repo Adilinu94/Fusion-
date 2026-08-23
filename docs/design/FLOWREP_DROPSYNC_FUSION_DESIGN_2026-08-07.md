@@ -13,8 +13,12 @@
 | [`WISSEN_POWERAMP_OFFTRACK_2026-08-07.md`](WISSEN_POWERAMP_OFFTRACK_2026-08-07.md) | Konzepte aus öffentlicher Doku (Audio Engine, Workout Mixing) |
 | [`OFFTRACK_AUDIO_UMBAUHANDBUCH.md`](../../../OFFTRACK_AUDIO_UMBAUHANDBUCH.md) | Technische Ausarbeitung Audio: Transitionen, Clock, Waveform, Analyse (liegt im DropSync-Repo) |
 | [`UI_UX_UMBAUHANDBUCH_TRAIN_MUSIC_DROPSYNC.md`](../../../UI_UX_UMBAUHANDBUCH_TRAIN_MUSIC_DROPSYNC.md) | Technische Ausarbeitung UI: Workout Console, Rest Console, Marker-Editor (liegt im DropSync-Repo) |
+| [`FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md`](FLOWREP_MOBILE_DESIGN_SYSTEM_2026-08-14.md) | Verbindliche visuelle Sprache; ersetzt bei Konflikten die visuellen Entscheidungen dieses Dokuments |
+| [`2026-08-22-flowtimer-integration-design.md`](2026-08-22-flowtimer-integration-design.md) | Hebt vier Produktentscheidungen dieses Dokuments auf (Verlauf-Tab, Übungsverwaltung/Ziele, Workout-Zählung, externer Mathematik-Kern) — siehe [ADR-0016](../adr/0016-flowtimer-integration-hebt-fusionsdesign-punkte-auf.md) |
 
 **Geltungsordnung:** Dieses Design-Dokument ist die oberste Referenz für Produktentscheidungen. Die beiden Handbücher setzen es technisch um und dürfen es nicht widersprechen.
+
+**Einschränkung seit 2026-08-22:** Für die in [ADR-0016](../adr/0016-flowtimer-integration-hebt-fusionsdesign-punkte-auf.md) aufgezählten vier Punkte gilt ausschließlich `2026-08-22-flowtimer-integration-design.md`. Für alle übrigen Produktentscheidungen bleibt dieses Dokument oberste Referenz.
 
 ---
 

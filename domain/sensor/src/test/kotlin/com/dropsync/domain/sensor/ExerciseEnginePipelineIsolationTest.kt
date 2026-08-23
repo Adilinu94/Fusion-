@@ -7,66 +7,50 @@ import org.junit.Test
  * Fund 1 (siehe TrainViewModelTest.kt, ADR-0014): TrainViewModel haelt zwei
  * ExerciseEnginePipeline-Instanzen (liveEngine mit echter Achse/Bias,
  * shadowEngine mit NEUTRAL_AXIS/NEUTRAL_BIAS). Dieser Test beweist auf
- * Domain-Ebene, dass zwei Instanzen keinerlei gemeinsamen Zustand teilen:
- * derselbe rohe Sample-Strom, unter den in TrainViewModel tatsaechlich
- * verwendeten Achsen projiziert, liefert zwei unabhaengige, korrekt
- * unterschiedliche Zaehlstaende - kein Uebersprechen zwischen den
- * Instanzen ueber Companion-Object oder sonstigen geteilten Zustand.
+ * Domain-Ebene, dass zwei Instanzen keinerlei gemeinsamen Zustand teilen.
  *
- * Deckt NICHT die ViewModel-Verdrahtung selbst ab (also nicht, welche der
- * beiden Instanzen tatsaechlich an `_repsInput`/`_liveCountedReps` haengt -
- * das ist laut Code aktuell `liveEngine`, siehe ADR-0014). Ein
- * View-Model-Ebenen-Test dafuer (`ShadowEngineIsolationTest`, siehe
- * TESTINFRASTRUKTUR_UMBAUPLAN_2026-08-10.md) braucht eine echte
- * Kalibrierungsprofil-Fake und eine steuerbare Sensor-Verbindung und ist
- * bewusst nicht Teil dieses Commits (siehe Fence-Report).
- *
- * Sample-Sequenz numerisch gegen eine Python-Nachbildung von SignalChain +
- * PeakDetector + RepCounter (inkl. Pending-Window-Erweiterung,
- * PhaseValidator, QualityScorer) verifiziert: liefert deterministisch
- * genau 2 gezaehlte Reps.
- *
- * WICHTIG (Korrektur 2026-08-13): die urspruengliche peakShape endete
- * abrupt bei -100 und sprang auf 0 zurueck. Der OneEuro-Filter macht
- * daraus einen langen negativen Tail, das Pending-Window schliesst erst
- * ueber MAX_EXTRA_PHASE_SAMPLES (120), und der PhaseValidator lehnt das
- * Fenster als asymmetrisch ab (pos=17, neg=122). Die urspruengliche
- * Python-"Verifikation" hatte die Pending-Logik nicht nachgebildet.
- * Neue Form: rein positives Dreieck (0 -> 60 -> 0 in je 15 Samples) -
- * kein negativer Anteil, Pending schliesst sofort, deterministisch
- * 2 Reps auch mit minScore=0.55 (Score ~0.72).
+ * Umbauplan Phase 4: die Test-Streams bestehen aus VOLLSTAENDIGEN
+ * Zwei-Phasen-Zyklen (positiv -> Richtungswechsel -> negativ -> Rueckkehr
+ * zur Baseline). Halbe Reps muessen jetzt abgelehnt werden.
  */
 class ExerciseEnginePipelineIsolationTest {
-    // Rein positives Dreieck: 0 -> 60 in 15 Schritten, 60 -> 0 in 15
-    // Schritten. Ein sauber erkennbarer Rep ohne negativen Signalanteil.
-    private fun repExcursion(): List<Double> =
-        (1..15).map { 60.0 * it / 15.0 } + (1..15).map { 60.0 - 60.0 * it / 15.0 }
+    // Vollstaendiger Zyklus: 0 -> 60 (konzentrisch), 60 -> -60
+    // (Richtungswechsel + exzentrisch), -60 -> 0 (Rueckkehr zur Baseline).
+    private fun repCycle(): List<Double> =
+        (1..15).map { 60.0 * it / 15.0 } +
+            (1..30).map { 60.0 - 120.0 * it / 30.0 } +
+            (1..15).map { -60.0 + 60.0 * it / 15.0 }
 
-    // 60 ruhige Samples (> settleSamples=50 der SignalChain), zwei Reps mit
-    // je 60 ruhigen Samples Abstand (> Refraktaerzeit von 25 Samples bei
-    // 50 Hz), danach 40 ruhige Samples. Numerisch verifiziert
-    // (sim_search.py): exakt 2 gezaehlte Reps, auch mit minScore=0.55.
+    // 60 ruhige Samples (> settleSamples=50 der SignalChain), zwei volle
+    // Zyklen mit je 60 ruhigen Samples Abstand, danach 40 ruhige Samples.
     private fun twoRepRawStream(): List<Double> =
-        List(60) { 0.0 } + repExcursion() + List(60) { 0.0 } + repExcursion() + List(40) { 0.0 }
+        List(60) { 0.0 } + repCycle() + List(60) { 0.0 } + repCycle() + List(40) { 0.0 }
+
+    private fun engine(
+        axis: List<Double> = listOf(1.0, 0.0, 0.0),
+        threshold: Double = 32.5,
+        accelEnabled: Boolean = false,
+    ) = ExerciseEnginePipeline(
+        ExerciseEngineConfig(
+            rotationAxis = axis,
+            gyroBias = listOf(0.0, 0.0, 0.0),
+            detectionThreshold = threshold,
+            expectedDurationMs = 2_000.0,
+            expectedProminence = 1.0,
+            accelEnabled = accelEnabled,
+        ),
+    )
 
     @Test
     fun `zwei Pipeline-Instanzen mit unterschiedlicher Achse teilen keinen Zustand`() {
         // Wie in TrainViewModel.startCountedSet(): echte Kalibrierungsachse.
-        val live =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
+        val live = engine(axis = listOf(1.0, 0.0, 0.0))
         // Wie in TrainViewModel.resetShadowEngine(): NEUTRAL_AXIS/NEUTRAL_BIAS.
-        val shadow =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(0.0, 0.0, 1.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
+        val shadow = engine(axis = listOf(0.0, 0.0, 1.0))
 
         // Derselbe Sample-Strom auf gx; live projiziert auf gx (Achse
         // [1,0,0]) und sieht die Reps, shadow projiziert auf gz (Achse
-        // [0,0,1]) und sieht durchgehend 0 - exakt das reale Verhalten aus
-        // TrainViewModel mit unkalibrierter Shadow-Achse ("shadow accuracy
-        // is bounded by this until a full profile").
+        // [0,0,1]) und sieht durchgehend 0.
         twoRepRawStream().forEachIndexed { i, gx ->
             val ts = i * 20L
             live.processSample(ts, gx, 0.0, 0.0)
@@ -79,14 +63,8 @@ class ExerciseEnginePipelineIsolationTest {
 
     @Test
     fun `reset einer Instanz beeinflusst die andere nicht`() {
-        val live =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
-        val shadow =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
+        val live = engine()
+        val shadow = engine()
 
         twoRepRawStream().forEachIndexed { i, gx ->
             live.processSample(i * 20L, gx, 0.0, 0.0)
@@ -95,35 +73,30 @@ class ExerciseEnginePipelineIsolationTest {
         assertEquals(2, live.repCount.value)
         assertEquals(2, shadow.repCount.value)
 
-        // reset() auf live (z. B. TrainViewModel.finishExercise) darf
-        // shadow's Zaehlstand nicht beruehren - kein geteilter Zustand.
+        // reset() auf live darf shadow's Zaehlstand nicht beruehren.
         live.reset()
         assertEquals(0, live.repCount.value)
         assertEquals("shadow darf von live.reset() nicht beruehrt werden", 2, shadow.repCount.value)
     }
 
     @Test
-    fun `updateLevels propagates to peak detector`() {
-        // Ohne updateLevels zaehlt der Stream deterministisch 2 Reps
-        // (theta=32.5). Nach updateLevels(1000, 100) ist theta=325, die
-        // Amplitude 60 liegt darunter - die Pipeline zaehlt 0 Reps. Das
-        // beweist die Durchreichung Pipeline -> RepCounter -> PeakDetector.
-        val engine =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
+    fun `updateThreshold propagates to peak detector`() {
+        // Ohne updateThreshold zaehlt der Stream deterministisch 2 Reps
+        // (theta=32.5). Nach updateThreshold(65) ist theta=65, die
+        // Amplitude 60 liegt darunter - die Pipeline zaehlt 0 Reps.
+        val engine = engine()
         twoRepRawStream().forEachIndexed { i, gx ->
             engine.processSample(i * 20L, gx, 0.0, 0.0)
         }
         assertEquals(2, engine.repCount.value)
 
         engine.reset()
-        engine.updateLevels(spk = 1000.0, npk = 100.0)
+        engine.updateThreshold(theta = 65.0)
         twoRepRawStream().forEachIndexed { i, gx ->
             engine.processSample(i * 20L, gx, 0.0, 0.0)
         }
         assertEquals(
-            "nach updateLevels(1000, 100) ist theta=325 > Amplitude 60: kein Rep",
+            "nach updateThreshold(65) ist theta=65 > Amplitude 60: kein Rep",
             0,
             engine.repCount.value,
         )
@@ -131,12 +104,16 @@ class ExerciseEnginePipelineIsolationTest {
 
     @Test
     fun `config default minQualityScore is 0_55`() {
-        // Umbauplan Punkt 3: Config-Default muss dem QualityScorer-Default
-        // (0.55) entsprechen - der Scorer-Default ist der aus der
-        // Dart-Vorlage validierte Wert.
         val config =
             ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0))
         assertEquals(0.55, config.minQualityScore, 1e-9)
+    }
+
+    @Test
+    fun `config default detectionThreshold is 32_5`() {
+        val config =
+            ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0))
+        assertEquals(32.5, config.detectionThreshold, 1e-9)
     }
 
     // --- Punkt 4: Accel-Voting ---------------------------------------------
@@ -145,14 +122,7 @@ class ExerciseEnginePipelineIsolationTest {
     fun `accel voting unterdrueckt reinen Gyro-Peak`() {
         // accelEnabled=true, aber der Accel-Kanal bleibt ruhig (ax=1.0):
         // der Gyro-Peak hat keinen Accel-Partner -> Voting schlaegt fehl.
-        val engine =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(
-                    rotationAxis = listOf(1.0, 0.0, 0.0),
-                    gyroBias = listOf(0.0, 0.0, 0.0),
-                    accelEnabled = true,
-                ),
-            )
+        val engine = engine(accelEnabled = true)
         twoRepRawStream().forEachIndexed { i, gx ->
             engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0, ay = 0.0, az = 0.0)
         }
@@ -167,14 +137,7 @@ class ExerciseEnginePipelineIsolationTest {
     fun `accel voting zaehlt wenn beide Kanaele peaken`() {
         // Gleichphasige Accel-Abweichung waehrend der Reps (Magnitude
         // schlaegt von 1 g auf bis 1.5 g aus): beide Kanaele peaken.
-        val engine =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(
-                    rotationAxis = listOf(1.0, 0.0, 0.0),
-                    gyroBias = listOf(0.0, 0.0, 0.0),
-                    accelEnabled = true,
-                ),
-            )
+        val engine = engine(accelEnabled = true)
         twoRepRawStream().forEachIndexed { i, gx ->
             val accelDev = 0.5 * (gx / 60.0)
             engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0 + accelDev, ay = 0.0, az = 0.0)
@@ -184,14 +147,62 @@ class ExerciseEnginePipelineIsolationTest {
 
     @Test
     fun `accel disabled verhaelt sich wie vorher`() {
-        // Default accelEnabled=false: reine Gyro-Zaehlung wie bisher.
-        val engine =
-            ExerciseEnginePipeline(
-                ExerciseEngineConfig(rotationAxis = listOf(1.0, 0.0, 0.0), gyroBias = listOf(0.0, 0.0, 0.0)),
-            )
+        val engine = engine()
         twoRepRawStream().forEachIndexed { i, gx ->
             engine.processSample(i * 20L, gx, 0.0, 0.0)
         }
         assertEquals(2, engine.repCount.value)
+    }
+
+    // --- Umbauplan Phase 4: halbe Reps muessen abgelehnt werden ------------
+
+    @Test
+    fun `halbe Rep wird abgelehnt`() {
+        // Reines Anheben (0 -> 60 -> 0, nie negativ): keine Rueckbewegung
+        // durch die Baseline - darf nicht als Rep zaehlen.
+        val halfRep = (1..15).map { 60.0 * it / 15.0 } + (1..15).map { 60.0 - 60.0 * it / 15.0 }
+        val stream = List(60) { 0.0 } + halfRep + List(60) { 0.0 }
+        val engine = engine()
+        stream.forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0)
+        }
+        assertEquals("halbe Rep darf nicht zaehlen", 0, engine.repCount.value)
+    }
+
+    // --- Umbauplan Phase 2.6: Zeitluecken -----------------------------------
+
+    @Test
+    fun `grosse Zeitluecke erhoeht largeGapCount und laesst Filter neu einschwingen`() {
+        val engine = engine()
+        // Normale Samples, dann eine Luecke von 1000 ms, danach wieder
+        // normale Samples: die Pipeline darf die Luecke nicht als physische
+        // Zeit komprimieren, sondern zaehlt sie als grossen Gap.
+        val stream = List(60) { 0.0 } + repCycle() + List(20) { 0.0 }
+        var ts = 0L
+        stream.forEach { gx ->
+            engine.processSample(ts, gx, 0.0, 0.0)
+            ts += 20L
+        }
+        assertEquals(0, engine.largeGapCount)
+
+        // Luecke: der naechste Sample-Timestamp springt um 1000 ms.
+        engine.processSample(ts + 1_000L, 0.0, 0.0, 0.0)
+        assertEquals(1, engine.largeGapCount)
+        // Nach dem Gap sind die Filter neu eingeschwungen: isSettled ist
+        // erst nach settleSamples wieder true.
+        assertEquals(false, engine.isSettled)
+    }
+
+    @Test
+    fun `kleine Luecke unter 250 ms ist kein grosser Gap`() {
+        val engine = engine()
+        val stream = List(60) { 0.0 }
+        var ts = 0L
+        stream.forEach { gx ->
+            engine.processSample(ts, gx, 0.0, 0.0)
+            ts += 20L
+        }
+        engine.processSample(ts + 100L, 0.0, 0.0, 0.0) // 120 ms seit letztem
+        assertEquals(0, engine.largeGapCount)
     }
 }

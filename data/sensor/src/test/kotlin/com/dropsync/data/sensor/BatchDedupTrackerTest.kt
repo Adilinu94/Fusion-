@@ -63,4 +63,50 @@ class BatchDedupTrackerTest {
         assertEquals(0, tracker.estimatedMissedBatches)
         assertFalse(tracker.shouldSkip(2000))
     }
+
+    // --- Umbauplan Phase 3: SensorHealth-Daten -----------------------------
+
+    @Test
+    fun `largest gap is tracked in ms`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1080) // normal
+        tracker.shouldSkip(1560) // 480 ms gap
+        tracker.shouldSkip(1720) // 160 ms gap
+        assertEquals(480L, tracker.largestGapMs)
+    }
+
+    @Test
+    fun `recent packet loss rate reflects missed batches`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80, lossWindowBatches = 10)
+        tracker.shouldSkip(1000)
+        // 3 missed batches -> loss rate 3/(1+3) = 0.75
+        tracker.shouldSkip(1320)
+        assertEquals(0.75, tracker.recentPacketLossRate, 0.001)
+    }
+
+    @Test
+    fun `loss rate falls as new batches arrive`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80, lossWindowBatches = 10)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1320) // 3 missed -> Window: [m,m,m,s] Rate 0.75
+        assertEquals(0.75, tracker.recentPacketLossRate, 0.001)
+        repeat(5) { i -> tracker.shouldSkip(1400 + i * 80) }
+        // Window: [m,m,m,s,s,s,s,s,s] -> 3/9
+        assertEquals(3.0 / 9.0, tracker.recentPacketLossRate, 0.001)
+        repeat(4) { i -> tracker.shouldSkip(1800 + i * 80) }
+        // 13 Eintraege, auf 10 getrimmt: die 3 Misses fallen heraus -> 0.0
+        assertEquals(0.0, tracker.recentPacketLossRate, 0.001)
+    }
+
+    @Test
+    fun `reset clears health counters`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1320)
+        tracker.reset()
+        assertEquals(0L, tracker.largestGapMs)
+        assertEquals(0.0, tracker.recentPacketLossRate, 0.0)
+        assertEquals(0, tracker.recentMissedBatches)
+    }
 }

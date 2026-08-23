@@ -61,6 +61,15 @@ jobs:
       - name: Formatierung/Lint (./gradlew spotlessCheck)
         run: ./gradlew spotlessCheck --stacktrace
 
+      # Umbauplan Phase 11: Lint und Detekt als weitere Gates. Lint-Fehler
+      # blockieren den Release; Detekt-Baseline haelt Altlasten, neue
+      # Code-Smells brechen den Build.
+      - name: Android-Lint (./gradlew lintDebug)
+        run: ./gradlew lintDebug --stacktrace
+
+      - name: Detekt (./gradlew detekt)
+        run: ./gradlew detekt
+
       - name: Debug-Build (./gradlew assembleDebug)
         run: ./gradlew assembleDebug --stacktrace
 

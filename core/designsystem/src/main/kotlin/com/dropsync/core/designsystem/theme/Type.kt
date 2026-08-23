@@ -9,21 +9,19 @@ import androidx.compose.ui.unit.sp
 import com.dropsync.core.designsystem.R
 
 /**
- * Marken-Schriftfamilie gemaess Design.txt: Raleway (elegant, geometrisch,
- * sportlich). Das gesamte System nutzt bewusst nur eine Familie fuer maximale
- * Konsistenz.
+ * Marken-Schriftfamilie der FlowRep-Mobiloberflaeche: Poppins. Das gesamte
+ * System nutzt bewusst nur eine Familie fuer maximale Konsistenz.
  *
- * Raleway wird als gebuendelte OFL-TTF (statische Gewichte) unter
+ * Poppins wird als gebuendelte OFL-TTF (statische Gewichte) unter
  * `core/designsystem/src/main/res/font/` ausgeliefert - offline, ohne
- * Google-Fonts-Provider. Genutzte Gewichte: 400/500/600/700/800.
+ * Google-Fonts-Provider. Genutzte Gewichte: 400/500/700.
  */
 val BrandFontFamily: FontFamily =
     FontFamily(
-        Font(R.font.raleway_regular, FontWeight.Normal),
-        Font(R.font.raleway_medium, FontWeight.Medium),
-        Font(R.font.raleway_semibold, FontWeight.SemiBold),
-        Font(R.font.raleway_bold, FontWeight.Bold),
-        Font(R.font.raleway_extrabold, FontWeight.ExtraBold),
+        Font(R.font.poppins_regular, FontWeight.Normal),
+        Font(R.font.poppins_medium, FontWeight.Medium),
+        Font(R.font.poppins_bold, FontWeight.SemiBold),
+        Font(R.font.poppins_bold, FontWeight.Bold),
     )
 
 // Aktivierung tabellarischer Ziffern fuer grosse Zahlen (Timer, Statistiken),
@@ -38,69 +36,65 @@ private const val TABULAR_FIGURES = "tnum"
  */
 val DropSyncTypography: Typography =
     Typography(
-        // Hero / grosse Zahlen (Design.txt Hero 72-96, H1 56)
+        // Display und grosse Zahlen.
         displayLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 57.sp,
-                lineHeight = 58.sp,
-                letterSpacing = (-1.0).sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 48.sp,
+                lineHeight = 52.sp,
                 fontFeatureSettings = TABULAR_FIGURES,
             ),
         displayMedium =
             TextStyle(
                 fontFamily = BrandFontFamily,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 45.sp,
-                lineHeight = 46.sp,
-                letterSpacing = (-0.8).sp,
+                fontWeight = FontWeight.Bold,
+                fontSize = 36.sp,
+                lineHeight = 42.sp,
                 fontFeatureSettings = TABULAR_FIGURES,
             ),
         displaySmall =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 36.sp,
-                lineHeight = 40.sp,
-                letterSpacing = (-0.4).sp,
+                fontSize = 28.sp,
+                lineHeight = 34.sp,
             ),
-        // Headlines (Design.txt H3 32, H4 24)
+        // Headlines.
         headlineLarge =
-            TextStyle(
-                fontFamily = BrandFontFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 32.sp,
-                lineHeight = 36.sp,
-                letterSpacing = (-0.2).sp,
-            ),
-        headlineMedium =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
                 lineHeight = 34.sp,
             ),
-        headlineSmall =
+        headlineMedium =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Bold,
                 fontSize = 24.sp,
                 lineHeight = 30.sp,
             ),
+        headlineSmall =
+            TextStyle(
+                fontFamily = BrandFontFamily,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                lineHeight = 26.sp,
+            ),
         // Titles (Section-/Listenkoepfe)
         titleLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                lineHeight = 28.sp,
+                fontSize = 20.sp,
+                lineHeight = 26.sp,
             ),
         titleMedium =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 lineHeight = 24.sp,
                 letterSpacing = 0.1.sp,
             ),
@@ -108,17 +102,17 @@ val DropSyncTypography: Typography =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 16.sp,
-                lineHeight = 22.sp,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
                 letterSpacing = 0.1.sp,
             ),
-        // Body (luftiger; Design.txt Body Large 18, Body 16, Caption 14)
+        // Body und Metadaten.
         bodyLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Normal,
-                fontSize = 18.sp,
-                lineHeight = 28.sp,
+                fontSize = 16.sp,
+                lineHeight = 24.sp,
                 letterSpacing = 0.15.sp,
             ),
         bodyMedium =
@@ -137,13 +131,13 @@ val DropSyncTypography: Typography =
                 lineHeight = 20.sp,
                 letterSpacing = 0.2.sp,
             ),
-        // Labels als Caps-taugliche Stile (Buttons, Toolbar, Small Label 12)
+        // Labels fuer Buttons, Navigation und Status.
         labelLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
-                fontWeight = FontWeight.Bold,
-                fontSize = 14.sp,
-                lineHeight = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
                 letterSpacing = 0.5.sp,
             ),
         labelMedium =
@@ -152,7 +146,7 @@ val DropSyncTypography: Typography =
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                letterSpacing = 0.8.sp,
+                letterSpacing = 0.5.sp,
             ),
         labelSmall =
             TextStyle(
@@ -160,6 +154,6 @@ val DropSyncTypography: Typography =
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
                 lineHeight = 16.sp,
-                letterSpacing = 1.0.sp,
+                letterSpacing = 0.5.sp,
             ),
     )

@@ -21,6 +21,9 @@
     <string name="now_playing_marker_delete_message">\"%1$s\" bei %2$s wird entfernt.</string>
     <string name="now_playing_marker_delete_confirm">Loeschen</string>
     <string name="now_playing_marker_cancel">Abbrechen</string>
+    <string name="now_playing_marker_status">%1$d bestätigte Marker</string>
+    <string name="now_playing_marker_legend">Durchgezogene Linien sind aktive DropSync-Marker</string>
+    <string name="now_playing_marker_add_action">Marker setzen</string>
     <string name="player_queue_open">Warteschlange oeffnen</string>
     <string name="player_queue_title">Warteschlange</string>
     <string name="player_queue_empty">Die Warteschlange ist leer.</string>
@@ -41,4 +44,22 @@
     <string name="drop_rest_blocked_not_playing">Die Wiedergabe ist pausiert.</string>
     <string name="drop_rest_blocked_no_marker">Der aktuelle Song hat keinen kommenden Drop-Marker.</string>
     <string name="drop_rest_blocked_too_close">Der naechste Drop ist weniger als 5 Sekunden entfernt.</string>
+
+    <!-- Aktions-Carousel + Sheets (Umbau 2026-08) -->
+    <string name="now_playing_action_eq">EQ</string>
+    <string name="now_playing_action_eq_on">EQ an</string>
+    <string name="now_playing_action_add_marker">Marker</string>
+    <string name="now_playing_action_mix_on">Mix %1$ds</string>
+    <string name="now_playing_action_mix_off">Mix aus</string>
+    <string name="now_playing_action_queue">Warteschlange (%1$d)</string>
+    <string name="now_playing_waveform_with_markers">Welle: Tippen springt, Ziehen zeigt eine Vorschau, Gedrückthalten setzt oder löscht einen Marker. %1$d Marker gesetzt.</string>
+    <string name="now_playing_tempo_title">Wiedergabetempo</string>
+    <string name="now_playing_tempo_original">Original</string>
+    <string name="now_playing_tempo_lock_title">BPM anpassen (Lock)</string>
+    <string name="now_playing_tempo_lock_track_bpm">Titel: %1$d BPM</string>
+    <string name="now_playing_tempo_lock_no_bpm">BPM-Analyse für diesen Titel steht noch aus.</string>
+    <string name="now_playing_tempo_lock_target">Ziel: %1$d BPM</string>
+    <string name="now_playing_tempo_lock_effective">Lock-Tempo: %1$.2fx</string>
+    <string name="quick_eq_title">Equalizer</string>
+    <string name="quick_eq_bands">%1$d Bänder · dB</string>
 </resources>

@@ -5,6 +5,12 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
+import com.dropsync.domain.audio.AudioEngineRepository
+import com.dropsync.domain.audio.AudioInfo
+import com.dropsync.domain.audio.BitPerfectSupport
+import com.dropsync.domain.audio.DspConfig
+import com.dropsync.domain.audio.EqBand
+import com.dropsync.domain.audio.EqPreset
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformBucket
@@ -48,6 +54,7 @@ class PlayerViewModelTest {
     private lateinit var libraryRepository: FakeLibraryRepository
     private lateinit var trackAnalysisRepository: FakeTrackAnalysisRepository
     private lateinit var markerRepository: FakeMarkerRepository
+    private lateinit var audioEngineRepository: FakeAudioEngineRepository
 
     @Before
     fun setUp() {
@@ -56,6 +63,7 @@ class PlayerViewModelTest {
         libraryRepository = FakeLibraryRepository()
         trackAnalysisRepository = FakeTrackAnalysisRepository()
         markerRepository = FakeMarkerRepository()
+        audioEngineRepository = FakeAudioEngineRepository()
     }
 
     @After
@@ -64,7 +72,13 @@ class PlayerViewModelTest {
     }
 
     private fun viewModel() =
-        PlayerViewModel(playbackRepository, libraryRepository, trackAnalysisRepository, markerRepository)
+        PlayerViewModel(
+            playbackRepository,
+            libraryRepository,
+            trackAnalysisRepository,
+            markerRepository,
+            audioEngineRepository,
+        )
 
     @Test
     fun `nowPlaying ist unsichtbar bei leerer Queue`() =
@@ -360,11 +374,13 @@ private class FakePlaybackRepository : PlaybackRepository {
 
     override suspend fun setRepeatMode(mode: RepeatMode): AppResult<Unit> = AppResult.success(Unit)
 
+    override suspend fun setPlaybackSpeed(speed: Float): AppResult<Unit> = AppResult.success(Unit)
+
     override suspend fun lastPersistedState(): PersistedPlayerState? = null
 
     override suspend fun snapshotNow(): AppResult<PlaybackState> = snapshot
 
-    override suspend fun crossfadeTo(
+    override suspend fun playSongAt(
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit> = AppResult.success(Unit)
@@ -470,4 +486,29 @@ private class FakeLibraryRepository : LibraryRepository {
         AppResult.failure(AppError.Unknown("nicht Teil dieses Tests"))
 
     override val scannedFiles: Flow<List<ScannedFile>> = emptyFlow()
+}
+
+/** Minimal-Fake des Audio-Engine-Zugangs für den Player (EQ-Schnellzugriff). */
+private class FakeAudioEngineRepository : AudioEngineRepository {
+    val config = MutableStateFlow(DspConfig())
+
+    override val dspConfig: Flow<DspConfig> = config
+    override val audioInfo: Flow<AudioInfo?> = MutableStateFlow(null)
+    override val eqPresets: Flow<List<EqPreset>> = MutableStateFlow(emptyList())
+    override val activeOutputProfileKey: Flow<String?> = MutableStateFlow(null)
+    override val bitPerfectSupport: Flow<BitPerfectSupport> =
+        MutableStateFlow(BitPerfectSupport.UNAVAILABLE)
+
+    override suspend fun updateDspConfig(config: DspConfig) {
+        this.config.value = config
+    }
+
+    override suspend fun saveEqPreset(
+        name: String,
+        bands: List<EqBand>,
+    ): AppResult<Long> = AppResult.success(1L)
+
+    override suspend fun deleteEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun applyEqPreset(id: Long): AppResult<Unit> = AppResult.success(Unit)
 }

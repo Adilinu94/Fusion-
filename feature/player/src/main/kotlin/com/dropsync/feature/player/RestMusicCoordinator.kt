@@ -6,7 +6,6 @@ import com.dropsync.core.common.getOrNull
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
-import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.playback.PlaybackGeneration
@@ -58,7 +57,6 @@ class RestMusicCoordinator
         private val playbackRepository: PlaybackRepository,
         private val browseRepository: LibraryBrowseRepository,
         private val markerRepository: MarkerRepository,
-        private val audioEngine: AudioEngineRepository,
         private val routeProfiles: RouteProfileRepository,
         private val restDucking: RestDuckingGate,
         private val clock: Clock,
@@ -161,9 +159,7 @@ class RestMusicCoordinator
                 (startedAt + session.durationMs - clock.elapsedRealtimeMs())
                     .coerceAtLeast(0)
             val (candidates, songsById) = workCandidates()
-            // Crossfade-Dauer aus der DSP-Konfiguration (Design Phase 6.1);
             // Latenz aus dem Route-Profil (WorkStart = Go - Marker - Latenz).
-            val crossfadeMs = (audioEngine.dspConfig.first().crossfadeSeconds * 1000L)
             val latencyMs = routeProfiles.currentLatencyMs() ?: 0L
             val plan =
                 (
@@ -171,7 +167,7 @@ class RestMusicCoordinator
                         remaining,
                         candidates,
                         latencyMs = latencyMs,
-                        crossfadeMs = crossfadeMs,
+                        crossfadeMs = 0L,
                     ) as? DropLandingResult.Scheduled
                 )?.plan ?: return
             // Ohne brauchbaren Work-Drop faellt DROP_LANDING auf
@@ -180,40 +176,25 @@ class RestMusicCoordinator
             val sessionId = session.id
             landingJob =
                 scope.launch {
+                    // Best-Effort-Landung: nach der geplanten Verzoegerung
+                    // auf den Work-Titel wechseln (vorgespult oder von vorn).
                     delay(plan.startAfterDelayMs)
-                    // Automatik nur, wenn die Sitzung noch aktiv ist, die
-                    // Generation noch gueltig ist (Skip/Route-Wechsel) und
-                    // der Nutzer nicht manuell pausiert hat (Nutzer hat Vorrang).
-                    if (activeSessionId != sessionId) return@launch
-                    if (generation != sessionGeneration) return@launch
+                    if (activeSessionId != sessionId || generation != sessionGeneration) return@launch
+                    // Nutzer hat Vorrang: pausierte Wiedergabe bricht die
+                    // Landung ab (Pause/Medientaste).
                     val snapshot = playbackRepository.snapshotNow().getOrNull()
                     if (snapshot != null && !snapshot.isPlaying) {
-                        // Manueller Eingriff (Pause/Medientaste): Automatik
-                        // ganz abgeben, damit auch am Pausenende nichts
-                        // erzwungen wird (Hardware-/Touch-Control, F4).
                         controlling = false
                         restDucking.setActive(false)
                         return@launch
                     }
-                    executeLanding(plan, workSong)
-                    landed = true
-                    // Work-Titel laeuft: Rest-Ducking zuruecknehmen.
-                    restDucking.setActive(false)
+                    val result = playbackRepository.playSongAt(workSong, plan.startAtPositionMs)
+                    if (result is com.dropsync.core.common.AppResult.Failure) return@launch
+                    if (activeSessionId == sessionId && generation == sessionGeneration) {
+                        landed = true
+                        restDucking.setActive(false)
+                    }
                 }
-        }
-
-        /**
-         * Fuehrt den Plan aus (Design Phase 6):
-         * - INTRO: Crossfade auf den Work-Titel von vorn (startAtPositionMs=0);
-         *   der Crossfade endet vor dem Drop.
-         * - DIRECT_TO_DROP: Rest-Musik laeuft die volle Restzeit; beim Go
-         *   springt der Player per Crossfade direkt auf die Drop-Position.
-         */
-        private suspend fun executeLanding(
-            plan: DropLandingPlan,
-            workSong: Song,
-        ) {
-            playbackRepository.crossfadeTo(workSong, plan.startAtPositionMs)
         }
 
         private suspend fun startWorkTitle() {
@@ -237,7 +218,11 @@ class RestMusicCoordinator
                         markerRepository
                             .getEnabledMarkersForSong(song.mediaStoreId)
                             .getOrNull()
-                            ?.firstOrNull() ?: return@mapNotNull null
+                            // Deterministisch: nur gueltige Positionen, kleinste
+                            // zuerst (Offtrack Phase 5.4); nie auf DAO-Reihenfolge
+                            // oder ein ungefiltertes firstOrNull verlassen.
+                            ?.filter { it.positionMs in 0..song.durationMs }
+                            ?.minByOrNull { it.positionMs } ?: return@mapNotNull null
                     WorkSongDrop(
                         songId = song.mediaStoreId,
                         dropPositionMs = marker.positionMs,

@@ -31,7 +31,7 @@ data class ResamplerSettings(
  */
 data class DspConfig(
     /** Master-Schalter: aus = alle Stufen Bypass (auch fuer Bit-Perfect). */
-    val enabled: Boolean = true,
+    val enabled: Boolean = false,
     /** Vorverstaerker in dB, begrenzt auf [PREAMP_MIN_DB]..[PREAMP_MAX_DB]. */
     val preampDb: Double = 0.0,
     /** Soft-Limiter am Kettenende (Clipping-Schutz). */

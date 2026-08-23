@@ -44,8 +44,20 @@ class FlatSetRepositoryImpl(
         exerciseId: Long,
         weightMilliKg: Long,
         reps: Int,
-    ): AppResult<Long> =
-        withContext(dispatchers.io) {
+    ): AppResult<Long> {
+        // Umbauplan Phase 10.5: die Repository-Grenze validiert unabhaengig
+        // von der UI - negative Gewichte, NaN-Infinity oder unsinnige
+        // Rep-Zahlen duerfen nie in die Datenbank gelangen.
+        if (exerciseId <= 0) {
+            return AppResult.failure(AppError.Unknown("Ungueltige Uebungs-ID: $exerciseId"))
+        }
+        if (weightMilliKg < 0 || weightMilliKg > MAX_WEIGHT_MILLI_KG) {
+            return AppResult.failure(AppError.Unknown("Gewicht ausserhalb des gueltigen Bereichs"))
+        }
+        if (reps <= 0 || reps > MAX_REPS) {
+            return AppResult.failure(AppError.Unknown("Wiederholungen ausserhalb des gueltigen Bereichs"))
+        }
+        return withContext(dispatchers.io) {
             try {
                 AppResult.success(
                     flatSetDao.insert(
@@ -61,6 +73,7 @@ class FlatSetRepositoryImpl(
                 AppResult.failure(AppError.DatabaseFailure("logSet"))
             }
         }
+    }
 
     override suspend fun deleteSet(setId: Long): AppResult<Unit> =
         withContext(dispatchers.io) {
@@ -111,5 +124,11 @@ class FlatSetRepositoryImpl(
 
     private companion object {
         const val DAY_MS = 86_400_000L
+
+        /** 1 Tonne in Milli-Kilogramm (Umbauplan Phase 10.5). */
+        const val MAX_WEIGHT_MILLI_KG = 1_000_000_000L
+
+        /** Sinnvolle Obergrenze pro Set (Umbauplan Phase 10.5). */
+        const val MAX_REPS = 10_000
     }
 }

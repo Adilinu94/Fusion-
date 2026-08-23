@@ -223,6 +223,37 @@ class TimerEngine(
         return true
     }
 
+    /** Extends a local timer without changing its session or cue plan. */
+    fun addTime(extraMs: Long): Boolean {
+        if (extraMs <= 0) return false
+        val current = mutableState.value
+        val session = current.session ?: return false
+        if (session.mode == TimerMode.DROPSYNC || current.status !in setOf(TimerStatus.RUNNING, TimerStatus.PAUSED)) {
+            return false
+        }
+        val updatedRemaining =
+            when (current.status) {
+                TimerStatus.RUNNING -> {
+                    val end = endElapsedRealtimeMs ?: return false
+                    val remaining = maxOf(0, end - clock.elapsedRealtimeMs()) + extraMs
+                    endElapsedRealtimeMs = end + extraMs
+                    remaining
+                }
+
+                TimerStatus.PAUSED -> {
+                    val remaining = pausedRemainingMs ?: return false
+                    pausedRemainingMs = remaining + extraMs
+                    remaining + extraMs
+                }
+
+                else -> {
+                    return false
+                }
+            }
+        mutableState.value = current.copy(remainingMs = updatedRemaining)
+        return true
+    }
+
     /**
      * Abbruch (Schritt 7.7): entwertet alle kuenftigen Trigger ueber den
      * Zustandswechsel, stoppt TTS und macht aktives Ducking rueckgaengig.
@@ -275,9 +306,7 @@ class TimerEngine(
                 )
             }
 
-            TimerStatus.IDLE -> {
-                Unit
-            }
+            TimerStatus.IDLE -> {}
         }
         if (durationMs <= 0) {
             return AppResult.failure(AppError.Unknown("Dauer muss positiv sein: $durationMs"))

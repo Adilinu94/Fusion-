@@ -2,24 +2,30 @@ package com.dropsync.feature.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -31,29 +37,58 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.component.FlowRepSectionHeader
+import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.model.Song
+import com.dropsync.core.model.SongMarker
+import com.dropsync.domain.playback.PlaybackState
+import java.util.Locale
 
 /**
- * Poweramp-artige Bibliotheks-Startseite (Umbau): Titelzeile mit Ueberlaufmenue
- * (Neu scannen) und eine vertikale Liste aller Kategorien mit rundem, getoentem
- * Marken-Icon. Die Warteschlange zeigt "leer", solange sie leer ist.
+ * Music ist ein lokaler Einstieg in die aktuelle Hoersituation. Wiederkehrende
+ * Aufgaben stehen vor der vollstaendigen Bibliothek; die darunterliegende
+ * Kategorienliste bleibt der Drill-down fuer die Offline-Mediathek.
  */
 @Composable
 internal fun LibraryHomeScreen(
     categories: List<LibraryCategory>,
     queueCount: Int,
+    playbackState: PlaybackState,
+    pendingMarkers: List<SongMarker>,
+    songs: List<Song>,
     contentPadding: PaddingValues,
     onOpen: (LibraryCategory) -> Unit,
+    onOpenNowPlaying: () -> Unit,
+    onConfirmMarker: (Long) -> Unit,
+    onDiscardMarker: (Long) -> Unit,
     onRescan: () -> Unit,
     onSelectFolders: () -> Unit,
     onEditCategories: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
+    val featured =
+        listOf(
+            LibraryCategory.PLAYLISTS,
+            LibraryCategory.QUEUE,
+        ).filter { it in categories }
+    val quickAccess =
+        listOf(
+            LibraryCategory.FAVORITES,
+            LibraryCategory.RECENTLY_PLAYED,
+        ).filter { it in categories }
+    val libraryCategories = categories.filterNot { it in quickAccess || it in featured }
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = contentPadding,
+        contentPadding =
+            PaddingValues(
+                top = contentPadding.calculateTopPadding(),
+                bottom = contentPadding.calculateBottomPadding() + 32.dp,
+            ),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         item {
             Row(
@@ -68,48 +103,277 @@ internal fun LibraryHomeScreen(
                     style = MaterialTheme.typography.headlineMedium,
                     modifier = Modifier.weight(1f),
                 )
-                IconButton(onClick = { menuOpen = true }) {
-                    Icon(
-                        painterResource(BrandIcons.More),
-                        contentDescription = stringResource(R.string.library_more_actions),
-                    )
-                }
-                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_select_folders)) },
-                        onClick = {
-                            onSelectFolders()
-                            menuOpen = false
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_rescan)) },
-                        onClick = {
-                            onRescan()
-                            menuOpen = false
-                        },
-                    )
-                    DropdownMenuItem(
-                        text = { Text(stringResource(R.string.library_categories)) },
-                        onClick = {
-                            onEditCategories()
-                            menuOpen = false
-                        },
-                    )
+                Box {
+                    IconButton(onClick = { menuOpen = true }) {
+                        Icon(
+                            painterResource(BrandIcons.More),
+                            contentDescription = stringResource(R.string.library_more_actions),
+                        )
+                    }
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                        // Rechtsbuendig unter die drei Punkte: das Menue wird
+                        // um seine eigene Breite minus Buttonbreite nach links
+                        // verschoben, damit die rechte Kante buendig liegt.
+                        offset = DpOffset(x = -136.dp, y = 0.dp),
+                    ) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_select_folders)) },
+                            onClick = {
+                                onSelectFolders()
+                                menuOpen = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_rescan)) },
+                            onClick = {
+                                onRescan()
+                                menuOpen = false
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(stringResource(R.string.library_categories)) },
+                            onClick = {
+                                onEditCategories()
+                                menuOpen = false
+                            },
+                        )
+                    }
                 }
             }
         }
-        items(categories, key = { it.key }) { category ->
-            CategoryRow(
-                category = category,
-                hint =
-                    if (category == LibraryCategory.QUEUE && queueCount == 0) {
-                        stringResource(R.string.library_queue_empty)
-                    } else {
-                        null
-                    },
-                onClick = { onOpen(category) },
+        if (featured.isNotEmpty()) {
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    featured.forEach { category ->
+                        FeaturedMusicCard(
+                            category = category,
+                            supporting =
+                                if (category == LibraryCategory.QUEUE) {
+                                    if (queueCount == 0) "Noch keine Titel" else "$queueCount Titel bereit"
+                                } else {
+                                    "Training und Pausen"
+                                },
+                            onClick = { onOpen(category) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                }
+            }
+        }
+        if (playbackState.currentIndex in playbackState.queue.indices) {
+            item {
+                val current = playbackState.queue[playbackState.currentIndex]
+                NowPlayingCard(
+                    title = current.title,
+                    artist = current.artist,
+                    isPlaying = playbackState.isPlaying,
+                    onClick = onOpenNowPlaying,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+        if (pendingMarkers.isNotEmpty()) {
+            item {
+                MarkerReviewSection(
+                    markers = pendingMarkers,
+                    songs = songs,
+                    onConfirm = onConfirmMarker,
+                    onDiscard = onDiscardMarker,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
+        if (quickAccess.isNotEmpty()) {
+            item {
+                Column(modifier = Modifier.padding(horizontal = 16.dp)) {
+                    FlowRepSectionHeader(
+                        title = "Für jetzt",
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                    )
+                    quickAccess.forEach { category ->
+                        CategoryRow(
+                            category = category,
+                            hint = null,
+                            onClick = { onOpen(category) },
+                        )
+                    }
+                }
+            }
+        }
+        if (libraryCategories.isNotEmpty()) {
+            item {
+                Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
+                    FlowRepSectionHeader(
+                        title = "Bibliothek",
+                        modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+                    )
+                    libraryCategories.forEach { category ->
+                        CategoryRow(
+                            category = category,
+                            hint = null,
+                            onClick = { onOpen(category) },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun NowPlayingCard(
+    title: String,
+    artist: String?,
+    isPlaying: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier =
+                    Modifier
+                        .size(56.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    painter = painterResource(if (isPlaying) BrandIcons.Waveform else BrandIcons.Play),
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                    modifier = Modifier.size(28.dp),
+                )
+            }
+            Spacer(Modifier.width(16.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.library_now_playing),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(text = title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+                Text(
+                    text = artist ?: stringResource(R.string.library_unknown_artist),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                )
+            }
+            Icon(
+                painter = painterResource(BrandIcons.Play),
+                contentDescription = stringResource(R.string.library_open_now_playing),
+                tint = MaterialTheme.colorScheme.primary,
             )
+        }
+    }
+}
+
+@Composable
+private fun MarkerReviewSection(
+    markers: List<SongMarker>,
+    songs: List<Song>,
+    onConfirm: (Long) -> Unit,
+    onDiscard: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRepSurface(modifier = modifier) {
+        FlowRepSectionHeader(title = stringResource(R.string.library_marker_review_title))
+        Text(
+            text = stringResource(R.string.library_marker_review_count, markers.size),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+        )
+        markers.forEach { marker ->
+            val song = songs.firstOrNull { it.mediaStoreId == marker.linkedSongId }
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(
+                    text = song?.title ?: song?.displayName ?: stringResource(R.string.library_unknown_track),
+                    style = MaterialTheme.typography.titleSmall,
+                    maxLines = 1,
+                )
+                Text(
+                    text = stringResource(R.string.library_marker_review_position, formatMarkerTime(marker.positionMs)),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = { onDiscard(marker.id) }) {
+                        Text(stringResource(R.string.library_marker_discard))
+                    }
+                    TextButton(onClick = { onConfirm(marker.id) }) {
+                        Text(stringResource(R.string.library_marker_confirm))
+                    }
+                }
+            }
+        }
+    }
+}
+
+private fun formatMarkerTime(positionMs: Long): String {
+    val seconds = positionMs.coerceAtLeast(0L) / 1000
+    return String.format(Locale.ROOT, "%d:%02d", seconds / 60, seconds % 60)
+}
+
+@Composable
+private fun FeaturedMusicCard(
+    category: LibraryCategory,
+    supporting: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val tint = categoryTint(category)
+    Surface(
+        onClick = onClick,
+        modifier = modifier.aspectRatio(1.08f),
+        shape = RoundedCornerShape(16.dp),
+        color =
+            if (category ==
+                LibraryCategory.PLAYLISTS
+            ) {
+                tint.copy(alpha = 0.18f)
+            } else {
+                MaterialTheme.colorScheme.surfaceContainer
+            },
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Icon(
+                painter = painterResource(categoryIcon(category)),
+                contentDescription = null,
+                tint = tint,
+                modifier = Modifier.size(30.dp),
+            )
+            Column {
+                Text(
+                    text = stringResource(category.titleRes()),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(
+                    text = supporting,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
@@ -125,7 +389,8 @@ private fun CategoryRow(
             Modifier
                 .fillMaxWidth()
                 .clickable(onClick = onClick)
-                .padding(horizontal = 20.dp, vertical = 12.dp),
+                .padding(horizontal = 4.dp, vertical = 8.dp)
+                .heightIn(min = 64.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         val tint = categoryTint(category)
@@ -133,7 +398,7 @@ private fun CategoryRow(
             modifier =
                 Modifier
                     .size(48.dp)
-                    .clip(CircleShape)
+                    .clip(RoundedCornerShape(12.dp))
                     .background(tint.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -144,7 +409,7 @@ private fun CategoryRow(
                 modifier = Modifier.size(24.dp),
             )
         }
-        Spacer(Modifier.width(20.dp))
+        Spacer(Modifier.width(16.dp))
         Text(
             text = stringResource(category.titleRes()),
             style = MaterialTheme.typography.titleMedium,
@@ -177,21 +442,37 @@ internal fun categoryIcon(category: LibraryCategory): Int =
         LibraryCategory.MOST_PLAYED -> BrandIcons.Progress
     }
 
-/** Farbton des Kategorie-Icons (Lime dominiert, dezente Akzenttoene). */
+/** Feste, gut unterscheidbare Kategorien-Farben (Poweramp-artig, Dark-first). */
+private object CategoryPalette {
+    val Lime = Color(0xFFDFFF2F)
+    val Orange = Color(0xFFFFB74D)
+    val Amber = Color(0xFFFFD54F)
+    val Blue = Color(0xFF64B5F6)
+    val Purple = Color(0xFFBA68C8)
+    val Pink = Color(0xFFF06292)
+    val Green = Color(0xFF81C784)
+    val Cyan = Color(0xFF4DD0E1)
+    val Red = Color(0xFFFF6B6B)
+    val Teal = Color(0xFF4DB6AC)
+    val DeepOrange = Color(0xFFFF8A65)
+    val Indigo = Color(0xFF7986CB)
+}
+
+/** Semantischer Farbton des Kategorie-Icons; jede Kategorie hat eine eigene Farbe. */
 private fun categoryTint(category: LibraryCategory): Color =
     when (category) {
-        LibraryCategory.ALL_SONGS -> Color(0xFFEA6A4F)
-        LibraryCategory.FOLDERS -> Color(0xFFEA8A3F)
-        LibraryCategory.FOLDERS_HIERARCHY -> Color(0xFFEAB03F)
-        LibraryCategory.ALBUMS -> Color(0xFFEACB3F)
-        LibraryCategory.ARTISTS -> Color(0xFF9BAA5A)
-        LibraryCategory.GENRES -> Color(0xFF3FBF8A)
-        LibraryCategory.PLAYLISTS -> Color(0xFF4F7BEA)
-        LibraryCategory.QUEUE -> Color(0xFF7B6BEA)
-        LibraryCategory.FAVORITES -> Color(0xFFEA5A9B)
-        LibraryCategory.RECENTLY_ADDED -> Color(0xFFEA8A3F)
-        LibraryCategory.RECENTLY_PLAYED -> Color(0xFFEA6A4F)
-        LibraryCategory.MOST_PLAYED -> Color(0xFFEA5A6B)
+        LibraryCategory.ALL_SONGS -> CategoryPalette.Lime
+        LibraryCategory.FOLDERS -> CategoryPalette.Orange
+        LibraryCategory.FOLDERS_HIERARCHY -> CategoryPalette.Amber
+        LibraryCategory.ALBUMS -> CategoryPalette.Blue
+        LibraryCategory.ARTISTS -> CategoryPalette.Purple
+        LibraryCategory.GENRES -> CategoryPalette.Pink
+        LibraryCategory.PLAYLISTS -> CategoryPalette.Green
+        LibraryCategory.QUEUE -> CategoryPalette.Cyan
+        LibraryCategory.FAVORITES -> CategoryPalette.Red
+        LibraryCategory.RECENTLY_ADDED -> CategoryPalette.Teal
+        LibraryCategory.RECENTLY_PLAYED -> CategoryPalette.DeepOrange
+        LibraryCategory.MOST_PLAYED -> CategoryPalette.Indigo
     }
 
 /** Angezeigter Kategorie-Name. */

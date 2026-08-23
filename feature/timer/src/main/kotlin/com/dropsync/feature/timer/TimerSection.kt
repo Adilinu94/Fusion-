@@ -2,19 +2,23 @@ package com.dropsync.feature.timer
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
@@ -24,6 +28,9 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.BrandButtonGhost
+import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
+import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.component.ProgressRing
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.domain.timer.TimerStatus
@@ -35,12 +42,14 @@ import java.util.Locale
  * ununterbrochenen TalkBack-Ansagen (12.4), weil nur der Status, nicht
  * der Zahlenwert als Zustandsbeschreibung gemeldet wird.
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TimerSection(
     modifier: Modifier = Modifier,
     viewModel: TimerViewModel = hiltViewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
+    var selectedSeconds by remember { mutableIntStateOf(90) }
 
     val statusText =
         when (state.status) {
@@ -69,7 +78,7 @@ fun TimerSection(
             }
         }
 
-    Card(
+    FlowRepSurface(
         modifier =
             modifier
                 .fillMaxWidth()
@@ -77,30 +86,37 @@ fun TimerSection(
                 .semantics { stateDescription = statusText },
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             when (state.status) {
                 TimerStatus.IDLE -> {
                     Text(
                         text = stringResource(R.string.timer_rest_title),
-                        style = MaterialTheme.typography.titleMedium,
+                        style = MaterialTheme.typography.headlineMedium,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    // Start als Lime-Pill: die Presets sind die Primaeraktion
-                    // des Timers (Design.txt: Lime nur fuer die Primaeraktion).
-                    Row(
-                        modifier = Modifier.padding(top = 8.dp),
+                    TimerWheel(
+                        seconds = selectedSeconds,
+                        onSecondsChange = { selectedSeconds = it },
+                        modifier = Modifier.padding(top = 32.dp),
+                    )
+                    FlowRow(
+                        modifier = Modifier.fillMaxWidth().padding(top = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         REST_PRESETS_SECONDS.forEach { seconds ->
-                            Button(
-                                onClick = { viewModel.startRest(seconds * 1_000L) },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) {
-                                Text(stringResource(R.string.timer_preset_seconds, seconds))
-                            }
+                            BrandButtonGhost(
+                                text = stringResource(R.string.timer_preset_seconds, seconds),
+                                onClick = { selectedSeconds = seconds },
+                            )
                         }
                     }
+                    FlowRepPrimaryButton(
+                        text = "TIMER STARTEN",
+                        onClick = { viewModel.startRest(selectedSeconds * 1_000L) },
+                        modifier = Modifier.padding(top = 24.dp),
+                    )
                 }
 
                 TimerStatus.RUNNING, TimerStatus.PAUSED, TimerStatus.PREPARING -> {
@@ -123,31 +139,23 @@ fun TimerSection(
                             style = MaterialTheme.typography.displayMedium,
                         )
                     }
-                    Row(
-                        modifier = Modifier.padding(top = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
+                    Column(modifier = Modifier.padding(top = 24.dp)) {
                         if (state.status == TimerStatus.RUNNING) {
-                            OutlinedButton(
+                            FlowRepPrimaryButton(
+                                text = stringResource(R.string.timer_pause),
                                 onClick = viewModel::pause,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) {
-                                Text(stringResource(R.string.timer_pause))
-                            }
+                            )
                         } else if (state.status == TimerStatus.PAUSED) {
-                            Button(
+                            FlowRepPrimaryButton(
+                                text = stringResource(R.string.timer_resume),
                                 onClick = viewModel::resume,
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            ) {
-                                Text(stringResource(R.string.timer_resume))
-                            }
+                            )
                         }
-                        OutlinedButton(
+                        BrandButtonGhost(
+                            text = stringResource(R.string.timer_cancel),
                             onClick = viewModel::cancel,
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        ) {
-                            Text(stringResource(R.string.timer_cancel))
-                        }
+                            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        )
                     }
                 }
 
@@ -173,17 +181,93 @@ fun TimerSection(
                         style = MaterialTheme.typography.titleMedium,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    Button(
+                    FlowRepPrimaryButton(
+                        text = stringResource(R.string.timer_ok),
                         onClick = viewModel::acknowledgeFinished,
-                        modifier =
-                            Modifier
-                                .padding(top = 8.dp)
-                                .heightIn(min = 48.dp),
-                    ) {
-                        Text(stringResource(R.string.timer_ok))
-                    }
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun TimerWheel(
+    seconds: Int,
+    onSecondsChange: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val minutes = seconds / 60
+    val remainder = seconds % 60
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TimerWheelColumn(
+            label = "STD",
+            previousValue = "23",
+            value = "00",
+            nextValue = "01",
+            onPrevious = {},
+            onNext = {},
+            enabled = false,
+        )
+        TimerWheelColumn(
+            label = "MIN",
+            previousValue = "%02d".format((minutes - 1).coerceAtLeast(0)),
+            value = "%02d".format(minutes),
+            nextValue = "%02d".format((minutes + 1).coerceAtMost(59)),
+            onPrevious = { onSecondsChange((seconds - 60).coerceAtLeast(0)) },
+            onNext = { onSecondsChange((seconds + 60).coerceAtMost(3_599)) },
+        )
+        TimerWheelColumn(
+            label = "SEK",
+            previousValue = "%02d".format((remainder - 15).coerceAtLeast(0)),
+            value = "%02d".format(remainder),
+            nextValue = "%02d".format((remainder + 15).coerceAtMost(59)),
+            onPrevious = { onSecondsChange((seconds - 15).coerceAtLeast(0)) },
+            onNext = { onSecondsChange((seconds + 15).coerceAtMost(3_599)) },
+        )
+    }
+}
+
+@Composable
+private fun TimerWheelColumn(
+    label: String,
+    previousValue: String,
+    value: String,
+    nextValue: String,
+    onPrevious: () -> Unit,
+    onNext: () -> Unit,
+    enabled: Boolean = true,
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        TextButton(onClick = onPrevious, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(
+                text = previousValue,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+            )
+        }
+        Text(
+            text = value,
+            style = MaterialTheme.typography.displayMedium,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        TextButton(onClick = onNext, enabled = enabled, modifier = Modifier.heightIn(min = 48.dp)) {
+            Text(
+                text = nextValue,
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.45f),
+            )
         }
     }
 }

@@ -16,8 +16,8 @@ import com.dropsync.core.model.AccentColor
 // die primaere Aktion reserviert; Kontraste bleiben erhalten (Bauplan 2.6:
 // Lime #DFFF2F zu dunklem Grund erfuellt AA deutlich).
 // Intern sichtbar fuer Snapshot-Tests (ThemeColorSnapshotTest).
-internal val BrandBlack = Color(0xFF0D0D0D)
-internal val BrandWhite = Color(0xFFFFFFFF)
+internal val BrandBlack = Color(0xFF101010)
+internal val BrandWhite = Color(0xFFF7FBFF)
 internal val BrandLime = Color(0xFFDFFF2F)
 private val SoftGray = Color(0xFFF5F5F5)
 private val BorderGray = Color(0xFFEAEAEA)
@@ -38,13 +38,13 @@ private fun accentPair(accent: AccentColor): Pair<Color, Color> =
 // Dunkler Grund im Poweramp-Stil: kein reines Schwarz, sondern ein neutrales
 // #1F1F1F als Basis. Erhoehte Flaechen (Karten, Sheets, Auswahlleiste,
 // Mini-Player) liegen als hellere Stufen darueber; Vertiefungen etwas darunter.
-private val DarkBase = Color(0xFF1F1F1F)
-private val DarkSurfaceLow = Color(0xFF262626)
-private val DarkSurface = Color(0xFF2A2A2A)
-private val DarkSurfaceHigh = Color(0xFF323232)
-private val DarkSurfaceVariant = Color(0xFF2E2E2E)
-private val DarkOutline = Color(0xFF3C3C3C)
-private val DarkTextGray = Color(0xFFB3B3B3)
+private val DarkBase = BrandBlack
+private val DarkSurfaceLow = Color(0xFF151515)
+private val DarkSurface = Color(0xFF1D1D1D)
+private val DarkSurfaceHigh = Color(0xFF252525)
+private val DarkSurfaceVariant = Color(0xFF1D1D1D)
+private val DarkOutline = Color(0xFF353535)
+private val DarkTextGray = Color(0xFFB7B7B7)
 
 internal val LightColors =
     lightColorScheme(
@@ -86,6 +86,8 @@ internal val DarkColors =
         surfaceContainerHigh = DarkSurfaceHigh,
         outline = DarkOutline,
         outlineVariant = DarkOutline,
+        error = Color(0xFFFF6B6B),
+        onError = BrandBlack,
     )
 
 // Radien gemaess Design.txt: Cards 24, grosse Flaechen 32; Buttons sind
@@ -104,6 +106,18 @@ private val BrandShapes =
  * Aktionen. Dark/Light-Mode aus System; Dynamic Color standardmaessig aus.
  * Die [accent]-Farbe ersetzt die primaere Aktionsfarbe (Buttons, aktive
  * Zustaende, Waveform, Now-Playing-Titel); Default ist die Marken-Lime.
+ *
+ * Plan Phase 6.1 (M3 Expressive; Evaluierung 2026-08-21, erneut bestaetigt
+ * 2026-08-22): MaterialExpressiveTheme ist oeffentlich erst ab material3
+ * 1.5.0 — laut Material-Blog mit dessen Stable-Release; 1.5.0 ist weiterhin
+ * nur als alpha/beta verfuegbar, stabile Referenz bleibt 1.4.0 (BOM
+ * 2026.06.01). Ein Alpha-Umstieg widerspricht der Projektregel (nur stabile
+ * Versionen). Die Expressive-Ziele sind deshalb bewusst ohne die
+ * Experimental-Api umgesetzt: Feder-Physik mit Bounce (Navigation-Pill,
+ * Brand-Buttons, Play/Pause-Shape-Morph im Player, Swipe-Dismiss) und
+ * sichtbarer State-Kontrast beim Play/Pause-Wechsel (Kreis <-> Squircle).
+ * Wiedervorlage, wenn material3 1.5.0 stabil ist: FlowRepTheme auf
+ * MaterialExpressiveTheme + MotionScheme.expressive() umstellen.
  */
 @Composable
 fun FlowRepTheme(

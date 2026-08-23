@@ -207,4 +207,44 @@ class FlatSetRepositoryImplTest {
             val set = repository.observeAllSets().first().single { it.id == setId }
             assertEquals(640.0, set.volumeKg, 0.0001)
         }
+
+    // --- Umbauplan Phase 10.5: Eingabevalidierung an der Repo-Grenze --------
+
+    @Test
+    fun `negative weight is rejected`() =
+        runTest {
+            assertTrue(repository.logSet(exerciseId, -1L, 8) is AppResult.Failure)
+        }
+
+    @Test
+    fun `zero reps is rejected`() =
+        runTest {
+            assertTrue(repository.logSet(exerciseId, 80_000_000, 0) is AppResult.Failure)
+        }
+
+    @Test
+    fun `negative reps is rejected`() =
+        runTest {
+            assertTrue(repository.logSet(exerciseId, 80_000_000, -5) is AppResult.Failure)
+        }
+
+    @Test
+    fun `absurd weight above one tonne is rejected`() =
+        runTest {
+            assertTrue(
+                repository.logSet(exerciseId, 1_000_000_001L, 1) is AppResult.Failure,
+            )
+        }
+
+    @Test
+    fun `absurd rep count is rejected`() =
+        runTest {
+            assertTrue(repository.logSet(exerciseId, 80_000_000, 10_001) is AppResult.Failure)
+        }
+
+    @Test
+    fun `invalid exercise id is rejected`() =
+        runTest {
+            assertTrue(repository.logSet(-1L, 80_000_000, 8) is AppResult.Failure)
+        }
 }
