@@ -99,7 +99,7 @@ Grundsatz: Lesen nur im Foreground (kein `READ_HEALTH_DATA_IN_BACKGROUND`), kein
 Voraussetzungen:
 
 - JDK 17 oder neuer (empfohlen: das mit Android Studio ausgelieferte JBR)
-- Android SDK mit Platform `android-37` (Pfad in `local.properties` als
+- Android SDK mit Platform `android-37.0` (Pfad in `local.properties` als
   `sdk.dir`, wird nicht eingecheckt)
 
 Windows: Gradle 9.5 quotet die Test-Executor-Kommandozeile nicht. Liegt das JDK
