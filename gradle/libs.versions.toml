@@ -8,9 +8,15 @@
 # Build-Toolchain
 agp = "9.3.1"
 kotlin = "2.4.10"
-ksp = "2.3.10"
+# KSP seit 2.3.0 eigenstaendig versioniert ("loosely tied", google/ksp#2660):
+# die 2.3.x-Reihe laeuft mit Kotlin 2.4.x; kein Versions-Matching mehr noetig.
+ksp = "2.3.11"
 spotless = "8.8.0"
 ktlint = "1.8.0"
+# Detekt 2.0.0-alpha.6 ist explizit gegen Kotlin 2.4.10 / AGP 9.3.1 /
+# Gradle 9.6 gebaut (Release-Notes 2026-08-04); die stabile 1.x unterstuetzt
+# diese Toolchain nicht. Wechsel auf stabil, sobald Detekt 2.0 final ist.
+detekt = "2.0.0-alpha.6"
 
 # Android SDK
 compileSdk = "37"
@@ -121,3 +127,4 @@ ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 room = { id = "androidx.room", version.ref = "room" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
+detekt = { id = "dev.detekt", version.ref = "detekt" }

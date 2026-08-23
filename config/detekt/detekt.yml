@@ -1,0 +1,44 @@
+# DropSync Detekt-Konfiguration (Umbauplan Phase 11).
+# Detekt 2.0 (alpha.6): Property-Namen der neuen DSL. buildUponDefaultConfig
+# = true, nur Abweichungen vom Default dokumentiert. Ziel: neue Code-Smells
+# blockieren, Altlasten stehen in baseline.xml.
+complexity:
+  LongMethod:
+    # TrainScreen/PlaybackService sind gross, aber strukturiert; die Baseline
+    # haelt den Ist-Zustand fest. Neue Methoden sollen unter dieser Grenze
+    # bleiben.
+    allowedLines: 120
+  LongParameterList:
+    active: false
+  TooManyFunctions:
+    active: false
+  CyclomaticComplexMethod:
+    allowedComplexity: 20
+  NestedBlockDepth:
+    allowedDepth: 6
+
+exceptions:
+  SwallowedException:
+    active: false
+  TooGenericExceptionCaught:
+    active: false
+
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    maxLineLength: 140
+  ReturnCount:
+    active: false
+  UnusedPrivateProperty:
+    # Robolectric/Compose-Preview-Platzhalter erzeugen hier Fehlalarme.
+    ignoreAnnotated: ['Preview', 'Test']
+  WildcardImport:
+    active: false
+
+naming:
+  FunctionNaming:
+    # Compose-Composables starten mit Grossbuchstaben.
+    ignoreAnnotated: ['Composable']
+  TopLevelPropertyNaming:
+    active: false
