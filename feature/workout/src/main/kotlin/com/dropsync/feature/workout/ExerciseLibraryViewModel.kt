@@ -48,8 +48,27 @@ class ExerciseLibraryViewModel
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+        /** Archivierte Uebungen (Schritt 7): keine Suche, kleine Wiederherstellungs-Sektion. */
+        val archivedItems: StateFlow<List<ExerciseLibraryItem>> =
+            workoutRepository
+                .observeArchivedExerciseLibrary(locale)
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
         fun setQuery(value: String) {
             _query.value = value
+        }
+
+        /** Archivieren ist umkehrbar (Restore in derselben Sektion) — kein Dialog noetig. */
+        fun archiveExercise(exerciseId: Long) {
+            viewModelScope.launch {
+                workoutRepository.archiveExercise(exerciseId)
+            }
+        }
+
+        fun restoreExercise(exerciseId: Long) {
+            viewModelScope.launch {
+                workoutRepository.restoreExercise(exerciseId)
+            }
         }
 
         /** Legt eine eigene Uebung an; Slug wird aus dem Namen erzeugt (9.2). */

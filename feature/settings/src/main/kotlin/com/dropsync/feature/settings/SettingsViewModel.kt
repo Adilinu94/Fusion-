@@ -28,6 +28,7 @@ import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.workout.ExportFormat
 import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.WorkoutExporter
+import com.dropsync.domain.workout.WorkoutGoalRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -74,6 +75,7 @@ class SettingsViewModel
         private val audioEngine: AudioEngineRepository,
         private val flatSetRepository: FlatSetRepository,
         private val workoutRepository: WorkoutRepository,
+        private val workoutGoalRepository: WorkoutGoalRepository,
         private val dispatchers: DispatcherProvider,
     ) : ViewModel() {
         /** Nicht zugeordnete Marker fuer die manuelle Zuordnung (Schritt 6.6). */
@@ -114,6 +116,14 @@ class SettingsViewModel
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5_000),
                 AccentColor.LIME,
+            )
+
+        /** Wochenziel in Trainingstagen (Flowtimer-Integration Schritt 7). */
+        val weeklyTrainingGoal: StateFlow<Int> =
+            workoutGoalRepository.weeklyTrainingGoal.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                WorkoutGoalRepository.DEFAULT_WEEKLY_GOAL,
             )
 
         /** Get-Ready-Vorlauf an/aus (B9). */
@@ -330,6 +340,11 @@ class SettingsViewModel
         /** Setzt die Akzentfarbe (Marken-Lime / Blau). */
         fun setAccentColor(color: AccentColor) {
             viewModelScope.launch { accentColorSettings.setAccentColor(color) }
+        }
+
+        /** Setzt das Wochenziel (1..7 Trainingstage); traegt den Dashboard-Ring. */
+        fun setWeeklyTrainingGoal(days: Int) {
+            viewModelScope.launch { workoutGoalRepository.setWeeklyTrainingGoal(days) }
         }
 
         /** Get-Ready-Vorlauf an/aus + Dauer (B9). */

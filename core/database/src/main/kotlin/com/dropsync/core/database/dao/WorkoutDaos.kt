@@ -86,6 +86,10 @@ interface ExerciseDao {
     @Query("UPDATE exercises SET is_archived = 1 WHERE id = :id")
     suspend fun archiveExercise(id: Long)
 
+    /** Wiederherstellen (Flowtimer-Integration Schritt 7): Rueckkehr in Auswahl und Bibliothek. */
+    @Query("UPDATE exercises SET is_archived = 0 WHERE id = :id")
+    suspend fun restoreExercise(id: Long)
+
     /**
      * Aktive Uebungen mit Namen und Equipment fuer die Bibliotheksliste
      * (Schritt 9.2); ohne Uebersetzung faellt die UI auf den Slug zurueck.
@@ -99,6 +103,21 @@ interface ExerciseDao {
             "ORDER BY COALESCE(n.display_name, e.canonical_name) COLLATE NOCASE",
     )
     fun observeLibrary(locale: String): Flow<List<ExerciseLibraryRow>>
+
+    /**
+     * Archivierte Uebungen mit Namen und Equipment (Schritt 7): dieselben
+     * Spalten wie [observeLibrary], nur mit is_archived = 1 — fuer die
+     * Wiederherstellungs-Sektion der Bibliothek.
+     */
+    @Query(
+        "SELECT e.id AS id, e.canonical_name AS slug, n.display_name AS display_name, " +
+            "e.equipment AS equipment, e.is_custom AS is_custom " +
+            "FROM exercises e " +
+            "LEFT JOIN exercise_names n ON n.exercise_id = e.id AND n.locale = :locale " +
+            "WHERE e.is_archived = 1 " +
+            "ORDER BY COALESCE(n.display_name, e.canonical_name) COLLATE NOCASE",
+    )
+    fun observeArchivedLibrary(locale: String): Flow<List<ExerciseLibraryRow>>
 }
 
 /** Zeile der Uebungsauswahl (Query in [ExerciseDao]). */

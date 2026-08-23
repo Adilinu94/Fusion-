@@ -113,6 +113,9 @@ interface WorkoutRepository {
     /** Alle aktiven Uebungen mit Equipment fuer die Bibliotheksliste. */
     fun observeExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>>
 
+    /** Archivierte Uebungen fuer die Wiederherstellungs-Sektion (Schritt 7). */
+    fun observeArchivedExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>>
+
     /** Legt eine eigene Uebung mit Muskel-Mapping an (eindeutiger Slug). */
     suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long>
 
@@ -124,6 +127,9 @@ interface WorkoutRepository {
 
     /** Archiviert eine Uebung (verschwindet aus Auswahl; Historie bleibt). */
     suspend fun archiveExercise(exerciseId: Long): AppResult<Unit>
+
+    /** Holt eine archivierte Uebung zurueck (Schritt 7: kein Loeschen, Umkehrbarkeit). */
+    suspend fun restoreExercise(exerciseId: Long): AppResult<Unit>
 
     // --- Resttimer pro Uebung (Abschnitt 8) ---
 

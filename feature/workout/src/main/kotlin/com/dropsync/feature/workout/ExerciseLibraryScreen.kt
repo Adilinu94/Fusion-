@@ -55,6 +55,7 @@ fun ExerciseLibraryScreen(
     viewModel: ExerciseLibraryViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
+    val archivedItems by viewModel.archivedItems.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
 
@@ -121,6 +122,39 @@ fun ExerciseLibraryScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                    // Schritt 7: Archivieren ist die Loesch-Alternative mit
+                    // Umkehrweg — die Historie der Saetze bleibt unangetastet.
+                    TextButton(onClick = { viewModel.archiveExercise(item.id) }) {
+                        Text(stringResource(R.string.library_archive))
+                    }
+                }
+            }
+        }
+        if (archivedItems.isNotEmpty()) {
+            item {
+                Text(
+                    text = stringResource(R.string.library_archived_section),
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 20.dp, top = 16.dp, bottom = 4.dp),
+                )
+            }
+            items(archivedItems, key = { "archived_${it.id}" }) { item ->
+                Card(
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                ) {
+                    Column(Modifier.padding(16.dp)) {
+                        Text(
+                            text = item.displayName,
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(onClick = { viewModel.restoreExercise(item.id) }) {
+                            Text(stringResource(R.string.library_restore))
+                        }
+                    }
                 }
             }
         }

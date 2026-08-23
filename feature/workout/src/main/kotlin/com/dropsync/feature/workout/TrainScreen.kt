@@ -44,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
@@ -75,6 +76,7 @@ fun TrainScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit = { _, _ -> },
+    onOpenLibrary: () -> Unit = {},
     viewModel: TrainViewModel = hiltViewModel(),
 ) {
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
@@ -147,6 +149,7 @@ fun TrainScreen(
             selectedId = selectedExercise?.id,
             onSelect = { viewModel.selectExercise(it) },
             onCreateNew = { showCreateDialog = true },
+            onOpenLibrary = onOpenLibrary,
         )
 
         val restActive =
@@ -325,6 +328,7 @@ private fun ExerciseChipRow(
     selectedId: Long?,
     onSelect: (ExerciseInfo) -> Unit,
     onCreateNew: () -> Unit,
+    onOpenLibrary: () -> Unit = {},
 ) {
     val chipListState = remember { LazyListState() }
     LaunchedEffect(Unit) {
@@ -348,6 +352,15 @@ private fun ExerciseChipRow(
             AssistChip(
                 onClick = onCreateNew,
                 label = { Text("+ Neue Übung") },
+                modifier = Modifier.heightIn(min = 48.dp),
+            )
+        }
+        // Schritt 7: Die Bibliothek ist der Ort fuer Uebungs-Pflege und Ziele
+        // (Entscheidung 13) — ein Chip Abstand von der Schnellanlage.
+        item(key = "open_library") {
+            AssistChip(
+                onClick = onOpenLibrary,
+                label = { Text(stringResource(R.string.library_title)) },
                 modifier = Modifier.heightIn(min = 48.dp),
             )
         }

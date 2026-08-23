@@ -41,6 +41,9 @@
     <string name="library_search">Suche</string>
     <string name="library_new_exercise">Neue Uebung</string>
     <string name="library_custom_badge">Eigene</string>
+    <string name="library_archive">Archivieren</string>
+    <string name="library_restore">Wiederherstellen</string>
+    <string name="library_archived_section">Archivierte Übungen</string>
     <string name="library_name_de">Name (Deutsch)</string>
     <string name="library_name_en">Name (Englisch)</string>
     <string name="library_kind">Art</string>

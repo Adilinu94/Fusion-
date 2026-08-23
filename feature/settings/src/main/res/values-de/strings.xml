@@ -77,6 +77,11 @@
     <string name="settings_seconds_format">%1$d s</string>
     <string name="settings_smart_shuffle_title">Intelligentes Shuffle</string>
     <string name="settings_smart_shuffle_desc">Gewichtet das Shuffle nach Wiedergaben und Favoriten und meidet zuletzt Gespielte.</string>
+    <string name="settings_weekly_goal">Wochenziel</string>
+    <plurals name="settings_weekly_goal_days">
+        <item quantity="one">%1$d Trainingstag pro Woche</item>
+        <item quantity="other">%1$d Trainingstage pro Woche</item>
+    </plurals>
     <string name="settings_appearance_section">Darstellung</string>
     <string name="settings_theme_system">Systemdesign folgen</string>
     <string name="settings_theme_system_desc">Nutzt je nach Systemeinstellung das helle oder dunkle Design.</string>

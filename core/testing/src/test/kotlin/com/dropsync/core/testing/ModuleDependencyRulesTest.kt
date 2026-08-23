@@ -124,6 +124,10 @@ class ModuleDependencyRulesTest {
 
     @Test
     fun `alle bauplan module existieren`() {
+        // Vollstaendige Liste aller Pflichtmodule gemaess settings.gradle.kts
+        // (ADR-0016): zuvor fehlten health, sensor, audio und settings. Die
+        // optionalen Module :benchmarks und :libs:media3-ffmpeg bleiben
+        // bewusst draussen, da sie nicht in jedem Build existieren.
         val required =
             listOf(
                 "app",
@@ -132,17 +136,29 @@ class ModuleDependencyRulesTest {
                 "core/database",
                 "core/designsystem",
                 "core/testing",
+                "data/audio",
+                "data/health",
                 "data/library",
                 "data/playback",
+                "data/sensor",
+                "data/settings",
                 "data/timer",
                 "data/workout",
+                "domain/audio",
+                "domain/health",
+                "domain/library",
+                "domain/playback",
+                "domain/sensor",
+                "domain/settings",
                 "domain/timer",
                 "domain/workout",
+                "feature/audio",
                 "feature/library",
                 "feature/player",
+                "feature/progress",
+                "feature/settings",
                 "feature/timer",
                 "feature/workout",
-                "feature/settings",
             )
         for (module in required) {
             assertTrue(

@@ -19,6 +19,16 @@ import com.dropsync.core.model.AccentColor
 internal val BrandBlack = Color(0xFF101010)
 internal val BrandWhite = Color(0xFFF7FBFF)
 internal val BrandLime = Color(0xFFDFFF2F)
+
+// Erweiterte Palette der Flowtimer-Integration (CONTEXT E4d): Violett traegt
+// die semantische Rolle "Ziele" (secondary), der Grund hellt auf 141414 auf,
+// genau ein heller Tile pro Screen laeuft in Helllila (secondaryContainer).
+// Lime bleibt ausschliesslich Aktion; Violett ist KEINE waehlbare Akzentfarbe
+// (AccentColor bleibt LIME | BLUE).
+internal val BrandViolet = Color(0xFF756FFA)
+internal val BrandGround = Color(0xFF141414)
+internal val BrandLilac = Color(0xFFE7E6FB)
+
 private val SoftGray = Color(0xFFF5F5F5)
 private val BorderGray = Color(0xFFEAEAEA)
 private val TextGray = Color(0xFF6B6B6B)
@@ -35,10 +45,10 @@ private fun accentPair(accent: AccentColor): Pair<Color, Color> =
         AccentColor.BLUE -> AccentBlue to BrandWhite
     }
 
-// Dunkler Grund im Poweramp-Stil: kein reines Schwarz, sondern ein neutrales
-// #1F1F1F als Basis. Erhoehte Flaechen (Karten, Sheets, Auswahlleiste,
-// Mini-Player) liegen als hellere Stufen darueber; Vertiefungen etwas darunter.
-private val DarkBase = BrandBlack
+// Dunkler Grund: 141414 (E4d) als Basis unter allen Tiles. Erhoehte Flaechen
+// (Karten, Sheets, Auswahlleiste, Mini-Player) liegen als hellere Stufen
+// darueber (1,09:1 bewusst subtil); Vertiefungen etwas darunter.
+private val DarkBase = BrandGround
 private val DarkSurfaceLow = Color(0xFF151515)
 private val DarkSurface = Color(0xFF1D1D1D)
 private val DarkSurfaceHigh = Color(0xFF252525)
@@ -71,8 +81,10 @@ internal val DarkColors =
     darkColorScheme(
         primary = BrandLime,
         onPrimary = BrandBlack,
-        secondary = BrandWhite,
-        onSecondary = BrandBlack,
+        secondary = BrandViolet,
+        onSecondary = BrandGround,
+        secondaryContainer = BrandLilac,
+        onSecondaryContainer = BrandGround,
         tertiary = BrandLime,
         onTertiary = BrandBlack,
         background = DarkBase,
