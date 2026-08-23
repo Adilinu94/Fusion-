@@ -24,4 +24,11 @@ captures/
 .externalNativeBuild/
 .cxx/
 
+# Codeanalyse-Werkzeug (lokal generiert)
+graphify-out/
+
+# Sitzungsartefakte der KI-Werkzeuge (lokal, nicht projektrelevant)
+.commandcode/
+.impeccable/
+
 .kotlin/
