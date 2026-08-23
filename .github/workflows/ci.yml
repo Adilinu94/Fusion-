@@ -61,11 +61,12 @@ jobs:
       - name: Formatierung/Lint (./gradlew spotlessCheck)
         run: ./gradlew spotlessCheck --stacktrace
 
-      # Umbauplan Phase 11: Detekt als weiteres Gate. Die Baseline haelt die
-      # Altlasten, neue Code-Smells brechen den Build.
-      # Das lintDebug-Gate folgt erst, wenn die vier Lint-Fehler behoben sind
-      # (NewApi in OutputDeviceMonitor/SettingsViewModel, MissingPermission in
-      # HapticsAdapter, UnsafeOptInUsage in PlaybackService).
+      # Umbauplan Phase 11: Lint und Detekt als weitere Gates. Lint-Fehler
+      # blockieren den Release; Detekt-Baseline haelt Altlasten, neue
+      # Code-Smells brechen den Build.
+      - name: Android-Lint (./gradlew lintDebug)
+        run: ./gradlew lintDebug --stacktrace
+
       - name: Detekt (./gradlew detekt)
         run: ./gradlew detekt
 
