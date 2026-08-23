@@ -5,6 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    alias(libs.plugins.androidx.baselineprofile)
 }
 
 android {
@@ -113,6 +114,9 @@ dependencies {
     implementation(libs.androidx.hilt.navigation.compose)
 
     implementation(libs.kotlinx.coroutines.android)
+    // Baseline Profiles (Phase 4): installiert das generierte Profil zur
+    // Laufzeit; noetig fuer die Auslieferung ueber den Play Store und lokal.
+    implementation(libs.androidx.profileinstaller)
 
     testImplementation(libs.junit4)
     androidTestImplementation(libs.junit4)

@@ -33,6 +33,8 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 | Spotless (Gradle-Plugin) | 8.8.0 | Apache-2.0 | Formatierung/statische Analyse (nur Build, keine Distribution) | https://github.com/diffplug/spotless | FREIGEGEBEN |
 | ktlint | 1.8.0 | MIT | Kotlin-Linting via Spotless (nur Build) | https://github.com/pinterest/ktlint | FREIGEGEBEN |
 | Detekt (Gradle-Plugin) | 2.0.0-alpha.6 | Apache-2.0 | Kotlin-Codeanalyse als CI-Gate (nur Build, keine Distribution); Alpha, weil 2.x die erste Toolchain mit Kotlin 2.4/AGP 9.3 ist | https://github.com/detekt/detekt | FREIGEGEBEN |
+| androidx.profileinstaller | 1.4.1 | Apache-2.0 | Installiert Baseline Profiles zur Laufzeit (Phase 4) | https://developer.android.com/jetpack/androidx/releases/profileinstaller | FREIGEGEBEN |
+| androidx.benchmark (Macrobenchmark) | 1.5.0-alpha01 | Apache-2.0 | Startup-Messung + Baseline-Profile-Generierung, nur :benchmarks-Modul (keine Distribution in der App) | https://developer.android.com/jetpack/androidx/releases/benchmark | FREIGEGEBEN |
 | FFmpeg (libavcodec, libavformat, libavutil) | 6.1+ | LGPL-2.1-or-later | Audiodecoder-Extension (ALAC/AIFF/WMA/APE/TAK/TTA/DSD), dynamisch gelinkt, aus androidx/media gebaut (ADR-0006) | https://ffmpeg.org | OFFEN |
 | Raleway (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/impallari/Raleway | FREIGEGEBEN |
 
