@@ -309,6 +309,39 @@ Nicht entschieden, weil es Umsetzungsdetails sind:
 8. **Abbruchkriterium.** Woran wird erkannt, dass die Kern-Extraktion
    teurer wird als geplant, und was ist der Rückweg?
 
+### Entschieden 2026-08-24 (vor Schritt 3, Kern-Extraktion)
+
+Die Punkte 1, 2 und 8 sind nach Code-Recherche entschieden; 5 und 7 sind
+umgesetzt (Schritt 7 bzw. Branch-Arbeit), 3 und 4 klärt die DB-v9-Planung,
+6 erledigt sich mit dem java.time-Umzug im Kern.
+
+**Punkt 1 — Gradle-Einbindung: `include(":training-core")` mit `projectDir`,
+kein Composite-Build.** Der Architekturtest sucht die Repo-Wurzel per
+Aufwärts-Traversierung ab `user.dir` und findet Fusions `settings.gradle.kts`
+immer zuerst — ein eigenes Settings-File im Submodule-Verzeichnis (unterhalb
+der App-Wurzel) kann das nicht kippen. `modulesUnder` prüft nur `core/`,
+`domain/`, `data/`, `feature/`: Der Kern an der Repo-Wurzel wird von den
+Regeln nicht erfasst (und verstieße als pure JVM auch nicht). Jede App
+kompiliert den Kern-Quelltext als gewöhnliches Subprojekt mit der eigenen
+Toolchain — deshalb die fixierte apiVersion (Punkt 2). Das eigene
+`settings.gradle.kts` im Kern-Repo bleibt für dessen Standalone-CI erhalten.
+
+**Punkt 2 — Toolchain: `jvmToolchain(17)` (Java 17, `JvmTarget.JVM_17`) und
+`apiVersion = 2.0`.** Beide Apps kompilieren den Kern selbst (Fusion Kotlin
+2.4.10, Flowtimer 2.4.0); apiVersion 2.0 hält den Kern-Bitcode für beide
+konsumierbar, auch wenn eine Seite später einmal zurückfällt. Das Modul-Muster
+liegt mit `domain/workout/build.gradle.kts` vor.
+
+**Punkt 8 — Abbruchkriterium und Rückweg.** Abbruch, wenn (a) Flowtimers
+Tests nicht ohne Abschwächung grün gehalten werden können (verletzt das
+Abnahmekriterium aus design.md), (b) die Einbindung mehr verlangt als je eine
+`include`-Zeile plus Submodule-Registrierung pro App, oder (c) Kern-Extraktion
+plus Flowtimer-Umstellung eine Arbeitssession deutlich überschreitet. Rückweg:
+Schritt 3 ist rein additiv — Fusions Mathematik liegt bis Schritt 5 weiter in
+`domain/workout`; Submodule-Pointer zurücksetzen bzw. `include`-Zeile
+entfernen stellt beide Apps auf den Stand vor Schritt 3 zurück (master 1f1f3d0
+bleibt wiederherstellbar). Keine DB- oder Datenänderung in diesem Schritt.
+
 <a name="code"></a>
 ## Code-Bestand, der wiederverwendet wird
 
