@@ -20,17 +20,19 @@ plugins {
 spotless {
     kotlin {
         target("**/*.kt")
-        targetExclude("**/build/**")
+        // training-core ist ein eigenes Repo mit eigener CI (CONTEXT E3);
+        // Fusion formatiert dessen Quellen nicht mit.
+        targetExclude("**/build/**", "training-core/**")
         ktlint(libs.versions.ktlint.get())
     }
     kotlinGradle {
         target("**/*.gradle.kts")
-        targetExclude("**/build/**")
+        targetExclude("**/build/**", "training-core/**")
         ktlint(libs.versions.ktlint.get())
     }
     format("misc") {
         target("**/*.md", "**/.gitignore")
-        targetExclude("**/build/**")
+        targetExclude("**/build/**", "training-core/**")
         trimTrailingWhitespace()
         endWithNewline()
     }

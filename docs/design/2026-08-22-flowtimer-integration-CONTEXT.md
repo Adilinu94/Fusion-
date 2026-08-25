@@ -26,6 +26,7 @@ sind hiermit richtiggestellt:
 | „Alle 33 vorhandenen Unit-Tests bleiben grün" | Flowtimer hat 40 `@Test`-Methoden in 9 Dateien (`PrTest` 4, `SessionEngineTest` 13, `StreakTest` 4, `TargetMathTest` 2, `WeekAggTest` 3, `FormattersTest` 4, `RestMapTest` 4, `StatsTest` 2, `WeekBarsTest` 4). Nach Phase 15+16 werden es mehr. |
 | „26 Gradle-Module, 28 Entities" | 29 Module (30 mit `:libs:media3-ffmpeg`), 29 Entities, Room v8 — v8 stimmt. |
 | PR-Mathematik „voll ersetzen" durch Flowtimers | Umgekehrt, siehe [Mathematik-Richtung](#e6). |
+| `training-core` privat, CI-Checkout mit Deploy-Key (Entscheidung 7, Architektur 3, Reihenfolge 4) | Repo ist **öffentlich**, Checkout braucht nur `submodules: recursive`. Siehe Nachtrag in [E3](#e3). |
 
 <a name="entscheidungen"></a>
 ## Gesperrte Entscheidungen
@@ -68,7 +69,7 @@ Trainings am selben Tag zählen als eines. Der Ring beschriftet daher
 Trainings**tage**, nicht Trainings.
 
 <a name="e3"></a>
-### E3 — `training-core` liegt in einem privaten GitHub-Repo
+### E3 — `training-core` liegt in einem eigenen GitHub-Repo
 
 Entscheidung 7 und 8 des Design-Dokuments (nur lokal, CI pausiert) sind
 **aufgehoben**.
@@ -77,11 +78,24 @@ Grund: `git submodule add` mit lokalem Windows-Pfad schreibt einen
 absoluten Pfad in `.gitmodules`. Fusion wäre danach auf keinem anderen
 Rechner und aus keinem Backup mehr vollständig herstellbar — bei ~50k LOC
 und einer Datenbank mit der echten Musikbibliothek ist das der teuerste
-Punkt des ganzen Plans. Ein privates Repo kostet nichts und hält die
-GitHub-CI (`.github/workflows/ci.yml`) durchgehend grün.
+Punkt des ganzen Plans. Ein eigenes Repo hält die GitHub-CI
+(`.github/workflows/ci.yml`) durchgehend grün.
 
 Damit entfällt auch der Non-Goal „keine aktive GitHub-CI" aus dem
 Design-Dokument.
+
+**Nachtrag 2026-08-25 — das Repo ist öffentlich, nicht privat.** Der
+erste CI-Lauf mit eingebundenem Submodule schlug fehl:
+`fatal: repository 'https://github.com/Adilinu94/training-core.git/' not
+found`. `GITHUB_TOKEN` gilt nur für das Repo, das den Workflow auslöst;
+ein privates Submodule braucht zusätzlich einen Deploy-Key oder PAT als
+Secret. Der ursprüngliche Grund für „privat" war, dass es nichts kostet —
+nicht Geheimhaltung. Das eigentliche Ziel dieser Entscheidung ist
+Reproduzierbarkeit, und die ist bei einem öffentlichen Repo genauso
+erfüllt. Der Kern enthält reine Trainingsmathematik: keine Schlüssel,
+keine Nutzerdaten, keine Geschäftslogik, die Schaden anrichtet. Damit
+bleibt die CI ohne Secret grün, und Flowtimer kann dasselbe Submodule
+ohne eigene Zugangsverwaltung einbinden.
 
 <a name="e4"></a>
 ### E4 — Ziel erreicht heißt: Gewicht UND Wiederholungen erreicht

@@ -79,9 +79,11 @@ Farb-, Schrift- oder Abstandswerte.
   korrekt einzuordnen.
 - Neu gegenueber ADR-0010 und ADR-0013: diese ADR hat Code-Folgen. Das
   Repo erhaelt eine externe Submodule-Abhaengigkeit
-  (`training-core`, privates GitHub-Repo). `actions/checkout` in
-  `.github/workflows/ci.yml` braucht `submodules: true` und einen
-  Deploy-Key; ohne beides bricht die CI.
+  (`training-core`, oeffentliches GitHub-Repo). `actions/checkout` in
+  `.github/workflows/ci.yml` braucht `submodules: recursive`; ohne das
+  ist das Verzeichnis leer und `settings.gradle.kts` bricht ab.
+  Ein Deploy-Key ist nicht noetig — siehe den Nachtrag zu E3 in
+  [`../design/2026-08-22-flowtimer-integration-CONTEXT.md`](../design/2026-08-22-flowtimer-integration-CONTEXT.md).
 - `ModuleDependencyRulesTest` bekommt ein weiteres Feature-Modul
   (`:feature:progress`) in seine Pflichtliste. Die Liste dort ist
   bereits unvollstaendig (`health`, `sensor`, `audio` fehlen) und wird

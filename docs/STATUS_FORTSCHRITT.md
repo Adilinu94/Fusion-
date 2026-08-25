@@ -537,3 +537,51 @@ Implementierungsreihenfolge im Design-Dokument.
   Goal-Flow live in Ring/Chart (aenderungen wirken ohne Neustart).
   `FakeWorkoutGoalRepository` in core:testing. Alle Gates gruen inkl.
   `python tools/doku_links_check.py`.
+- [x] Schritt 3 umgesetzt (Kern-Extraktion): Repo
+  `github.com/Adilinu94/training-core` (Tag v1.0.0) mit 8 Kern-Dateien und
+  6 Testklassen. Fusions `WorkoutMath`/`PrCalculator` bilden die Grundlage
+  (E6), Flowtimers `Streak`/`WeekAgg`/`TargetMath` sind ergaenzt und
+  `bestFor` ist als `PrCalculator.bestSet` darauf abgebildet.
+  Einheitenvertrag `Units` (E1): oeffentlich kg als Double, intern ganze
+  Millikilogramm, HALF_UP am Eingang — deshalb sind Gewichtsvergleiche
+  exakt. Kern ist pures Kotlin JVM, `jvmToolchain(17)`, apiVersion 2.0
+  (CONTEXT Punkt 2), Plugin-Block ohne Version, damit beide Apps mit ihrer
+  eigenen Toolchain kompilieren.
+- [x] Schritt 4a umgesetzt (Submodule-Einbindung, ohne DB v9): `training-core`
+  als Git-Submodule an der Repo-Wurzel, `include(":training-core")` mit
+  gesetztem `projectDir` statt Composite-Build (CONTEXT Punkt 1). Guard in
+  `settings.gradle.kts`: fehlt das Submodule-Verzeichnis, bricht der Build mit
+  einer lesbaren Meldung ab statt mit einem Plugin-Fehler. CI-Checkout auf
+  `submodules: recursive`. Spotless und Detekt schliessen `training-core/**`
+  aus — der Kern hat eigene CI. `ModuleDependencyRulesTest` fuehrt
+  `training-core` als Pflichtmodul.
+- [x] Schritt 5 umgesetzt (Mathematik-Umzug): `domain/workout` konsumiert den
+  Kern. `WorkoutMath` und `PrCalculator` sind nur noch
+  Millikilogramm-Fassaden auf `com.training.core` — Fusions Invariante
+  (keine Gleitkommazahlen im Datenmodell) bleibt unangetastet, Double
+  erscheint ausschliesslich auf der Kern-Grenze und ist dort auf ganze
+  Gramm gerundet, also verlustfrei. `roundKgInputToMilliKg` bleibt in
+  Fusion: Der Kern nimmt Zahlen, keine Textfeldinhalte. Alle Gates gruen
+  (`test spotlessCheck detekt lintDebug assembleDebug`,
+  `python tools/doku_links_check.py`).
+- [x] Schritt 5 abgesichert: `WorkoutMathTest` (12) und `PrCalculatorTest` (6)
+  in `domain/workout` neu — die Kern-Grenze war bis dahin ungetestet, obwohl
+  sie Long nach Double und zurueck wandelt. Belegt wird die Verlustfreiheit
+  (einzelnes Gramm, 92,501 kg durch alle drei PR-Arten), die Enum-Zuordnung
+  (Reps behalten `PrValueUnit.REPS`) und dass die Gleichstandsregel nach dem
+  Umzug unveraendert gilt.
+- [x] E3 nachgezogen: `training-core` ist oeffentlich statt privat. Der erste
+  CI-Lauf mit Submodule schlug mit `repository not found` fehl - `GITHUB_TOKEN`
+  gilt nur fuer das ausloesende Repo, ein privates Submodule braucht zusaetzlich
+  Deploy-Key oder PAT als Secret. Der Grund fuer "privat" war, dass es nichts
+  kostet, nicht Geheimhaltung; das Ziel der Entscheidung ist Reproduzierbarkeit
+  und die gilt oeffentlich genauso. Der Kern enthaelt reine Mathematik, keine
+  Schluessel und keine Nutzerdaten. Damit bleibt die CI ohne Secret gruen und
+  Flowtimer bindet dasselbe Submodule ohne eigene Zugangsverwaltung ein.
+  CONTEXT E3 und ADR-0016 entsprechend nachgetragen.
+- [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
+  — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
+  Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.
+  Ebenfalls offen: Flowtimer selbst auf das Submodule umstellen (dessen
+  Seite von Schritt 3) sowie CONTEXT-Punkte 3 und 4 (TargetEntity-Schluessel,
+  Schema-Export nach `src/test/assets`).

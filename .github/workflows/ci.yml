@@ -22,6 +22,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # :training-core ist ein Submodule (CONTEXT E3). Ohne diesen Schalter
+          # ist das Verzeichnis leer und settings.gradle.kts bricht ab.
+          submodules: recursive
 
       - name: JDK 17 einrichten
         uses: actions/setup-java@v4

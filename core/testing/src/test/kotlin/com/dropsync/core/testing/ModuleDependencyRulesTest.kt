@@ -128,9 +128,12 @@ class ModuleDependencyRulesTest {
         // (ADR-0016): zuvor fehlten health, sensor, audio und settings. Die
         // optionalen Module :benchmarks und :libs:media3-ffmpeg bleiben
         // bewusst draussen, da sie nicht in jedem Build existieren.
+        // :training-core ist Pflicht, obwohl Submodule: settings.gradle.kts
+        // bricht ohne dieses Verzeichnis ab (CONTEXT E3, Punkt 1).
         val required =
             listOf(
                 "app",
+                "training-core",
                 "core/common",
                 "core/model",
                 "core/database",

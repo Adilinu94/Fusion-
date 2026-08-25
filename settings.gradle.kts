@@ -34,6 +34,21 @@ dependencyResolutionManagement {
 
 rootProject.name = "DropSync"
 
+// :training-core — gemeinsamer Trainings-Kern (Git-Submodule, eigenes Repo).
+// CONTEXT E3 + Punkt 1 (entschieden 2026-08-24): gewoehnliches Subprojekt mit
+// gesetztem projectDir, KEIN Composite-Build. Fusion kompiliert den Quelltext
+// mit der eigenen Toolchain; das settings.gradle.kts im Submodule bleibt dabei
+// ohne Wirkung und dient nur dessen Standalone-CI.
+// Guard: Nach einem Checkout ohne `--recurse-submodules` ist das Verzeichnis
+// leer — dann bricht der Build mit einer lesbaren Meldung ab statt mit einem
+// unverstaendlichen Plugin-Fehler.
+val trainingCoreDir = file("training-core")
+require(trainingCoreDir.resolve("build.gradle.kts").exists()) {
+    "training-core fehlt. Submodule holen: git submodule update --init --recursive"
+}
+include(":training-core")
+project(":training-core").projectDir = trainingCoreDir
+
 // :app
 include(":app")
 
