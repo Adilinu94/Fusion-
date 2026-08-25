@@ -3,6 +3,8 @@ package com.dropsync.core.database
 import androidx.room.testing.MigrationTestHelper
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.platform.app.InstrumentationRegistry
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -113,6 +115,58 @@ class MigrationTest {
         helper.runMigrationsAndValidate(dbPath, 8, true, *DROPSYNC_MIGRATIONS).close()
     }
 
+    @Test
+    fun `migration 8 auf 9 ergaenzt exercise targets`() {
+        // Kette v1 -> v9 (neue Tabelle exercise_targets, Flowtimer-Integration
+        // Entscheidung 14); validiert gegen das exportierte Schema 9.json.
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V9).absolutePath
+
+        helper.createDatabase(dbPath, 1).close()
+        helper.runMigrationsAndValidate(dbPath, 9, true, *DROPSYNC_MIGRATIONS).close()
+    }
+
+    /**
+     * Die eigentliche Gefahr bei v9: Die DB enthaelt die echte
+     * Musikbibliothek. Eine Migration, die vorhandene Zeilen verliert, waere
+     * nicht wiederherstellbar. Dieser Test schreibt Nutzdaten in v8 und
+     * prueft nach der Migration, dass sie noch da sind.
+     */
+    @Test
+    fun `migration 8 auf 9 erhaelt vorhandene daten`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V9_DATA).absolutePath
+
+        helper.createDatabase(dbPath, 8).use { db ->
+            db.execSQL(
+                "INSERT INTO exercises (id, canonical_name, kind, equipment, is_custom, is_archived) " +
+                    "VALUES (1, 'bench_press', 'STRENGTH', 'BARBELL', 0, 0)",
+            )
+            db.execSQL(
+                "INSERT INTO flat_sets (id, exercise_id, weight_milli_kg, reps, logged_at_epoch_ms) " +
+                    "VALUES (1, 1, 92500, 5, 1000)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(dbPath, 9, true, *DROPSYNC_MIGRATIONS).use { db ->
+            db.query("SELECT weight_milli_kg, reps FROM flat_sets WHERE id = 1").use { cursor ->
+                assertTrue("Satz aus v8 fehlt nach der Migration", cursor.moveToFirst())
+                assertEquals(92_500L, cursor.getLong(0))
+                assertEquals(5, cursor.getInt(1))
+            }
+            // Die neue Tabelle ist leer, aber vorhanden und beschreibbar.
+            db.execSQL(
+                "INSERT INTO exercise_targets " +
+                    "(exercise_id, target_weight_milli_kg, target_reps, updated_at_epoch_ms) " +
+                    "VALUES (1, 100000, 5, 2000)",
+            )
+            db.query("SELECT COUNT(*) FROM exercise_targets").use { cursor ->
+                assertTrue(cursor.moveToFirst())
+                assertEquals(1, cursor.getInt(0))
+            }
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V2 = "migration-test-v2.db"
@@ -122,5 +176,7 @@ class MigrationTest {
         const val TEST_DB_V6 = "migration-test-v6.db"
         const val TEST_DB_V7 = "migration-test-v7.db"
         const val TEST_DB_V8 = "migration-test-v8.db"
+        const val TEST_DB_V9 = "migration-test-v9.db"
+        const val TEST_DB_V9_DATA = "migration-test-v9-data.db"
     }
 }

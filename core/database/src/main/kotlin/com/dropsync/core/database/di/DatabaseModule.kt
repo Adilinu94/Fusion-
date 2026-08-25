@@ -9,6 +9,7 @@ import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.EqPresetDao
 import com.dropsync.core.database.dao.ExerciseDao
+import com.dropsync.core.database.dao.ExerciseTargetDao
 import com.dropsync.core.database.dao.FavoriteDao
 import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.LibraryBrowseDao
@@ -99,4 +100,7 @@ object DatabaseModule {
 
     @Provides
     fun provideFlatSetDao(database: DropSyncDatabase): FlatSetDao = database.flatSetDao()
+
+    @Provides
+    fun provideExerciseTargetDao(database: DropSyncDatabase): ExerciseTargetDao = database.exerciseTargetDao()
 }

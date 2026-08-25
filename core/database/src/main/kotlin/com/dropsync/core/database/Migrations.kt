@@ -134,6 +134,44 @@ val MIGRATION_7_8 =
         }
     }
 
+/**
+ * v8 -> v9: legt `exercise_targets` an (Flowtimer-Integration
+ * Entscheidung 14, CONTEXT E4/Punkt 3). Rein additiv — keine bestehende
+ * Tabelle wird angefasst, die echte Musikbibliothek bleibt unberuehrt.
+ *
+ * `exercise_id` ist Primary Key: genau ein Ziel je Uebung. Gewicht als
+ * ganze Millikilogramm (INTEGER), nie REAL — Gleitkommazahlen sind in
+ * Entities verboten (Schritt 3.2).
+ *
+ * Die Spaltenreihenfolge und die `CREATE TABLE`-Form muessen mit dem
+ * generierten Schema uebereinstimmen, sonst schlaegt `MigrationTest` fehl:
+ * Room vergleicht das migrierte Schema mit `9.json`.
+ */
+val MIGRATION_8_9 =
+    object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `exercise_targets` (" +
+                    "`exercise_id` INTEGER NOT NULL, " +
+                    "`target_weight_milli_kg` INTEGER NOT NULL, " +
+                    "`target_reps` INTEGER NOT NULL, " +
+                    "`updated_at_epoch_ms` INTEGER NOT NULL, " +
+                    "PRIMARY KEY(`exercise_id`), " +
+                    "FOREIGN KEY(`exercise_id`) REFERENCES `exercises`(`id`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
-    arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+    arrayOf(
+        MIGRATION_1_2,
+        MIGRATION_2_3,
+        MIGRATION_3_4,
+        MIGRATION_4_5,
+        MIGRATION_5_6,
+        MIGRATION_6_7,
+        MIGRATION_7_8,
+        MIGRATION_8_9,
+    )
