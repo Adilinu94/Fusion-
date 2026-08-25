@@ -249,10 +249,6 @@ private fun DropSyncNavHost(
         composable(ROUTE_EXERCISE_LIBRARY) {
             ExerciseLibraryScreen(
                 contentPadding = contentPadding,
-                // TODO Flowtimer-Integration DB v9 (Schritt 7 Fortsetzung):
-                // Der Tap auf eine Uebung oeffnet den Ziel-Dialog, sobald
-                // TargetEntity existiert. Bis dahin fuehrt der Tap zurueck.
-                onOpenExercise = { navController.popBackStack() },
                 onBack = { navController.popBackStack() },
             )
         }

@@ -36,5 +36,17 @@
     <string name="progress_pr_single">New record: %1$s %2$s</string>
     <string name="progress_pr_many">%d new records this week</string>
     <string name="progress_goals_hint">Set a goal to see your progress per exercise</string>
+    <string name="progress_section_goals">Goals</string>
+    <string name="progress_goals_counter">%1$d of %2$d reached</string>
+    <string name="progress_goal_reached">reached</string>
+    <string name="progress_goal_missing_weight">%s missing</string>
+    <string name="progress_goal_missing_reps_one">1 rep missing</string>
+    <string name="progress_goal_missing_reps_many">%d reps missing</string>
+    <string name="progress_goal_missing_both_one">%s and 1 rep missing</string>
+    <string name="progress_goal_missing_both_many">%1$s and %2$d reps missing</string>
+    <string name="progress_goal_no_set">no set yet</string>
+    <string name="progress_goals_stale">Not trained for a while</string>
+    <string name="progress_goals_add">Set a goal for an exercise</string>
+    <string name="progress_goal_a11y_progress">%d of 10</string>
     <string name="progress_show_all_sets">Show all sets</string>
 </resources>

@@ -40,24 +40,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
+import com.dropsync.domain.workout.ExerciseLibraryItem
+import com.dropsync.domain.workout.ExerciseTarget
 import com.dropsync.domain.workout.MuscleContribution
+import java.util.Locale
 
 /**
  * Uebungsbibliothek (Schritt 9.1/9.2): Liste mit Equipment und
- * Primaermuskel-Badge, Suche und Neuanlage eigener Uebungen.
+ * Primaermuskel-Badge, Suche, Neuanlage eigener Uebungen und Ziel-Pflege
+ * (Entscheidung 13 — Ziele leben hier, der TrainScreen bleibt frei).
  */
 @Composable
 fun ExerciseLibraryScreen(
     contentPadding: PaddingValues,
-    onOpenExercise: (Long) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: ExerciseLibraryViewModel = hiltViewModel(),
 ) {
     val items by viewModel.items.collectAsStateWithLifecycle()
     val archivedItems by viewModel.archivedItems.collectAsStateWithLifecycle()
+    val targets by viewModel.targets.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
+    // Ziel-Dialog haelt nur die ID; Name und aktuelles Ziel kommen aus dem
+    // Zustand, damit eine Aenderung von aussen nicht im Dialog einfriert.
+    var goalDialogExerciseId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     if (showCreateDialog) {
         CreateExerciseDialog(
@@ -69,66 +76,48 @@ fun ExerciseLibraryScreen(
         )
     }
 
+    goalDialogExerciseId?.let { exerciseId ->
+        val item = items.firstOrNull { it.id == exerciseId }
+        if (item == null) {
+            // Uebung ist waehrend des offenen Dialogs verschwunden
+            // (archiviert, Suche): Dialog schliessen statt leer zeigen.
+            goalDialogExerciseId = null
+        } else {
+            GoalDialog(
+                exerciseName = item.displayName,
+                current = targets[exerciseId],
+                onConfirm = { weight, reps ->
+                    viewModel.setTarget(exerciseId, weight, reps)
+                    goalDialogExerciseId = null
+                },
+                onClear = {
+                    viewModel.clearTarget(exerciseId)
+                    goalDialogExerciseId = null
+                },
+                onDismiss = { goalDialogExerciseId = null },
+            )
+        }
+    }
+
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
     ) {
         item {
-            Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(R.string.library_title),
-                        style = MaterialTheme.typography.titleLarge,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onBack) {
-                        Text(stringResource(R.string.workout_back))
-                    }
-                }
-                OutlinedTextField(
-                    value = query,
-                    onValueChange = viewModel::setQuery,
-                    label = { Text(stringResource(R.string.library_search)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Spacer(Modifier.height(8.dp))
-                Button(onClick = { showCreateDialog = true }) {
-                    Text(stringResource(R.string.library_new_exercise))
-                }
-            }
+            LibraryHeader(
+                query = query,
+                onQueryChange = viewModel::setQuery,
+                onNewExercise = { showCreateDialog = true },
+                onBack = onBack,
+            )
         }
         items(items, key = { it.id }) { item ->
-            Card(
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clickable { onOpenExercise(item.id) },
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Text(
-                        text = item.displayName,
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    val suffix =
-                        if (item.isCustom) {
-                            " - " + stringResource(R.string.library_custom_badge)
-                        } else {
-                            ""
-                        }
-                    Text(
-                        text = item.equipment.name + suffix,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    // Schritt 7: Archivieren ist die Loesch-Alternative mit
-                    // Umkehrweg — die Historie der Saetze bleibt unangetastet.
-                    TextButton(onClick = { viewModel.archiveExercise(item.id) }) {
-                        Text(stringResource(R.string.library_archive))
-                    }
-                }
-            }
+            ExerciseCard(
+                item = item,
+                target = targets[item.id],
+                onOpenGoal = { goalDialogExerciseId = item.id },
+                onArchive = { viewModel.archiveExercise(item.id) },
+            )
         }
         if (archivedItems.isNotEmpty()) {
             item {
@@ -161,11 +150,208 @@ fun ExerciseLibraryScreen(
     }
 }
 
+/** Kopf der Bibliothek: Titel, Suche, Neuanlage. */
+@Composable
+private fun LibraryHeader(
+    query: String,
+    onQueryChange: (String) -> Unit,
+    onNewExercise: () -> Unit,
+    onBack: () -> Unit,
+) {
+    Column(Modifier.padding(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = stringResource(R.string.library_title),
+                style = MaterialTheme.typography.titleLarge,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onBack) {
+                Text(stringResource(R.string.workout_back))
+            }
+        }
+        OutlinedTextField(
+            value = query,
+            onValueChange = onQueryChange,
+            label = { Text(stringResource(R.string.library_search)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Spacer(Modifier.height(8.dp))
+        Button(onClick = onNewExercise) {
+            Text(stringResource(R.string.library_new_exercise))
+        }
+    }
+}
+
+/**
+ * Eine Uebungskarte: Name, Equipment, gesetztes Ziel und die beiden
+ * Aktionen. Der Tap auf die Karte oeffnet den Ziel-Dialog (R5b) — ein Tap
+ * statt vier. Ohne das sieht man „10 kg fehlen", denkt „das Ziel ist zu
+ * niedrig", und aendert es nie, weil der Weg zu lang ist.
+ */
+@Composable
+private fun ExerciseCard(
+    item: ExerciseLibraryItem,
+    target: ExerciseTarget?,
+    onOpenGoal: () -> Unit,
+    onArchive: () -> Unit,
+) {
+    Card(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+                .clickable(onClick = onOpenGoal),
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                text = item.displayName,
+                style = MaterialTheme.typography.titleMedium,
+            )
+            val suffix =
+                if (item.isCustom) {
+                    " - " + stringResource(R.string.library_custom_badge)
+                } else {
+                    ""
+                }
+            Text(
+                text = item.equipment.name + suffix,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // Gesetzte Ziele zeigen ihren Wert, damit man nicht den Dialog
+            // oeffnen muss, um ihn zu sehen. Violett, weil Ziel (R1).
+            if (target != null) {
+                Text(
+                    text =
+                        stringResource(
+                            R.string.library_goal_current,
+                            formatGoalWeight(target.targetWeightMilliKg),
+                            target.targetReps,
+                        ),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary,
+                )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = onOpenGoal) {
+                    Text(
+                        stringResource(
+                            if (target == null) R.string.library_goal_set else R.string.library_goal_edit,
+                        ),
+                    )
+                }
+                // Schritt 7: Archivieren ist die Loesch-Alternative mit
+                // Umkehrweg — die Historie der Saetze bleibt unangetastet.
+                TextButton(onClick = onArchive) {
+                    Text(stringResource(R.string.library_archive))
+                }
+            }
+        }
+    }
+}
+
 /** Zeile des Muskel-Mappings im Anlage-Dialog (Gruppe + Prozent 1..100). */
 private data class MuscleRowState(
     val group: MuscleGroup,
     val percentText: String,
 )
+
+/**
+ * Ziel-Dialog (Entscheidung 13/14): Zielgewicht und Ziel-Wiederholungen.
+ * Beide Felder sind Pflicht — ein Ziel mit nur einer Dimension waere kein
+ * Ziel im Sinne von E4, wo ein einzelner Satz beides schaffen muss.
+ */
+@Composable
+private fun GoalDialog(
+    exerciseName: String,
+    current: ExerciseTarget?,
+    onConfirm: (String, String) -> Unit,
+    onClear: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    // Vorbelegung aus dem bestehenden Ziel: Ein Ziel wird eher angepasst als
+    // neu getippt.
+    var weightText by rememberSaveable(exerciseName) {
+        mutableStateOf(current?.let { formatGoalWeight(it.targetWeightMilliKg) } ?: "")
+    }
+    var repsText by rememberSaveable(exerciseName) {
+        mutableStateOf(current?.targetReps?.toString() ?: "")
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.library_goal_dialog_title, exerciseName)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = weightText,
+                    onValueChange = { weightText = it },
+                    label = { Text(stringResource(R.string.library_goal_weight)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                    singleLine = true,
+                )
+                OutlinedTextField(
+                    value = repsText,
+                    onValueChange = { repsText = it },
+                    label = { Text(stringResource(R.string.library_goal_reps)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                )
+                Text(
+                    text = stringResource(R.string.library_goal_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = isValidGoalInput(weightText, repsText),
+                onClick = { onConfirm(weightText, repsText) },
+            ) {
+                Text(stringResource(R.string.library_goal_save))
+            }
+        },
+        dismissButton = {
+            Row {
+                if (current != null) {
+                    TextButton(onClick = onClear) {
+                        Text(stringResource(R.string.library_goal_clear))
+                    }
+                }
+                TextButton(onClick = onDismiss) {
+                    Text(stringResource(R.string.workout_cancel))
+                }
+            }
+        },
+    )
+}
+
+/**
+ * Zielgewicht fuer Anzeige und Vorbelegung: ganzzahlig ohne Dezimalstelle,
+ * krumme Werte mit einer (E4c/R2b). `95,0 kg` ist verboten.
+ */
+private fun formatGoalWeight(milliKg: Long): String =
+    if (milliKg % 1000 == 0L) {
+        (milliKg / 1000).toString()
+    } else {
+        String.format(Locale.getDefault(), "%.1f", milliKg / 1000.0)
+    }
+
+/**
+ * Speichern erst, wenn beide Felder tragfaehig sind. Ein Ziel von 0 kg oder
+ * 0 Reps waere sofort erfuellt und die Statuszeile saehe erreicht aus, ohne
+ * dass trainiert wurde.
+ */
+private fun isValidGoalInput(
+    weightText: String,
+    repsText: String,
+): Boolean {
+    val weight = weightText.trim().replace(',', '.').toDoubleOrNull() ?: return false
+    val reps = repsText.trim().toIntOrNull() ?: return false
+    return weight > 0.0 && reps > 0
+}
 
 /**
  * Neuanlage einer eigenen Uebung (9.2): Name (de/en), Art, Equipment und

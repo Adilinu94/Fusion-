@@ -6,7 +6,10 @@ import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.domain.workout.CustomExerciseInput
 import com.dropsync.domain.workout.ExerciseLibraryItem
+import com.dropsync.domain.workout.ExerciseTarget
 import com.dropsync.domain.workout.MuscleContribution
+import com.dropsync.domain.workout.TargetRepository
+import com.dropsync.domain.workout.WorkoutMath
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,6 +17,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -28,6 +32,7 @@ class ExerciseLibraryViewModel
     @Inject
     constructor(
         private val workoutRepository: WorkoutRepository,
+        private val targetRepository: TargetRepository,
     ) : ViewModel() {
         private val locale: String = Locale.getDefault().language
 
@@ -53,6 +58,17 @@ class ExerciseLibraryViewModel
             workoutRepository
                 .observeArchivedExerciseLibrary(locale)
                 .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+        /**
+         * Ziele nach Uebungs-ID (Entscheidung 13, DB v9): Die Pflege lebt
+         * hier in der Bibliothek, nicht im TrainScreen. Als Map, damit jede
+         * Zeile ihr Ziel ohne eigene Abfrage findet.
+         */
+        val targets: StateFlow<Map<Long, ExerciseTarget>> =
+            targetRepository
+                .observeAllTargets()
+                .map { list -> list.associateBy { it.exerciseId } }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
 
         fun setQuery(value: String) {
             _query.value = value
@@ -89,6 +105,34 @@ class ExerciseLibraryViewModel
                         muscles = muscles.filter { it.percent in 1..100 },
                     ),
                 )
+            }
+        }
+
+        /**
+         * Setzt das Ziel einer Uebung (Entscheidung 14). Gewicht kommt als
+         * Textfeld-Inhalt: Das Parsen gehoert hierher, weil die Eingabe hier
+         * entsteht — der Kern nimmt Zahlen, keine Strings.
+         *
+         * Ungueltige Eingaben werden verworfen statt gemeldet: Der Dialog
+         * gibt den Speichern-Knopf erst frei, wenn beide Felder gefuellt
+         * sind, deshalb ist ein Fehlerpfad hier unerreichbar.
+         */
+        fun setTarget(
+            exerciseId: Long,
+            weightKgInput: String,
+            repsInput: String,
+        ) {
+            val weightMilliKg =
+                runCatching { WorkoutMath.roundKgInputToMilliKg(weightKgInput) }.getOrNull() ?: return
+            val reps = repsInput.trim().toIntOrNull() ?: return
+            viewModelScope.launch {
+                targetRepository.setTarget(exerciseId, weightMilliKg, reps)
+            }
+        }
+
+        fun clearTarget(exerciseId: Long) {
+            viewModelScope.launch {
+                targetRepository.clearTarget(exerciseId)
             }
         }
     }

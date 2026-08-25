@@ -53,6 +53,16 @@
     <string name="library_percent">Percent</string>
     <string name="library_add_muscle">Add muscle</string>
     <string name="library_create">Create</string>
+    <string name="library_goal_section">Goal</string>
+    <string name="library_goal_set">Set goal</string>
+    <string name="library_goal_edit">Edit goal</string>
+    <string name="library_goal_dialog_title">Goal for %s</string>
+    <string name="library_goal_weight">Target weight (kg)</string>
+    <string name="library_goal_reps">Target reps</string>
+    <string name="library_goal_hint">Reached when a single set hits both the weight and the reps.</string>
+    <string name="library_goal_current">Goal: %1$s × %2$d</string>
+    <string name="library_goal_clear">Remove goal</string>
+    <string name="library_goal_save">Save</string>
     <string name="routines_title">Routines</string>
     <string name="routines_new">New routine</string>
     <string name="routines_empty">No routines yet</string>

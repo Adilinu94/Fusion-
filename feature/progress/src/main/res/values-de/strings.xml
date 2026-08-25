@@ -36,5 +36,17 @@
     <string name="progress_pr_single">Neuer Bestwert: %1$s %2$s</string>
     <string name="progress_pr_many">%d neue Bestwerte diese Woche</string>
     <string name="progress_goals_hint">Setze ein Ziel, um deinen Fortschritt pro Übung zu sehen</string>
+    <string name="progress_section_goals">Ziele</string>
+    <string name="progress_goals_counter">%1$d von %2$d erreicht</string>
+    <string name="progress_goal_reached">erreicht</string>
+    <string name="progress_goal_missing_weight">%s fehlen</string>
+    <string name="progress_goal_missing_reps_one">1 Wiederholung fehlt</string>
+    <string name="progress_goal_missing_reps_many">%d Wiederholungen fehlen</string>
+    <string name="progress_goal_missing_both_one">%s und 1 Wiederholung fehlen</string>
+    <string name="progress_goal_missing_both_many">%1$s und %2$d Wiederholungen fehlen</string>
+    <string name="progress_goal_no_set">noch kein Satz</string>
+    <string name="progress_goals_stale">Länger nicht trainiert</string>
+    <string name="progress_goals_add">Ziel für eine Übung setzen</string>
+    <string name="progress_goal_a11y_progress">%d von 10</string>
     <string name="progress_show_all_sets">Alle Sätze anzeigen</string>
 </resources>

@@ -10,6 +10,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -25,12 +26,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -69,6 +73,7 @@ import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.component.ProgressRing
 import com.dropsync.core.designsystem.theme.Spacing
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.TargetRepository
 import com.dropsync.domain.workout.WorkoutGoalRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -86,6 +91,7 @@ import javax.inject.Inject
 data class ProgressDashboardUiState(
     val progress: ProgressUiState = ProgressUiState.Empty,
     val feed: ProgressFeedUiState = ProgressFeedUiState.Empty,
+    val goals: ProgressGoalsUiState = ProgressGoalsUiState.Empty,
 )
 
 /** Bento-Dashboard des Verlauf-Tabs nach UI-Vertrag 2026-08-22 (Schritt 6d-2). */
@@ -96,18 +102,23 @@ class ProgressViewModel
         flatSetRepository: FlatSetRepository,
         workoutRepository: WorkoutRepository,
         workoutGoalRepository: WorkoutGoalRepository,
+        targetRepository: TargetRepository,
         @ApplicationContext private val appContext: Context,
     ) : ViewModel() {
         // Wochenziel aus dem DataStore (Schritt 7): derselbe Wert wie in den
         // Einstellungen, live — Aenderungen wirken sofort auf Ring und Chart.
+        // Uebungsziele aus Room (DB v9): ein neu gesetztes Ziel erscheint
+        // ohne Neustart im Ziele-Tile.
         val state: StateFlow<ProgressDashboardUiState> =
             combine(
                 flatSetRepository.observeAllSets(),
                 workoutRepository.observeExercises("de"),
                 workoutGoalRepository.weeklyTrainingGoal,
-            ) { sets, exercises, weeklyGoal ->
+                targetRepository.observeAllTargets(),
+            ) { sets, exercises, weeklyGoal, targets ->
                 val names = exercises.associate { it.id to it.displayName }
                 val now = Calendar.getInstance()
+                val fallbackName = appContext.getString(R.string.progress_default_exercise)
                 ProgressDashboardUiState(
                     progress = ProgressUiState.from(sets, now, weeklyGoal),
                     feed =
@@ -115,7 +126,15 @@ class ProgressViewModel
                             sets = sets,
                             exerciseNames = names,
                             now = now,
-                            fallbackExerciseName = appContext.getString(R.string.progress_default_exercise),
+                            fallbackExerciseName = fallbackName,
+                        ),
+                    goals =
+                        ProgressGoalsUiState.from(
+                            targets = targets,
+                            sets = sets,
+                            exerciseNames = names,
+                            now = now,
+                            fallbackExerciseName = fallbackName,
                         ),
                 )
             }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProgressDashboardUiState())
@@ -238,10 +257,20 @@ private fun ProgressDashboardContent(
                     FreshRecordsRow(records = feed.freshRecords, onOpenAllSets = onOpenAllSets)
                 }
             }
-            // Ziele-Tile bis DB v9 (Schritt 7): noch koennen keine Ziele
-            // gesetzt sein, deshalb die Zwischenzustands-Zeile aus R7.
-            item(span = StaggeredGridItemSpan.FullLine) {
-                GoalsHintRow(onOpenExerciseLibrary = onOpenExerciseLibrary)
+            // Ziele-Tile (R5): Uebungen ohne Ziel erscheinen nicht. Ohne
+            // gesetztes Ziel bleibt nur die Hinweiszeile aus R7.
+            if (state.goals.hasAnyGoal) {
+                item(span = StaggeredGridItemSpan.FullLine) {
+                    GoalsTile(
+                        goals = state.goals,
+                        onOpenExerciseLibrary = onOpenExerciseLibrary,
+                        modifier = Modifier.animateItem(),
+                    )
+                }
+            } else {
+                item(span = StaggeredGridItemSpan.FullLine) {
+                    GoalsHintRow(onOpenExerciseLibrary = onOpenExerciseLibrary)
+                }
             }
             if (feed.recentSets.isNotEmpty()) {
                 item(span = StaggeredGridItemSpan.FullLine) {
@@ -619,8 +648,223 @@ private fun FreshRecordsRow(
 }
 
 /**
- * TILE 6 — Ziele: bis TargetEntity existiert (Schritt 7, DB v9) die
- * Zwischenzustands-Zeile aus R7 statt eines leeren Abschnitts.
+ * TILE 6 — Ziele (UI-Vertrag R5): Der einzige Tile, der mit dem Inhalt
+ * waechst. Zeilen nennen die Distanz zum Ziel (R2), Fortschritt sind zehn
+ * Violett-Punkte statt eines Balkens — auf 6 Zoll zaehlbar und bei zehn
+ * Zeilen ruhiger. Jede Zeile oeffnet die ExerciseLibrary (R5b).
+ */
+@Composable
+private fun GoalsTile(
+    goals: ProgressGoalsUiState,
+    onOpenExerciseLibrary: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    DarkTile(modifier = modifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = stringResource(R.string.progress_section_goals),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            // Der Zaehler beantwortet "lohnt sich das Scrollen?", ohne dass
+            // gescrollt werden muss (R5).
+            Text(
+                text =
+                    stringResource(
+                        R.string.progress_goals_counter,
+                        goals.reachedCount,
+                        goals.totalCount,
+                    ),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        goals.rows.forEach { row ->
+            GoalRow(row = row, onOpenExerciseLibrary = onOpenExerciseLibrary)
+        }
+        if (goals.staleRows.isNotEmpty()) {
+            Text(
+                text = stringResource(R.string.progress_goals_stale),
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = Spacing.space8),
+            )
+            goals.staleRows.forEach { row ->
+                GoalRow(row = row, onOpenExerciseLibrary = onOpenExerciseLibrary)
+            }
+        }
+        Text(
+            text = stringResource(R.string.progress_goals_add),
+            style = MaterialTheme.typography.titleSmall,
+            color = MaterialTheme.colorScheme.primary,
+            modifier =
+                Modifier
+                    .padding(top = Spacing.space8)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        role = Role.Button,
+                    ) { onOpenExerciseLibrary() },
+        )
+    }
+}
+
+/**
+ * Eine Ziel-Zeile: Name, Distanz, zehn Punkte. Erreichte Ziele zeigen ein
+ * Violett-Haekchen plus das Wort „erreicht" — Farbe ist nie der einzige
+ * Kanal (R5).
+ */
+@Composable
+private fun GoalRow(
+    row: ProgressGoalRow,
+    onOpenExerciseLibrary: () -> Unit,
+) {
+    val distanceText = goalDistanceText(row)
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Spacing.radiusCard))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                ) { onOpenExerciseLibrary() }
+                .semantics(mergeDescendants = true) {
+                    role = Role.Button
+                    stateDescription = distanceText
+                }.padding(vertical = Spacing.space8),
+        verticalArrangement = Arrangement.spacedBy(Spacing.space4),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = row.exerciseName,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.space4),
+            ) {
+                Text(
+                    text = distanceText,
+                    style = MaterialTheme.typography.bodySmall,
+                    color =
+                        if (row.reached) {
+                            MaterialTheme.colorScheme.secondary
+                        } else {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        },
+                )
+                if (row.reached) {
+                    Icon(
+                        imageVector = Icons.Filled.Check,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.secondary,
+                        modifier = Modifier.size(16.dp),
+                    )
+                }
+            }
+        }
+        if (!row.reached) {
+            GoalDots(filled = row.filledDots)
+        }
+    }
+}
+
+/**
+ * Zehn Punkte als Zehnerteilung (R5): ein gefuellter Punkt = 10 %
+ * geschlossene Restdistanz. Violett, weil es um ein Ziel geht — Lime bleibt
+ * der Aktion vorbehalten (R1).
+ */
+@Composable
+private fun GoalDots(filled: Int) {
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(Spacing.space4),
+        modifier =
+            Modifier.semantics {
+                contentDescription = ""
+            },
+    ) {
+        repeat(GOAL_DOTS) { index ->
+            Box(
+                modifier =
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (index < filled) {
+                                MaterialTheme.colorScheme.secondary
+                            } else {
+                                MaterialTheme.colorScheme.outline
+                            },
+                        ),
+            )
+        }
+    }
+}
+
+/**
+ * Distanz-Sprache (R2): `10 kg fehlen`, nicht `90 kg (Ziel 100 kg)`. Sind
+ * beide Bedingungen offen, nennt die Zeile beide.
+ */
+@Composable
+private fun goalDistanceText(row: ProgressGoalRow): String {
+    val missingWeightKg = row.missingWeightMilliKg / 1000.0
+    return when {
+        row.reached -> {
+            stringResource(R.string.progress_goal_reached)
+        }
+
+        !row.hasAnySet -> {
+            stringResource(R.string.progress_goal_no_set)
+        }
+
+        row.missingWeightMilliKg > 0 && row.missingReps == 1 -> {
+            stringResource(
+                R.string.progress_goal_missing_both_one,
+                ProgressFormatters.weight(missingWeightKg),
+            )
+        }
+
+        row.missingWeightMilliKg > 0 && row.missingReps > 1 -> {
+            stringResource(
+                R.string.progress_goal_missing_both_many,
+                ProgressFormatters.weight(missingWeightKg),
+                row.missingReps,
+            )
+        }
+
+        row.missingWeightMilliKg > 0 -> {
+            stringResource(
+                R.string.progress_goal_missing_weight,
+                ProgressFormatters.weight(missingWeightKg),
+            )
+        }
+
+        row.missingReps == 1 -> {
+            stringResource(R.string.progress_goal_missing_reps_one)
+        }
+
+        else -> {
+            stringResource(R.string.progress_goal_missing_reps_many, row.missingReps)
+        }
+    }
+}
+
+/**
+ * TILE 6 — Ziele, Leerzustand: Ohne gesetztes Ziel eine Zeile statt eines
+ * leeren Abschnitts (UI-Vertrag Ausblenden).
  */
 @Composable
 private fun GoalsHintRow(onOpenExerciseLibrary: () -> Unit) {
@@ -777,3 +1021,6 @@ private fun isoWeekNumber(weekStartEpochMs: Long): Int =
 /** Bei reduzierter Systemanimation: Endwerte sofort, kein Blitz (UI-Vertrag Bewegung). */
 private fun Context.isReducedMotion(): Boolean =
     Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+
+/** Zehnerteilung des Ziel-Fortschritts (UI-Vertrag R5). */
+private const val GOAL_DOTS = 10
