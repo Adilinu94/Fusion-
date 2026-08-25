@@ -564,6 +564,12 @@ Implementierungsreihenfolge im Design-Dokument.
   Fusion: Der Kern nimmt Zahlen, keine Textfeldinhalte. Alle Gates gruen
   (`test spotlessCheck detekt lintDebug assembleDebug`,
   `python tools/doku_links_check.py`).
+- [x] Schritt 5 abgesichert: `WorkoutMathTest` (12) und `PrCalculatorTest` (6)
+  in `domain/workout` neu — die Kern-Grenze war bis dahin ungetestet, obwohl
+  sie Long nach Double und zurueck wandelt. Belegt wird die Verlustfreiheit
+  (einzelnes Gramm, 92,501 kg durch alle drei PR-Arten), die Enum-Zuordnung
+  (Reps behalten `PrValueUnit.REPS`) und dass die Gleichstandsregel nach dem
+  Umzug unveraendert gilt.
 - [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
   — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
   Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.
