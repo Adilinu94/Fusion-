@@ -537,7 +537,7 @@ Implementierungsreihenfolge im Design-Dokument.
   Goal-Flow live in Ring/Chart (aenderungen wirken ohne Neustart).
   `FakeWorkoutGoalRepository` in core:testing. Alle Gates gruen inkl.
   `python tools/doku_links_check.py`.
-- [x] Schritt 3 umgesetzt (Kern-Extraktion): privates Repo
+- [x] Schritt 3 umgesetzt (Kern-Extraktion): Repo
   `github.com/Adilinu94/training-core` (Tag v1.0.0) mit 8 Kern-Dateien und
   6 Testklassen. Fusions `WorkoutMath`/`PrCalculator` bilden die Grundlage
   (E6), Flowtimers `Streak`/`WeekAgg`/`TargetMath` sind ergaenzt und
@@ -570,6 +570,15 @@ Implementierungsreihenfolge im Design-Dokument.
   (einzelnes Gramm, 92,501 kg durch alle drei PR-Arten), die Enum-Zuordnung
   (Reps behalten `PrValueUnit.REPS`) und dass die Gleichstandsregel nach dem
   Umzug unveraendert gilt.
+- [x] E3 nachgezogen: `training-core` ist oeffentlich statt privat. Der erste
+  CI-Lauf mit Submodule schlug mit `repository not found` fehl - `GITHUB_TOKEN`
+  gilt nur fuer das ausloesende Repo, ein privates Submodule braucht zusaetzlich
+  Deploy-Key oder PAT als Secret. Der Grund fuer "privat" war, dass es nichts
+  kostet, nicht Geheimhaltung; das Ziel der Entscheidung ist Reproduzierbarkeit
+  und die gilt oeffentlich genauso. Der Kern enthaelt reine Mathematik, keine
+  Schluessel und keine Nutzerdaten. Damit bleibt die CI ohne Secret gruen und
+  Flowtimer bindet dasselbe Submodule ohne eigene Zugangsverwaltung ein.
+  CONTEXT E3 und ADR-0016 entsprechend nachgetragen.
 - [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
   — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
   Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.
