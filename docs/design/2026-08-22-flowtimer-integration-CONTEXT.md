@@ -356,6 +356,33 @@ Schritt 3 ist rein additiv — Fusions Mathematik liegt bis Schritt 5 weiter in
 entfernen stellt beide Apps auf den Stand vor Schritt 3 zurück (master 1f1f3d0
 bleibt wiederherstellbar). Keine DB- oder Datenänderung in diesem Schritt.
 
+### Entschieden 2026-08-25 (Schritt 4b, DB v9)
+
+Punkte 3 und 4 sind mit der Umsetzung entschieden; damit ist die Liste
+oben vollständig abgearbeitet.
+
+**Punkt 3 — `TargetEntity`-Schlüssel: `exercise_id` ist Primary Key**, nicht
+Autoincrement-ID mit Unique-Index. Beides garantiert „genau ein Ziel je
+Übung", aber ein eigener Schlüssel wäre eine zweite Identität für dieselbe
+Sache — und man müsste bei jedem Schreibvorgang erst nachsehen, ob schon
+ein Ziel existiert. Mit `exercise_id` als Schlüssel ist „Ziel setzen" ein
+`@Upsert` und die Fallunterscheidung entfällt. `ExerciseRestPrefEntity`
+löst dieselbe 1:1-Beziehung bereits so; die Tabelle heißt
+`exercise_targets`.
+
+**Punkt 4 — Schema-Export: `9.json` liegt in `src/test/assets`** und ist
+committet. Room generiert die Datei über `copyRoomSchemas`, der Pfad steht
+in `core/database/build.gradle.kts:42`. Die `CREATE TABLE`-Form der
+Migration muss zeichengenau zum generierten Schema passen, sonst schlägt
+`MigrationTest` fehl — Room vergleicht das migrierte Schema gegen die
+JSON-Datei.
+
+Zusätzlich abgesichert: `MigrationTest` prüft nicht nur die Kette v1→v9,
+sondern auch **Datenerhalt**. Die Datenbank enthält die echte
+Musikbibliothek; eine Migration, die Zeilen verliert, wäre nicht
+wiederherstellbar. Der Test schreibt eine Übung und einen Satz in v8 und
+liest sie nach der Migration zurück.
+
 <a name="code"></a>
 ## Code-Bestand, der wiederverwendet wird
 

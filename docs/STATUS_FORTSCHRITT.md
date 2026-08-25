@@ -605,6 +605,44 @@ Implementierungsreihenfolge im Design-Dokument.
   aeltere `WorkoutDaos.kt`). Es gab keinen Versionskonflikt, auf den DB v9 haette
   warten muessen - die Zurueckhaltung beim Wochenziel (DataStore statt Room) war
   eine Vorsichtsmassnahme gegen eine Gefahr, die es nicht gab.
+- [x] Schritt 4b umgesetzt (DB v9, Ziele): Damit ist die Flowtimer-Integration
+  bis Schritt 7 vollstaendig.
+  - **Room v8 -> v9, additiv:** Tabelle `exercise_targets` mit `exercise_id`
+    als Primary Key (CONTEXT Punkt 3 - `@Upsert` statt Insert/Update-Fall-
+    unterscheidung, Muster `ExerciseRestPrefEntity`). Gewicht in ganzen
+    Millikilogramm. `9.json` nach `src/test/assets` exportiert und committet
+    (Punkt 4). `MigrationTest` prueft die Kette v1->v9 **und Datenerhalt**:
+    Die DB traegt die echte Musikbibliothek, eine Migration mit Zeilenverlust
+    waere nicht wiederherstellbar - der Test schreibt Uebung und Satz in v8
+    und liest sie nach der Migration zurueck.
+  - **Domain:** `TargetRepository` mit `ExerciseTarget`/`TargetStatus`,
+    `TargetEvaluator` als Kern-Grenze auf `com.training.core.targetReached`
+    (E4: EIN Satz muss Gewicht UND Reps schaffen; massgeblich ist der beste
+    Satz, damit ein leichter Abschlusssatz den Status nicht zuruecknimmt).
+    Fortschritt bewusst nur ueber das Gewicht - zwei Dimensionen in einem
+    Balken ergeben eine Zahl, die nichts aussagt.
+  - **Data:** `TargetRepositoryImpl` validiert an der Repository-Grenze
+    (Muster `FlatSetRepositoryImpl`); ein Ziel von 0 kg oder 0 Reps wird
+    abgewiesen, weil es sofort erfuellt waere. `FakeTargetRepository` in
+    core:testing ist veraenderbar, nicht statisch - ein neu gesetztes Ziel
+    muss im Flow erscheinen.
+  - **Dashboard (R5):** Ziele-Tile ersetzt die Platzhalterzeile.
+    `ProgressGoalsUiState` sortiert nach Goal-Gradient (Fast-Geschaffftes
+    zuerst, Erreichtes ans Ende, Sortierschluessel ist die groessere offene
+    Dimension), gruppiert `Laenger nicht trainiert` (>8 Wochen) und liefert
+    die Distanz-Werte fuer die R2-Sprache (`10 kg fehlen`, nicht
+    `90 kg (Ziel 100 kg)`). Fortschritt sind zehn Violett-Punkte statt eines
+    Balkens; knapp verfehlt zeigt nie zehn Punkte. Uebungen ohne Ziel
+    erscheinen nicht - sonst wird die Liste mit jeder Uebung laenger und
+    sagt weniger.
+  - **Ziel-Pflege (Entscheidung 13/R5b):** Dialog in der ExerciseLibrary,
+    erreichbar per Tap auf die Uebungskarte - ein Tap statt vier. Gesetzte
+    Ziele stehen als Violett-Zeile auf der Karte, ohne dass man den Dialog
+    oeffnen muss. Speichern erst bei zwei tragfaehigen Feldern.
+    `roundKgInputToMilliKg` parst hier, nicht im Kern: Der Kern nimmt Zahlen,
+    keine Textfeldinhalte.
+  - 40 neue Tests (Migration 2, TargetEvaluator 10, ProgressGoalsUiState 15,
+    PrCalculator/WorkoutMath-Grenze 18 aus Schritt 5); alle Gates gruen.
 - [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
   — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
   Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.
