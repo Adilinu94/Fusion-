@@ -22,6 +22,9 @@ kotlin {
 dependencies {
     implementation(project(":core:common"))
     implementation(project(":core:model"))
+    // Trainingsmathematik lebt im gemeinsamen Kern (CONTEXT E6, Schritt 5).
+    // Reines JVM-Modul, verletzt Regel 3.2/2 nicht.
+    implementation(project(":training-core"))
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.kotlinx.serialization.json)
 
