@@ -579,6 +579,32 @@ Implementierungsreihenfolge im Design-Dokument.
   Schluessel und keine Nutzerdaten. Damit bleibt die CI ohne Secret gruen und
   Flowtimer bindet dasselbe Submodule ohne eigene Zugangsverwaltung ein.
   CONTEXT E3 und ADR-0016 entsprechend nachgetragen.
+- [x] Reproduzierbarkeit hergestellt (2026-08-25), zwei Luecken geschlossen:
+  1. **Flowtimer hatte kein Remote** - `git config --get-regexp ^remote\.` lieferte
+     nichts. Commit 6ff7783 (Flowtimers Submodule-Umstellung, dessen Haelfte von
+     Schritt 3) existierte nur auf einer Platte; genau die Nicht-Reproduzierbarkeit,
+     die E3 fuer Fusion verhindern sollte. Repo `github.com/Adilinu94/Flowtimer`
+     angelegt, master und feature/training-core gepusht. **Privat**, nicht
+     oeffentlich wie training-core: Flowtimer hat 810 getrackte Dateien unter
+     `.agents/` mit persoenlichen Skills (u.a. `adrian-mail-stil` mit Klarnamen,
+     Mailadresse und Kundennamen). Ein oeffentliches Repo haette die
+     veroeffentlicht.
+  2. **Der WIP-Checkpoint 729ac46 war ein loser Commit** - nur ueber das Reflog
+     erreichbar, von keinem Branch gehalten, also ein `git gc` vom Verschwinden
+     entfernt. Als Branch `wip/fremde-sessions-2026-08-23` gesichert und gepusht.
+     Inhaltlich ist er in master aufgegangen (PR #6); erhalten bleiben nur die
+     alte `HistoryScreen`-Fassung in `:app`, Abschnitt-T-Waveform-Arbeit und
+     Werkzeug-Artefakte. Der Branch ist die Verifikationsgrundlage fuer den
+     Urheber, nicht Merge-Kandidat.
+- [x] design.md nachgezogen: Kopf (Repo-URLs statt lokaler Pfade),
+  Entscheidung 7, Architektur 1 und 3, Reihenfolge 3+4 - alle sagten "privat"
+  und "Deploy-Key". Verweise jetzt auf den E3-Nachtrag.
+- [x] Blocker "Urheber-WIP-Merge (v8)" geprueft und aufgeloest: 729ac46 steht auf
+  DB v8, master steht auf DB v8, und der Checkpoint enthaelt **keine**
+  Schema-Aenderung (Diff gegen master beruehrt in `core/database` nur eine
+  aeltere `WorkoutDaos.kt`). Es gab keinen Versionskonflikt, auf den DB v9 haette
+  warten muessen - die Zurueckhaltung beim Wochenziel (DataStore statt Room) war
+  eine Vorsichtsmassnahme gegen eine Gefahr, die es nicht gab.
 - [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
   — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
   Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.

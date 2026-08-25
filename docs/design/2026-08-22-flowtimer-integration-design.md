@@ -2,7 +2,7 @@
 
 **Datum:** 2026-08-22 (Fakten gegen den Code korrigiert 2026-08-22, siehe [Revisionen](#revisionen))
 **Status:** Genehmigt (Brainstorming + Grilling-Session, beide 2026-08-22)
-**Beteiligte Repos:** Fusion (dieses Repo), Flowtimer (`C:\Users\adini\Desktop\Teanning\Flowtimer`), neu: `training-core` (privates GitHub-Repo, lokaler Arbeitsstand `C:\Users\adini\Desktop\flowrepProjekt\training-core`)
+**Beteiligte Repos:** Fusion (dieses Repo, `github.com/Adilinu94/Fusion-`), Flowtimer (`github.com/Adilinu94/Flowtimer`, lokal `C:\Users\adini\Desktop\Teanning\Flowtimer`), `training-core` (`github.com/Adilinu94/training-core`, öffentlich — siehe [E3-Nachtrag](2026-08-22-flowtimer-integration-CONTEXT.md#e3))
 
 **Verbundene Dokumente:**
 
@@ -42,7 +42,7 @@ Keine Funktion irgendeines Repos geht verloren:
 | 4 | Flowtimer-Zukunft | Bleibt eigenständig gepflegt |
 | 5 | Ansatz | Gemeinsamer Domain-Kern (`training-core`) statt Port oder Modul-Einbettung |
 | 6 | Reihenfolge | Flowtimer v2 wird **zuerst fertiggestellt** (Phase 15 + 16); Integration startet danach |
-| 7 | Hosting | `training-core` in einem **privaten GitHub-Repo**, Einbindung per Submodule in beiden Apps (siehe [Revisionen](#revisionen)) |
+| 7 | Hosting | `training-core` in einem **eigenen GitHub-Repo**, Einbindung per Submodule in beiden Apps (siehe [Revisionen](#revisionen)). Seit 2026-08-25 **öffentlich** statt privat — Begründung im [E3-Nachtrag](2026-08-22-flowtimer-integration-CONTEXT.md#e3) |
 | 8 | CI | GitHub-CI bleibt **durchgehend aktiv**; zusätzlich lokale Gates (test/spotless/detekt/lint/assemble) vor jedem Commit |
 | 9 | PR-Mathematik | **Fusions Mathematik wandert in den Kern**, Flowtimers `bestFor` wird darauf abgebildet (Richtung korrigiert, siehe [Revisionen](#revisionen)) |
 | 10 | Progression | **Kein Vorschlags-System** (kein +2,5-kg-Chip, keine Regel im Kern); Ziele mit Statusanzeige bleiben |
@@ -82,7 +82,7 @@ Begründungen und Codestellen stehen in
 
 ### 1. Gemeinsamer Kern: `training-core`
 
-- Neues **privates GitHub-Repo** mit einem **pure Kotlin JVM-Modul** (keine Android-Abhängigkeiten); lokaler Arbeitsstand unter `C:\Users\adini\Desktop\flowrepProjekt\training-core`.
+- Neues **eigenes GitHub-Repo** mit einem **pure Kotlin JVM-Modul** (keine Android-Abhängigkeiten): `github.com/Adilinu94/training-core`, seit 2026-08-25 öffentlich ([E3-Nachtrag](2026-08-22-flowtimer-integration-CONTEXT.md#e3)).
 - **Inhalt:** Fusions `WorkoutMath` und `PrCalculator` als Grundlage (3 PR-Arten, Hantel-Multiplikator, Gleichstandsregel), dazu aus Flowtimers `domain\`: `Streak`, `WeekAgg`, `TargetMath` — inklusive aller vorhandenen Unit-Tests beider Seiten. Flowtimers `bestFor` wird als Sonderfall auf Fusions `PrCalculator` abgebildet.
 - **Verhaltensänderung im Kern:** `streakCount` (`Streak.kt`) bekommt einen Parameter `maxGapDays: Int = 0`. Default 0 hält Flowtimers Verhalten unverändert; Fusion übergibt 2 (Entscheidung 20). Neue Tests für Lücke 1, 2 und 3 sind Pflicht, die 4 bestehenden `StreakTest`-Fälle bleiben grün. `TargetMath.targetPct` wird auf zwei Dimensionen erweitert (Gewicht und Reps), weil Entscheidung 14 beide Bedingungen prüft.
 - **Einbindung:** Git-Submodule aus GitHub in **beiden** Apps (gepinnter Stand). Versionsdisziplin: Version des Kerns bumpen + Submodule-Pointer in beiden Apps aktualisieren.
@@ -97,7 +97,7 @@ Begründungen und Codestellen stehen in
 
 ### 3. CI und Qualitätsgates
 
-- GitHub Actions CI (`.github/workflows/ci.yml`) bleibt **durchgehend aktiv** — das private `training-core`-Repo ist per Submodule klonbar (`actions/checkout` mit `submodules: true` und Deploy-Key oder PAT).
+- GitHub Actions CI (`.github/workflows/ci.yml`) bleibt **durchgehend aktiv** — `actions/checkout` braucht `submodules: recursive`. Ein Deploy-Key oder PAT ist **nicht** nötig, weil `training-core` öffentlich ist ([E3-Nachtrag](2026-08-22-flowtimer-integration-CONTEXT.md#e3)).
 - Ergänzend vor jedem Commit lokal: `./gradlew test spotlessCheck detekt lintDebug assembleDebug` und `python3 tools/doku_links_check.py`.
 - Toolchain-Spreizung beachten: Fusion baut mit AGP 9.3.1 / Kotlin 2.4.10, Flowtimer mit 9.3.0 / 2.4.0 (beide Gradle 9.5.0). Der Kern fixiert `jvmToolchain(17)` und eine `apiVersion`, die beide Seiten akzeptieren.
 
@@ -161,8 +161,8 @@ Kurzfassung:
 0. **UI-Prototyp** (`prototypes/progress-dashboard.html`) — läuft parallel zu Vorbedingung 0, blockiert nichts und kostet keinen Gradle-Build. Klärt Hierarchie, Faltlinie und Grid-Verhalten bei doppelter Schrift, bevor `:feature:progress` existiert.
 1. **Vorbedingung 0:** Flowtimer v2 fertigstellen (Phase 15 Builder + Phase 16 Polish) — in Flowtimer, auf alter Struktur.
 2. **Vorbedingung 1:** Beim Integrations-Start beide Working Trees committen — je ein beschrifteter Checkpoint-Commit (Fusion ~162, Flowtimer ~1.100 offene Änderungen).
-3. Privates `training-core`-Repo auf GitHub anlegen; Fusions `WorkoutMath`/`PrCalculator` hineinziehen, Flowtimers `Streak`/`WeekAgg`/`TargetMath` ergänzen, `bestFor` darauf abbilden. Flowtimer auf Submodule umstellen, alle Flowtimer-Tests grün.
-4. Fusion: Submodule einbinden (CI-Checkout mit Deploy-Key), DB v9 (`TargetEntity`) + `TargetRepository`/`ProgressRepository`.
+3. Privates `training-core`-Repo auf GitHub anlegen; Fusions `WorkoutMath`/`PrCalculator` hineinziehen, Flowtimers `Streak`/`WeekAgg`/`TargetMath` ergänzen, `bestFor` darauf abbilden. Flowtimer auf Submodule umstellen, alle Flowtimer-Tests grün. *(Umgesetzt 2026-08-24; Repo seit 2026-08-25 öffentlich statt privat.)*
+4. Fusion: Submodule einbinden (Checkout mit `submodules: recursive`, kein Deploy-Key nötig), DB v9 (`TargetEntity`) + `TargetRepository`/`ProgressRepository`.
 5. Fusion: Mathematik-Umzug abschließen (`domain/workout` konsumiert den Kern).
 6. Fusion: `core/designsystem` erweitern (`141414`/`756FFA`/`E7E6FB`, drei neue Snapshot-Test-Fälle), danach das Progress-Dashboard (`:feature:progress`, Bento-Grid) nach [`2026-08-22-flowtimer-integration-UI.md`](2026-08-22-flowtimer-integration-UI.md).
 7. Fusion: Ziele-Pflege in der ExerciseLibrary + Übungs-CRUD (Archivieren/Wiederherstellen).
