@@ -43,6 +43,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -62,6 +63,7 @@ import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorErrorReason
 import com.dropsync.domain.sensor.SignalQuality
 import com.dropsync.domain.timer.TimerStatus
 import com.dropsync.domain.workout.ExerciseInfo
@@ -166,18 +168,18 @@ fun TrainScreen(
         } else {
             FlowRepSurface(modifier = Modifier.padding(horizontal = 16.dp)) {
                 Text(
-                    text = "SATZ EINGEBEN",
+                    text = stringResource(R.string.train_console_label),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    text = selectedExercise?.displayName ?: "Übung wählen",
+                    text = selectedExercise?.displayName ?: stringResource(R.string.train_pick_exercise_placeholder),
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                 )
                 Text(
-                    text = "Gewicht und Wiederholungen bestätigen",
+                    text = stringResource(R.string.train_console_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
@@ -204,7 +206,7 @@ fun TrainScreen(
 
                 // The console exposes a single primary completion action.
                 FlowRepPrimaryButton(
-                    text = "SATZ FERTIG",
+                    text = stringResource(R.string.train_set_done),
                     onClick = { viewModel.logSet() },
                     enabled = selectedExercise != null && viewModel.canLog,
                 )
@@ -215,7 +217,7 @@ fun TrainScreen(
                     modifier = Modifier.padding(top = 8.dp),
                 ) {
                     Text(
-                        text = "Drop-Auto",
+                        text = stringResource(R.string.train_drop_auto),
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
@@ -229,7 +231,7 @@ fun TrainScreen(
                 maxVolumeKg?.let { volume ->
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "PR-Volumen: ${"%.1f".format(volume)} kg",
+                        text = stringResource(R.string.train_pr_volume, volume),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
                     )
@@ -279,7 +281,7 @@ fun TrainScreen(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 contentPadding = PaddingValues(20.dp),
             ) {
-                FlowRepSectionHeader(title = "Letzte Sätze")
+                FlowRepSectionHeader(title = stringResource(R.string.train_recent_sets))
                 Spacer(Modifier.height(12.dp))
                 recentSets.take(5).forEachIndexed { index, set ->
                     Row(
@@ -290,18 +292,26 @@ fun TrainScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            text = "${(index + 1).toString().padStart(2, '0')}",
+                            text =
+                                stringResource(
+                                    R.string.train_set_index,
+                                    (index + 1).toString().padStart(2, '0'),
+                                ),
                             style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.width(40.dp),
                         )
                         Text(
-                            text = "${set.reps} REPS",
+                            text = stringResource(R.string.train_set_reps, set.reps),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            text = "${set.weightMilliKg / 1_000_000.0} kg",
+                            text =
+                                stringResource(
+                                    R.string.train_set_weight,
+                                    set.weightMilliKg / 1_000_000.0,
+                                ),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.primary,
                         )
@@ -351,7 +361,7 @@ private fun ExerciseChipRow(
         item(key = "create_new") {
             AssistChip(
                 onClick = onCreateNew,
-                label = { Text("+ Neue Übung") },
+                label = { Text(stringResource(R.string.train_new_exercise_chip)) },
                 modifier = Modifier.heightIn(min = 48.dp),
             )
         }
@@ -375,16 +385,22 @@ private fun WeightInput(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
 ) {
+    val decrementDescription = stringResource(R.string.a11y_weight_decrement)
+    val incrementDescription = stringResource(R.string.a11y_weight_increment)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "GEWICHT · KG",
+            text = stringResource(R.string.train_weight_label),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = weightKg,
             onValueChange = onWeightChange,
-            placeholder = { lastWeightKg?.let { Text("Zuletzt $it kg", maxLines = 1) } },
+            placeholder = {
+                lastWeightKg?.let {
+                    Text(stringResource(R.string.train_weight_last, it), maxLines = 1)
+                }
+            },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
             textStyle = MaterialTheme.typography.displaySmall.copy(textAlign = TextAlign.Center),
@@ -398,14 +414,24 @@ private fun WeightInput(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             BrandButtonGhost(
-                text = "− 2,5",
+                text = stringResource(R.string.train_weight_decrement),
                 onClick = onDecrement,
-                modifier = Modifier.weight(1f),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .semantics {
+                            contentDescription = decrementDescription
+                        },
             )
             BrandButtonGhost(
-                text = "+ 2,5",
+                text = stringResource(R.string.train_weight_increment),
                 onClick = onIncrement,
-                modifier = Modifier.weight(1f),
+                modifier =
+                    Modifier
+                        .weight(1f)
+                        .semantics {
+                            contentDescription = incrementDescription
+                        },
             )
         }
     }
@@ -416,9 +442,11 @@ private fun RepInput(
     reps: String,
     onRepsChange: (String) -> Unit,
 ) {
+    val decrementDescription = stringResource(R.string.a11y_reps_decrement)
+    val incrementDescription = stringResource(R.string.a11y_reps_increment)
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(
-            text = "WIEDERHOLUNGEN",
+            text = stringResource(R.string.train_reps_label),
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -433,7 +461,10 @@ private fun RepInput(
                     val next = ((reps.toIntOrNull() ?: 0) - 1).coerceAtLeast(0)
                     onRepsChange(next.toString())
                 },
-                modifier = Modifier.size(64.dp),
+                modifier =
+                    Modifier
+                        .size(64.dp)
+                        .semantics { contentDescription = decrementDescription },
             )
             OutlinedTextField(
                 value = reps,
@@ -452,11 +483,14 @@ private fun RepInput(
                     val next = (reps.toIntOrNull() ?: 0) + 1
                     onRepsChange(next.toString())
                 },
-                modifier = Modifier.size(64.dp),
+                modifier =
+                    Modifier
+                        .size(64.dp)
+                        .semantics { contentDescription = incrementDescription },
             )
         }
         Text(
-            text = "Wert antippen, um ihn direkt einzugeben",
+            text = stringResource(R.string.train_reps_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -479,7 +513,7 @@ private fun RestConsole(
     FlowRepSurface(modifier = modifier.fillMaxWidth()) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(
-                "PAUSE",
+                stringResource(R.string.train_rest_label),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -497,21 +531,21 @@ private fun RestConsole(
                 if (maxWidth < 480.dp) {
                     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         BrandButtonGhost(
-                            text = "+15 SEKUNDEN",
+                            text = stringResource(R.string.train_rest_add_long),
                             onClick = onAddTime,
                             modifier = Modifier.fillMaxWidth(),
                         )
-                        FlowRepPrimaryButton(text = "PAUSE BEENDEN", onClick = onSkip)
+                        FlowRepPrimaryButton(text = stringResource(R.string.train_rest_end), onClick = onSkip)
                     }
                 } else {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         BrandButtonGhost(
-                            text = "+15 S",
+                            text = stringResource(R.string.train_rest_add_short),
                             onClick = onAddTime,
                             modifier = Modifier.weight(1f),
                         )
                         FlowRepPrimaryButton(
-                            text = "PAUSE BEENDEN",
+                            text = stringResource(R.string.train_rest_end),
                             onClick = onSkip,
                             modifier = Modifier.weight(1.5f),
                         )
@@ -520,7 +554,7 @@ private fun RestConsole(
             }
             Spacer(Modifier.height(20.dp))
             BrandButtonGhost(
-                text = "ÜBUNG BEENDEN",
+                text = stringResource(R.string.train_exercise_end),
                 onClick = onFinish,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -544,12 +578,12 @@ private fun CreateExerciseDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Neue Übung") },
+        title = { Text(stringResource(R.string.library_new_exercise)) },
         text = {
             OutlinedTextField(
                 value = name,
                 onValueChange = { name = it },
-                label = { Text("Name") },
+                label = { Text(stringResource(R.string.train_exercise_name)) },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -559,12 +593,12 @@ private fun CreateExerciseDialog(
                 onClick = { onCreate(name) },
                 enabled = name.isNotBlank(),
             ) {
-                Text("Anlegen")
+                Text(stringResource(R.string.library_create))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Abbrechen")
+                Text(stringResource(R.string.workout_cancel))
             }
         },
     )
@@ -578,7 +612,7 @@ private fun CreateExerciseDialog(
 private fun SensorStatusCard(
     connection: SensorConnectionState,
     deviceId: String?,
-    sensorError: String?,
+    sensorError: SensorErrorReason?,
     selectedExerciseId: Long?,
     setPhase: ActiveSetPhase,
     countdownSeconds: Int,
@@ -603,16 +637,16 @@ private fun SensorStatusCard(
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             val statusText =
                 when (connection) {
-                    SensorConnectionState.DISCONNECTED -> "Kein Chip verbunden"
-                    SensorConnectionState.CONNECTING -> "Verbinde..."
-                    SensorConnectionState.CONNECTED -> "Chip verbunden"
-                    SensorConnectionState.STREAMING -> "Chip streamt"
+                    SensorConnectionState.DISCONNECTED -> stringResource(R.string.sensor_status_disconnected)
+                    SensorConnectionState.CONNECTING -> stringResource(R.string.sensor_status_connecting)
+                    SensorConnectionState.CONNECTED -> stringResource(R.string.sensor_status_connected)
+                    SensorConnectionState.STREAMING -> stringResource(R.string.sensor_status_streaming)
                 }
             Text(text = statusText, style = MaterialTheme.typography.titleSmall)
 
             sensorError?.let {
                 Text(
-                    text = it,
+                    text = stringResource(it.messageRes()),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.error,
                 )
@@ -623,7 +657,7 @@ private fun SensorStatusCard(
                     SensorConnectionState.DISCONNECTED -> {
                         AssistChip(
                             onClick = onConnect,
-                            label = { Text("Chip verbinden") },
+                            label = { Text(stringResource(R.string.sensor_connect)) },
                             modifier = Modifier.heightIn(min = 48.dp),
                         )
                     }
@@ -635,7 +669,7 @@ private fun SensorStatusCard(
                     -> {
                         AssistChip(
                             onClick = onDisconnect,
-                            label = { Text("Trennen") },
+                            label = { Text(stringResource(R.string.sensor_disconnect)) },
                             modifier = Modifier.heightIn(min = 48.dp),
                         )
                         val exId = selectedExerciseId
@@ -643,7 +677,7 @@ private fun SensorStatusCard(
                         if (exId != null && devId != null) {
                             AssistChip(
                                 onClick = { onOpenCalibration(exId, devId) },
-                                label = { Text("Kalibrieren") },
+                                label = { Text(stringResource(R.string.sensor_calibrate)) },
                                 modifier = Modifier.heightIn(min = 48.dp),
                             )
                         }
@@ -708,14 +742,14 @@ private fun HeartRateBadge(
         com.dropsync.domain.health.HeartRateAvailability.PERMISSION_REQUIRED -> {
             AssistChip(
                 onClick = onRequestPermission,
-                label = { Text("Puls erlauben") },
+                label = { Text(stringResource(R.string.heart_rate_allow)) },
                 modifier = Modifier.heightIn(min = 48.dp),
             )
         }
 
         com.dropsync.domain.health.HeartRateAvailability.NO_RECENT_DATA -> {
             Text(
-                text = "Kein aktueller Puls",
+                text = stringResource(R.string.heart_rate_none),
                 style = MaterialTheme.typography.bodySmall,
             )
         }
@@ -723,7 +757,11 @@ private fun HeartRateBadge(
         com.dropsync.domain.health.HeartRateAvailability.READY -> {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = "♥ ${bpm ?: "--"} bpm",
+                    text =
+                        stringResource(
+                            R.string.heart_rate_value,
+                            bpm?.toString() ?: stringResource(R.string.heart_rate_unknown),
+                        ),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                 )
@@ -749,6 +787,7 @@ private fun LiveCountPanel(
     onStartSet: () -> Unit,
     onStopSet: () -> Unit,
 ) {
+    val repCountDescription = stringResource(R.string.a11y_reps_counted, liveCountedReps)
     when (setPhase) {
         ActiveSetPhase.IDLE -> {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -757,11 +796,15 @@ private fun LiveCountPanel(
                     enabled = hasCalibration,
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(if (hasCalibration) "Satz starten (zählen)" else "Zuerst kalibrieren")
+                    Text(
+                        stringResource(
+                            if (hasCalibration) R.string.live_count_start else R.string.live_count_needs_calibration,
+                        ),
+                    )
                 }
                 if (signalQuality == SignalQuality.DEGRADED) {
                     Text(
-                        text = "Signal schwach - Zahl bitte prüfen",
+                        text = stringResource(R.string.live_count_weak_signal),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                     )
@@ -771,7 +814,7 @@ private fun LiveCountPanel(
 
         ActiveSetPhase.COUNTDOWN -> {
             Text(
-                text = "Start in $countdownSeconds …",
+                text = stringResource(R.string.live_count_countdown, countdownSeconds),
                 style = MaterialTheme.typography.headlineMedium,
                 color = MaterialTheme.colorScheme.primary,
             )
@@ -794,16 +837,16 @@ private fun LiveCountPanel(
                                 .weight(1f)
                                 .semantics {
                                     liveRegion = LiveRegionMode.Polite
-                                    contentDescription = "$liveCountedReps Wiederholungen"
+                                    contentDescription = repCountDescription
                                 },
                     )
                     Button(onClick = onStopSet) {
-                        Text("Stopp")
+                        Text(stringResource(R.string.live_count_stop))
                     }
                 }
                 if (signalQuality == SignalQuality.DEGRADED) {
                     Text(
-                        text = "Signal schwach - Zahl bitte prüfen",
+                        text = stringResource(R.string.live_count_weak_signal),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error,
                         modifier =
@@ -822,15 +865,22 @@ private fun LiveCountPanel(
  * acceleration magnitude stream plus a brief flash overlay when the
  * TrainViewModel reports a rep peak. Purely visual — never counts live
  * (shadow-pipeline rule, design doc section 11b).
+ *
+ * P1-Fix: [samples] ist ein FloatArray-Snapshot (keine geboxte Liste), der
+ * Path wird ueber `drawWithCache` nur bei neuen Samples oder neuer Groesse
+ * aufgebaut statt bei jedem Frame, und die vertikale Skala ist FEST. Die
+ * frueher automatische Skalierung liess Ruhephasen genauso gross aussehen
+ * wie echte Wiederholungen — visuell irrefuehrend.
  */
 @Composable
 private fun SensorWaveform(
-    samples: List<Float>,
+    samples: FloatArray,
     lastPeakMs: Long,
     modifier: Modifier = Modifier,
 ) {
     val lineColor = MaterialTheme.colorScheme.primary
     val flashColor = MaterialTheme.colorScheme.tertiary
+    val waveformDescription = stringResource(R.string.a11y_sensor_waveform)
 
     // Peak flash: visible for ~400 ms after the last detected peak.
     var flashVisible by remember { mutableStateOf(false) }
@@ -843,7 +893,10 @@ private fun SensorWaveform(
     }
 
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier =
+            modifier
+                .fillMaxWidth()
+                .semantics { contentDescription = waveformDescription },
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         androidx.compose.foundation.layout.Box(
@@ -853,34 +906,40 @@ private fun SensorWaveform(
                     .height(72.dp)
                     .padding(8.dp),
         ) {
-            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                if (samples.size < 2) return@Canvas
-                val minV = samples.min()
-                val maxV = samples.max()
-                val range = (maxV - minV).coerceAtLeast(0.001f)
-                val stepX = size.width / (samples.size - 1)
-                val path =
-                    androidx.compose.ui.graphics
-                        .Path()
-                samples.forEachIndexed { i, v ->
-                    val x = i * stepX
-                    val y = size.height - ((v - minV) / range) * size.height
-                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-                drawPath(
-                    path,
-                    color = lineColor,
-                    style =
-                        androidx.compose.ui.graphics.drawscope.Stroke(
-                            width = 2.dp.toPx(),
-                        ),
-                )
-            }
-            if (flashVisible) {
-                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
-                    drawRect(color = flashColor.copy(alpha = 0.25f))
-                }
-            }
+            androidx.compose.foundation.layout.Box(
+                modifier =
+                    Modifier
+                        .fillMaxSize()
+                        .drawWithCache {
+                            val path =
+                                androidx.compose.ui.graphics
+                                    .Path()
+                            if (samples.size >= 2) {
+                                val stepX = size.width / (samples.size - 1)
+                                samples.forEachIndexed { i, v ->
+                                    // Feste Skala: 0 g unten, WAVEFORM_MAX_G oben.
+                                    val norm = (v / WAVEFORM_MAX_G).coerceIn(0f, 1f)
+                                    val x = i * stepX
+                                    val y = size.height - norm * size.height
+                                    if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+                                }
+                            }
+                            val stroke =
+                                androidx.compose.ui.graphics.drawscope
+                                    .Stroke(width = 2.dp.toPx())
+                            onDrawBehind {
+                                if (samples.size >= 2) drawPath(path, color = lineColor, style = stroke)
+                                if (flashVisible) drawRect(color = flashColor.copy(alpha = 0.25f))
+                            }
+                        },
+            )
         }
     }
 }
+
+/**
+ * Obere Grenze der festen Waveform-Skala in g. 1 g ist Ruhe (Erdanziehung),
+ * kraeftige Wiederholungen erreichen etwa 2 g; 3 g laesst Spitzen Luft, ohne
+ * Ruhephasen optisch aufzublasen.
+ */
+private const val WAVEFORM_MAX_G = 3f

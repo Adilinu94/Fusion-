@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Rest timer foreground service (Fusion design doc Phase 3 step 3). -->
-    <string name="timer_channel_name">Pausen-Timer</string>
-    <string name="timer_channel_description">Läuft während der Satzpause im Hintergrund.</string>
-    <string name="timer_notification_title">Pausen-Timer</string>
-    <string name="timer_notification_completed">Pause vorbei — weiter geht\'s</string>
-    <string name="timer_action_skip">Überspringen</string>
+    <!-- Rest timer foreground service (Fusion design doc Phase 3 step 3).
+         values/ is the English default; German lives in values-de/. -->
+    <string name="timer_channel_name">Rest timer</string>
+    <string name="timer_channel_description">Runs in the background during your set break.</string>
+    <string name="timer_notification_title">Rest timer</string>
+    <string name="timer_notification_completed">Break is over - let\'s go</string>
+    <string name="timer_action_skip">Skip</string>
     <string name="timer_action_plus15">+15 s</string>
-    <string name="timer_action_finish">Übung abschließen</string>
+    <string name="timer_action_finish">Finish exercise</string>
 </resources>

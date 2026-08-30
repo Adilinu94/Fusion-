@@ -91,4 +91,110 @@
     <string name="suggestion_increase_volume">Volumen erhoehen</string>
     <string name="suggestion_change_variation">Variation wechseln</string>
     <string name="progress_title">Fortschritt</string>
+
+    <!-- Satz-Konsole (#26: vorher hartkodiert in TrainScreen.kt) -->
+    <string name="train_console_label">SATZ EINGEBEN</string>
+    <string name="train_pick_exercise_placeholder">Übung wählen</string>
+    <string name="train_console_hint">Gewicht und Wiederholungen bestätigen</string>
+    <string name="train_set_done">SATZ FERTIG</string>
+    <string name="train_drop_auto">Drop-Auto</string>
+    <string name="train_pr_volume">PR-Volumen: %1$.1f kg</string>
+    <string name="train_recent_sets">Letzte Sätze</string>
+    <string name="train_set_reps">%1$d WDH.</string>
+    <string name="train_set_weight">%1$.1f kg</string>
+    <string name="train_set_index">%1$s</string>
+    <string name="train_new_exercise_chip">+ Neue Übung</string>
+    <string name="train_weight_label">GEWICHT · KG</string>
+    <string name="train_weight_last">Zuletzt %1$.1f kg</string>
+    <string name="train_weight_decrement">− 2,5</string>
+    <string name="train_weight_increment">+ 2,5</string>
+    <string name="train_reps_label">WIEDERHOLUNGEN</string>
+    <string name="train_reps_hint">Wert antippen, um ihn direkt einzugeben</string>
+    <string name="train_exercise_name">Name</string>
+
+    <!-- Pausen-Konsole -->
+    <string name="train_rest_label">PAUSE</string>
+    <string name="train_rest_add_long">+15 SEKUNDEN</string>
+    <string name="train_rest_add_short">+15 S</string>
+    <string name="train_rest_end">PAUSE BEENDEN</string>
+    <string name="train_exercise_end">ÜBUNG BEENDEN</string>
+
+    <!-- Sensor-Statuskarte -->
+    <string name="sensor_status_disconnected">Kein Chip verbunden</string>
+    <string name="sensor_status_connecting">Verbinde…</string>
+    <string name="sensor_status_connected">Chip verbunden</string>
+    <string name="sensor_status_streaming">Chip streamt</string>
+    <string name="sensor_connect">Chip verbinden</string>
+    <string name="sensor_disconnect">Trennen</string>
+    <string name="sensor_calibrate">Kalibrieren</string>
+
+    <!-- Herzfrequenz-Badge -->
+    <string name="heart_rate_allow">Puls erlauben</string>
+    <string name="heart_rate_none">Kein aktueller Puls</string>
+    <string name="heart_rate_value">♥ %1$s bpm</string>
+    <string name="heart_rate_unknown">--</string>
+
+    <!-- Live-Zählung -->
+    <string name="live_count_start">Satz starten (zählen)</string>
+    <string name="live_count_needs_calibration">Zuerst kalibrieren</string>
+    <string name="live_count_weak_signal">Signal schwach — Zahl bitte prüfen</string>
+    <string name="live_count_countdown">Start in %1$d …</string>
+    <string name="live_count_stop">Stopp</string>
+
+    <!-- Kalibrierungs-Wizard (#26) -->
+    <string name="calibration_title">Kalibrierung</string>
+    <string name="calibration_no_chip">Kein Chip verbunden. Bitte zuerst den FlowRep-Chip verbinden.</string>
+    <string name="calibration_rest_progress">Ruhe: %1$.1f s — %2$s</string>
+    <string name="calibration_rest_ready">bereit</string>
+    <string name="calibration_rest_hold">Arm still halten…</string>
+    <string name="calibration_quality">Qualität: %1$s (%2$.0f %%)</string>
+    <string name="calibration_quality_good">gut</string>
+    <string name="calibration_quality_medium">mittel — ggf. wiederholen</string>
+    <string name="calibration_quality_weak">schwach — bitte wiederholen</string>
+    <string name="calibration_samples">%1$d Samples</string>
+    <string name="calibration_save_profile">Profil speichern</string>
+    <string name="calibration_next">Weiter</string>
+    <string name="calibration_stage_rest">1/4 Ruhe</string>
+    <string name="calibration_stage_single_rep">2/4 Eine Wiederholung</string>
+    <string name="calibration_stage_known_set">3/4 Fünf Wiederholungen</string>
+    <string name="calibration_stage_slow_set">4/4 Drei langsame Wiederholungen</string>
+    <string name="calibration_stage_review">Fertig</string>
+    <string name="calibration_stage_done">Gespeichert</string>
+    <string name="calibration_stage_failed">Fehlgeschlagen</string>
+    <string name="calibration_instruction_rest">Arm in Startposition still halten (mind. 2 s), dann Weiter.</string>
+    <string name="calibration_instruction_single_rep">Genau 1 deutliche Wiederholung ausführen, dann Weiter.</string>
+    <string name="calibration_instruction_known_set">5 Wiederholungen in normalem Tempo (20–30 s), dann Weiter.</string>
+    <string name="calibration_instruction_slow_set">3 bewusst langsame Wiederholungen, dann Weiter.</string>
+    <string name="calibration_instruction_review">Kalibrierung berechnet. Profil speichern?</string>
+    <string name="calibration_instruction_done">Profil gespeichert.</string>
+    <string name="calibration_instruction_failed">Bitte erneut versuchen.</string>
+
+    <!-- Kalibrierungs-Fehler (#27: vorher deutsche Strings aus :domain:sensor) -->
+    <string name="calibration_error_rest_too_short">Zu kurz: noch %1$.1f s von %2$d s Mindest-Ruhe. Arm still halten, dann erneut Weiter.</string>
+    <string name="calibration_error_rest_gate">Ruhe-Gate nicht bestanden: %1$s. Arm in Startposition still halten, 2–3 s warten, dann Weiter.</string>
+    <string name="calibration_error_rest_gate_gyro">Gyro %1$.1f °/s</string>
+    <string name="calibration_error_rest_gate_accel">Accel-Rauschen %1$.3f g</string>
+    <string name="calibration_error_no_motion_window">Kein Bewegungsfenster gefunden. Bitte genau 1 deutliche Wiederholung ausführen.</string>
+    <string name="calibration_error_incomplete">Kalibrierung unvollständig — bitte neu starten.</string>
+    <string name="calibration_error_save_failed">Speichern fehlgeschlagen.</string>
+
+    <!-- Sensor-Fehler (#27: vorher deutsche Strings aus :data:sensor / TrainViewModel) -->
+    <string name="sensor_error_permission_denied">Bluetooth-Berechtigung fehlt. Bitte in den Einstellungen erlauben.</string>
+    <string name="sensor_error_bluetooth_off">Bluetooth ist nicht aktiv.</string>
+    <string name="sensor_error_adapter_unavailable">Bluetooth ist auf diesem Gerät nicht verfügbar.</string>
+    <string name="sensor_error_not_found">FlowRep-Sensor nicht gefunden.</string>
+    <string name="sensor_error_service_missing">Der Chip bietet den erwarteten FlowRep-Dienst nicht an.</string>
+    <string name="sensor_error_timeout">Der Chip hat nicht geantwortet.</string>
+    <string name="sensor_error_protocol">Der Chip hat unlesbare Daten gesendet.</string>
+    <string name="sensor_error_disconnected">Verbindung getrennt.</string>
+    <string name="sensor_error_generic">Verbindung fehlgeschlagen.</string>
+
+    <!-- Barrierefreiheit (#28) -->
+    <string name="a11y_reps_counted">%1$d Wiederholungen gezählt</string>
+    <string name="a11y_reps_decrement">Eine Wiederholung weniger</string>
+    <string name="a11y_reps_increment">Eine Wiederholung mehr</string>
+    <string name="a11y_weight_decrement">Gewicht um 2,5 Kilogramm verringern</string>
+    <string name="a11y_weight_increment">Gewicht um 2,5 Kilogramm erhöhen</string>
+    <string name="a11y_close_calibration">Kalibrierung schließen</string>
+    <string name="a11y_sensor_waveform">Live-Sensorsignal</string>
 </resources>

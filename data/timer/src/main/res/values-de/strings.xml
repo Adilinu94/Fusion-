@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Deutsche Fassung der Pausen-Timer-Benachrichtigung. Die Texte standen
+         bis 2026-08-30 im englischen Default values/ und erschienen dadurch
+         auch auf englischsprachigen Geraeten deutsch. -->
+    <string name="timer_channel_name">Pausen-Timer</string>
+    <string name="timer_channel_description">Laeuft waehrend der Satzpause im Hintergrund.</string>
+    <string name="timer_notification_title">Pausen-Timer</string>
+    <string name="timer_notification_completed">Pause vorbei - weiter geht\'s</string>
+    <string name="timer_action_skip">Ueberspringen</string>
+    <string name="timer_action_plus15">+15 s</string>
+    <string name="timer_action_finish">Uebung abschliessen</string>
+</resources>

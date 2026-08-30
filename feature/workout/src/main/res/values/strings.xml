@@ -91,4 +91,110 @@
     <string name="suggestion_increase_volume">Increase volume</string>
     <string name="suggestion_change_variation">Change variation</string>
     <string name="progress_title">Progress</string>
+
+    <!-- Train console (#26: was hardcoded in TrainScreen.kt) -->
+    <string name="train_console_label">ENTER SET</string>
+    <string name="train_pick_exercise_placeholder">Pick an exercise</string>
+    <string name="train_console_hint">Confirm weight and reps</string>
+    <string name="train_set_done">SET DONE</string>
+    <string name="train_drop_auto">Drop auto</string>
+    <string name="train_pr_volume">PR volume: %1$.1f kg</string>
+    <string name="train_recent_sets">Recent sets</string>
+    <string name="train_set_reps">%1$d REPS</string>
+    <string name="train_set_weight">%1$.1f kg</string>
+    <string name="train_set_index">%1$s</string>
+    <string name="train_new_exercise_chip">+ New exercise</string>
+    <string name="train_weight_label">WEIGHT · KG</string>
+    <string name="train_weight_last">Last %1$.1f kg</string>
+    <string name="train_weight_decrement">− 2.5</string>
+    <string name="train_weight_increment">+ 2.5</string>
+    <string name="train_reps_label">REPS</string>
+    <string name="train_reps_hint">Tap the value to type it directly</string>
+    <string name="train_exercise_name">Name</string>
+
+    <!-- Rest console -->
+    <string name="train_rest_label">REST</string>
+    <string name="train_rest_add_long">+15 SECONDS</string>
+    <string name="train_rest_add_short">+15 S</string>
+    <string name="train_rest_end">END REST</string>
+    <string name="train_exercise_end">FINISH EXERCISE</string>
+
+    <!-- Sensor status card -->
+    <string name="sensor_status_disconnected">No chip connected</string>
+    <string name="sensor_status_connecting">Connecting…</string>
+    <string name="sensor_status_connected">Chip connected</string>
+    <string name="sensor_status_streaming">Chip streaming</string>
+    <string name="sensor_connect">Connect chip</string>
+    <string name="sensor_disconnect">Disconnect</string>
+    <string name="sensor_calibrate">Calibrate</string>
+
+    <!-- Heart rate badge -->
+    <string name="heart_rate_allow">Allow heart rate</string>
+    <string name="heart_rate_none">No recent heart rate</string>
+    <string name="heart_rate_value">♥ %1$s bpm</string>
+    <string name="heart_rate_unknown">--</string>
+
+    <!-- Live rep counting -->
+    <string name="live_count_start">Start counted set</string>
+    <string name="live_count_needs_calibration">Calibrate first</string>
+    <string name="live_count_weak_signal">Weak signal — please check the count</string>
+    <string name="live_count_countdown">Starting in %1$d …</string>
+    <string name="live_count_stop">Stop</string>
+
+    <!-- Calibration wizard (#26) -->
+    <string name="calibration_title">Calibration</string>
+    <string name="calibration_no_chip">No chip connected. Please connect the FlowRep chip first.</string>
+    <string name="calibration_rest_progress">Rest: %1$.1f s — %2$s</string>
+    <string name="calibration_rest_ready">ready</string>
+    <string name="calibration_rest_hold">hold your arm still…</string>
+    <string name="calibration_quality">Quality: %1$s (%2$.0f %%)</string>
+    <string name="calibration_quality_good">good</string>
+    <string name="calibration_quality_medium">fair — consider repeating</string>
+    <string name="calibration_quality_weak">poor — please repeat</string>
+    <string name="calibration_samples">%1$d samples</string>
+    <string name="calibration_save_profile">Save profile</string>
+    <string name="calibration_next">Next</string>
+    <string name="calibration_stage_rest">1/4 Rest</string>
+    <string name="calibration_stage_single_rep">2/4 One rep</string>
+    <string name="calibration_stage_known_set">3/4 Five reps</string>
+    <string name="calibration_stage_slow_set">4/4 Three slow reps</string>
+    <string name="calibration_stage_review">Done</string>
+    <string name="calibration_stage_done">Saved</string>
+    <string name="calibration_stage_failed">Failed</string>
+    <string name="calibration_instruction_rest">Hold your arm still in the start position (at least 2 s), then Next.</string>
+    <string name="calibration_instruction_single_rep">Perform exactly 1 clear rep, then Next.</string>
+    <string name="calibration_instruction_known_set">5 reps at normal pace (20–30 s), then Next.</string>
+    <string name="calibration_instruction_slow_set">3 deliberately slow reps, then Next.</string>
+    <string name="calibration_instruction_review">Calibration computed. Save the profile?</string>
+    <string name="calibration_instruction_done">Profile saved.</string>
+    <string name="calibration_instruction_failed">Please try again.</string>
+
+    <!-- Calibration failures (#27: were German strings returned from :domain:sensor) -->
+    <string name="calibration_error_rest_too_short">Too short: %1$.1f s of %2$d s minimum rest. Hold your arm still, then tap Next again.</string>
+    <string name="calibration_error_rest_gate">Rest gate failed: %1$s. Hold your arm still in the start position, wait 2–3 s, then Next.</string>
+    <string name="calibration_error_rest_gate_gyro">gyro %1$.1f °/s</string>
+    <string name="calibration_error_rest_gate_accel">accel noise %1$.3f g</string>
+    <string name="calibration_error_no_motion_window">No motion window found. Please perform exactly 1 clear rep.</string>
+    <string name="calibration_error_incomplete">Calibration incomplete — please start over.</string>
+    <string name="calibration_error_save_failed">Saving failed.</string>
+
+    <!-- Sensor errors (#27: were German strings built in :data:sensor / TrainViewModel) -->
+    <string name="sensor_error_permission_denied">Bluetooth permission missing. Please allow it in the settings.</string>
+    <string name="sensor_error_bluetooth_off">Bluetooth is off.</string>
+    <string name="sensor_error_adapter_unavailable">Bluetooth is not available on this device.</string>
+    <string name="sensor_error_not_found">FlowRep sensor not found.</string>
+    <string name="sensor_error_service_missing">The chip does not offer the expected FlowRep service.</string>
+    <string name="sensor_error_timeout">The chip did not respond.</string>
+    <string name="sensor_error_protocol">The chip sent unreadable data.</string>
+    <string name="sensor_error_disconnected">Connection lost.</string>
+    <string name="sensor_error_generic">Connection failed.</string>
+
+    <!-- Accessibility (#28) -->
+    <string name="a11y_reps_counted">%1$d reps counted</string>
+    <string name="a11y_reps_decrement">One rep fewer</string>
+    <string name="a11y_reps_increment">One rep more</string>
+    <string name="a11y_weight_decrement">Reduce weight by 2.5 kilograms</string>
+    <string name="a11y_weight_increment">Increase weight by 2.5 kilograms</string>
+    <string name="a11y_close_calibration">Close calibration</string>
+    <string name="a11y_sensor_waveform">Live sensor signal</string>
 </resources>

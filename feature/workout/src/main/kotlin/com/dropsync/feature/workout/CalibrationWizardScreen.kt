@@ -3,11 +3,14 @@ package com.dropsync.feature.workout
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -19,12 +22,15 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.BrandButtonPrimary
+import com.dropsync.core.designsystem.component.FlowRepIconButton
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.calibration.CalibrationController
+import com.dropsync.domain.sensor.calibration.CalibrationFailure
 
 /**
  * Calibration wizard (Fusion Phase 4 step 3): Guided Calibration 2.0 for one
@@ -64,13 +70,25 @@ fun CalibrationWizardScreen(
                 .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("Kalibrierung", style = MaterialTheme.typography.headlineMedium)
+        // P3-Fix #28: sichtbare Zurueck-Affordance statt eines alleinstehenden
+        // Textbuttons am Seitenende. AutoMirrored funktioniert auch in RTL.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FlowRepIconButton(
+                icon = Icons.AutoMirrored.Filled.ArrowBack,
+                contentDescription = stringResource(R.string.a11y_close_calibration),
+                onClick = onFinished,
+            )
+            Text(
+                text = stringResource(R.string.calibration_title),
+                style = MaterialTheme.typography.headlineMedium,
+            )
+        }
 
         if (connection != SensorConnectionState.STREAMING &&
             connection != SensorConnectionState.CONNECTED
         ) {
             Text(
-                "Kein Chip verbunden. Bitte zuerst den FlowRep-Chip verbinden.",
+                stringResource(R.string.calibration_no_chip),
                 color = MaterialTheme.colorScheme.error,
             )
             return@Column
@@ -91,20 +109,29 @@ fun CalibrationWizardScreen(
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Text(
-                        "Ruhe: ${"%.1f".format(gate.seconds)} s — " +
-                            (if (gate.ready) "bereit" else "Arm still halten…"),
+                        stringResource(
+                            R.string.calibration_rest_progress,
+                            gate.seconds,
+                            stringResource(
+                                if (gate.ready) R.string.calibration_rest_ready else R.string.calibration_rest_hold,
+                            ),
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                     )
                 } else if (stage == CalibrationController.Stage.REVIEW && qualityScore != null) {
                     val q = qualityScore!!
                     val label =
                         when {
-                            q >= 0.7 -> "gut"
-                            q >= 0.4 -> "mittel — ggf. wiederholen"
-                            else -> "schwach — bitte wiederholen"
+                            q >= 0.7 -> stringResource(R.string.calibration_quality_good)
+                            q >= 0.4 -> stringResource(R.string.calibration_quality_medium)
+                            else -> stringResource(R.string.calibration_quality_weak)
                         }
                     Text(
-                        "Qualität: $label (${"%.0f".format(q * 100)} %)",
+                        stringResource(
+                            R.string.calibration_quality,
+                            label,
+                            q * 100,
+                        ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -112,7 +139,7 @@ fun CalibrationWizardScreen(
                     stage != CalibrationController.Stage.DONE
                 ) {
                     Text(
-                        "$buffered Samples",
+                        stringResource(R.string.calibration_samples, buffered),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -121,7 +148,11 @@ fun CalibrationWizardScreen(
         }
 
         error?.let {
-            Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+            Text(
+                calibrationErrorText(it),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
 
         Spacer(Modifier.weight(1f))
@@ -129,7 +160,7 @@ fun CalibrationWizardScreen(
         when (stage) {
             CalibrationController.Stage.REVIEW -> {
                 BrandButtonPrimary(
-                    text = "Profil speichern",
+                    text = stringResource(R.string.calibration_save_profile),
                     onClick = { viewModel.confirmAndSave() },
                     modifier = Modifier.fillMaxWidth(),
                 )
@@ -143,7 +174,7 @@ fun CalibrationWizardScreen(
 
             else -> {
                 BrandButtonPrimary(
-                    text = "Weiter",
+                    text = stringResource(R.string.calibration_next),
                     onClick = { viewModel.finishStage() },
                     enabled = stage != CalibrationController.Stage.REST || restGate?.ready == true,
                     modifier = Modifier.fillMaxWidth(),
@@ -152,49 +183,83 @@ fun CalibrationWizardScreen(
         }
 
         TextButton(onClick = onFinished, modifier = Modifier.align(Alignment.CenterHorizontally)) {
-            Text("Abbrechen")
+            Text(stringResource(R.string.workout_cancel))
         }
     }
 }
 
+@Composable
 private fun stageTitle(stage: CalibrationController.Stage): String =
     when (stage) {
-        CalibrationController.Stage.REST -> "1/4 Ruhe"
-        CalibrationController.Stage.SINGLE_REP -> "2/4 Eine Wiederholung"
-        CalibrationController.Stage.KNOWN_SET -> "3/4 Fünf Wiederholungen"
-        CalibrationController.Stage.SLOW_SET -> "4/4 Drei langsame Wiederholungen"
-        CalibrationController.Stage.REVIEW -> "Fertig"
-        CalibrationController.Stage.DONE -> "Gespeichert"
-        CalibrationController.Stage.FAILED -> "Fehlgeschlagen"
+        CalibrationController.Stage.REST -> stringResource(R.string.calibration_stage_rest)
+        CalibrationController.Stage.SINGLE_REP -> stringResource(R.string.calibration_stage_single_rep)
+        CalibrationController.Stage.KNOWN_SET -> stringResource(R.string.calibration_stage_known_set)
+        CalibrationController.Stage.SLOW_SET -> stringResource(R.string.calibration_stage_slow_set)
+        CalibrationController.Stage.REVIEW -> stringResource(R.string.calibration_stage_review)
+        CalibrationController.Stage.DONE -> stringResource(R.string.calibration_stage_done)
+        CalibrationController.Stage.FAILED -> stringResource(R.string.calibration_stage_failed)
     }
 
+@Composable
 private fun stageInstruction(stage: CalibrationController.Stage): String =
     when (stage) {
-        CalibrationController.Stage.REST -> {
-            "Arm in Startposition still halten (mind. 2 s), dann Weiter."
+        CalibrationController.Stage.REST -> stringResource(R.string.calibration_instruction_rest)
+        CalibrationController.Stage.SINGLE_REP -> stringResource(R.string.calibration_instruction_single_rep)
+        CalibrationController.Stage.KNOWN_SET -> stringResource(R.string.calibration_instruction_known_set)
+        CalibrationController.Stage.SLOW_SET -> stringResource(R.string.calibration_instruction_slow_set)
+        CalibrationController.Stage.REVIEW -> stringResource(R.string.calibration_instruction_review)
+        CalibrationController.Stage.DONE -> stringResource(R.string.calibration_instruction_done)
+        CalibrationController.Stage.FAILED -> stringResource(R.string.calibration_instruction_failed)
+    }
+
+/** P3-Fix #27: Locale-abhaengiger Text fuer den typisierten Fehler. */
+@Composable
+private fun calibrationErrorText(error: CalibrationUiError): String =
+    when (error) {
+        CalibrationUiError.Incomplete -> {
+            stringResource(R.string.calibration_error_incomplete)
         }
 
-        CalibrationController.Stage.SINGLE_REP -> {
-            "Genau 1 deutliche Wiederholung ausführen, dann Weiter."
+        CalibrationUiError.SaveFailed -> {
+            stringResource(R.string.calibration_error_save_failed)
         }
 
-        CalibrationController.Stage.KNOWN_SET -> {
-            "5 Wiederholungen in normalem Tempo (20–30 s), dann Weiter."
-        }
+        is CalibrationUiError.GateFailure -> {
+            when (val failure = error.failure) {
+                is CalibrationFailure.RestTooShort -> {
+                    stringResource(
+                        R.string.calibration_error_rest_too_short,
+                        failure.measuredSeconds,
+                        failure.requiredSeconds.toInt(),
+                    )
+                }
 
-        CalibrationController.Stage.SLOW_SET -> {
-            "3 bewusst langsame Wiederholungen, dann Weiter."
-        }
+                is CalibrationFailure.RestGateFailed -> {
+                    val reasons =
+                        buildList {
+                            failure.gyroMagMean?.let {
+                                add(
+                                    stringResource(
+                                        R.string.calibration_error_rest_gate_gyro,
+                                        it,
+                                    ),
+                                )
+                            }
+                            failure.accelSigma?.let {
+                                add(
+                                    stringResource(
+                                        R.string.calibration_error_rest_gate_accel,
+                                        it,
+                                    ),
+                                )
+                            }
+                        }
+                    stringResource(R.string.calibration_error_rest_gate, reasons.joinToString("; "))
+                }
 
-        CalibrationController.Stage.REVIEW -> {
-            "Kalibrierung berechnet. Profil speichern?"
-        }
-
-        CalibrationController.Stage.DONE -> {
-            "Profil gespeichert."
-        }
-
-        CalibrationController.Stage.FAILED -> {
-            "Bitte erneut versuchen."
+                CalibrationFailure.NoMotionWindow -> {
+                    stringResource(R.string.calibration_error_no_motion_window)
+                }
+            }
         }
     }
