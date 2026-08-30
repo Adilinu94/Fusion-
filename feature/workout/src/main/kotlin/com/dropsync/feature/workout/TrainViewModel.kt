@@ -16,9 +16,9 @@ import com.dropsync.domain.sensor.ActiveSetController
 import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
-import com.dropsync.domain.sensor.ExerciseEngineConfig
-import com.dropsync.domain.sensor.ExerciseEnginePipeline
+import com.dropsync.domain.sensor.RepCountPlausibility
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorErrorReason
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import com.dropsync.domain.sensor.SetAbortReason
@@ -177,8 +177,6 @@ class TrainViewModel
             _weightInput.value = ""
             _repsInput.value = ""
             _repsInputEdited.value = false
-            shadowEngine = null
-            shadowRepCount = 0
             liveRepCount = 0
         }
 
@@ -287,7 +285,7 @@ class TrainViewModel
                                 confirmedReps = reps,
                                 confirmedRepsEdited = repsEdited,
                                 liveCountedReps = counted,
-                                shadowReps = shadowRepCount,
+                                shadowReps = counted,
                             ),
                         )
                         // Paket D: Lernpfad ueber den unveraenderlichen Trace.
@@ -313,6 +311,14 @@ class TrainViewModel
          * nur bei brauchbarer Signalqualitaet und speichert Kandidaten, die
          * erst nach genug validierten Sets aktiv werden. Bei klarer
          * Verschlechterung rollt die App zur letzten guten Revision zurueck.
+         *
+         * P2-Fix #19: die Autokorrelations-Zweitmeinung wirkt als zusaetzliches
+         * Gate. Widerspricht die im Signal messbare Periodizitaet dem
+         * BESTAETIGTEN Zaehlerstand deutlich, wird nichts gelernt — dann passt
+         * entweder die Nutzereingabe nicht zum Mitschnitt oder der Sensor sass
+         * so schlecht, dass die Bewegung nicht im Signal steht. In beiden
+         * Faellen wuerde der Refiner die Parameter in die falsche Richtung
+         * ziehen.
          */
         private suspend fun learnFromTrace(
             trace: SetTrace,
@@ -324,6 +330,7 @@ class TrainViewModel
             // Guard: UNRELIABLE-Streams trainieren nie.
             if (trace.signalQuality == SignalQuality.UNRELIABLE) return
             if (trace.samples.isEmpty()) return
+            if (!plausibilityAllowsLearning(trace, confirmedReps)) return
 
             val diff = kotlin.math.abs(confirmedReps - trace.predictedReps)
 
@@ -352,6 +359,34 @@ class TrainViewModel
                     Log.d(SHADOW_TAG, "learn: rollback auf letzte gute Revision")
                 }
             }
+        }
+
+        /**
+         * P2-Fix #19: prueft die bestaetigte Rep-Zahl gegen die
+         * Autokorrelations-Schaetzung des Mitschnitts.
+         *
+         * Absichtlich nur ein VETO, keine Korrektur: die Autokorrelation kann
+         * die Zahl nicht exakt bestimmen (Randeffekte, Tempowechsel), sie
+         * erkennt aber sehr gut, ob im Signal ueberhaupt eine passende
+         * Periodizitaet steckt. INCONCLUSIVE (zu kurzes oder zu
+         * unregelmaessiges Set) blockiert nicht — sonst wuerde die App bei
+         * kurzen Saetzen nie mehr lernen.
+         */
+        private fun plausibilityAllowsLearning(
+            trace: SetTrace,
+            confirmedReps: Int,
+        ): Boolean {
+            val result = trace.plausibility ?: return true
+            val estimated = result.estimatedReps ?: return true
+            if (result.verdict == RepCountPlausibility.Verdict.INCONCLUSIVE) return true
+            val deviation = kotlin.math.abs(confirmedReps - estimated)
+            if (deviation <= MAX_PLAUSIBILITY_DEVIATION) return true
+            Log.w(
+                SHADOW_TAG,
+                "learn: uebersprungen - Autokorrelation erwartet ~$estimated Reps, " +
+                    "bestaetigt wurden $confirmedReps (Periode=${result.periodSeconds}s)",
+            )
+            return false
         }
 
         /** Creates a custom exercise (Phase 2 step 4) and selects it on success. */
@@ -436,9 +471,16 @@ class TrainViewModel
             }
         }
 
-        /** One-shot connection error text (German, via BleErrorMapper). */
-        private val _sensorError = MutableStateFlow<String?>(null)
-        val sensorError: StateFlow<String?> = _sensorError.asStateFlow()
+        /**
+         * Grund des letzten Verbindungsfehlers, null wenn keiner vorliegt.
+         *
+         * P3-Fix #27: das ViewModel liefert einen klassifizierten
+         * [SensorErrorReason] statt eines fertigen deutschen Satzes. Den Text
+         * waehlt die Composable-Schicht aus `strings.xml` — nur dort ist die
+         * Locale bekannt.
+         */
+        private val _sensorError = MutableStateFlow<SensorErrorReason?>(null)
+        val sensorError: StateFlow<SensorErrorReason?> = _sensorError.asStateFlow()
 
         /**
          * Connects to a FlowRep chip by advertise-name scan (deviceId null).
@@ -449,7 +491,7 @@ class TrainViewModel
                 _sensorError.value = null
                 when (val result = sensorProvider.connect(null)) {
                     is AppResult.Success -> Unit
-                    is AppResult.Failure -> _sensorError.value = sensorErrorText(result.error)
+                    is AppResult.Failure -> _sensorError.value = SensorErrorReason.from(result.error)
                 }
             }
         }
@@ -465,28 +507,40 @@ class TrainViewModel
         /**
          * Rolling window of the last [WAVEFORM_WINDOW] acceleration magnitudes
          * (in g), normalized for the waveform. Empty while no chip streams.
+         *
+         * P1-Fix: der Puffer ist ein festes FloatArray, das je Sample nur an
+         * einer Stelle ueberschrieben und als unveraenderlicher Snapshot
+         * veroeffentlicht wird. Vorher entstand pro Sample ein
+         * `ArrayDeque.toList()` — bei 50 Hz also 50 Listen mit je 200
+         * geboxten Floats pro Sekunde.
          */
-        private val _waveform = MutableStateFlow<List<Float>>(emptyList())
-        val waveform: StateFlow<List<Float>> = _waveform.asStateFlow()
+        private val _waveform = MutableStateFlow(FloatArray(0))
+        val waveform: StateFlow<FloatArray> = _waveform.asStateFlow()
 
         /** One-shot peak flash: timestamp of the last detected acceleration peak. */
         private val _lastPeakMs = MutableStateFlow(0L)
         val lastPeakMs: StateFlow<Long> = _lastPeakMs.asStateFlow()
 
-        private var waveformWindow = ArrayDeque<Float>()
+        /** Ringpuffer der Magnituden; [waveformFill] zaehlt bis WAVEFORM_WINDOW. */
+        private val waveformRing = FloatArray(WAVEFORM_WINDOW)
+        private var waveformHead = 0
+        private var waveformFill = 0
 
-        // --- Phase 4 step 6: shadow rep pipeline (design doc section 11b) ---
-        //
-        // The new ExerciseEnginePipeline runs ALONGSIDE the manual +/- path
-        // once a calibration profile exists, but NEVER counts live: its
-        // repCount is only compared against the confirmed (logged) count for
-        // the shadow DoD. No UI element reads the shadow count.
-
-        /** Shadow pipeline instance; recreated on exercise switch. */
-        private var shadowEngine: ExerciseEnginePipeline? = null
-
-        /** Reps the shadow pipeline confirmed this session (never shown). */
-        private var shadowRepCount = 0
+        /**
+         * Uebernimmt eine Magnitude in den Ringpuffer und veroeffentlicht den
+         * Snapshot in Trackreihenfolge (aeltestes Sample zuerst).
+         */
+        private fun pushWaveformSample(magnitude: Float) {
+            waveformRing[waveformHead] = magnitude
+            waveformHead = (waveformHead + 1) % WAVEFORM_WINDOW
+            if (waveformFill < WAVEFORM_WINDOW) waveformFill++
+            val snapshot = FloatArray(waveformFill)
+            val start = if (waveformFill < WAVEFORM_WINDOW) 0 else waveformHead
+            for (i in 0 until waveformFill) {
+                snapshot[i] = waveformRing[(start + i) % WAVEFORM_WINDOW]
+            }
+            _waveform.value = snapshot
+        }
 
         /** Confirmed reps of the selected exercise in this session (live). */
         private var liveRepCount = 0
@@ -544,39 +598,27 @@ class TrainViewModel
                 tickerFlow(TICK_MS).collect { timerEngine.evaluate() }
             }
             // Phase 4 step 5: collect live samples for the waveform; a peak
-            // (accel magnitude spike) triggers the flash overlay. The same
-            // stream also feeds the shadow pipeline (step 6): it observes and
-            // counts silently, never affecting the logged set. Paket C: die
-            // Live-Zaehlung selbst laeuft im ActiveSetController.
+            // (accel magnitude spike) triggers the flash overlay. Die
+            // Live-Zaehlung selbst laeuft im ActiveSetController — hier wird
+            // NUR die Anzeige gespeist.
+            //
+            // P1-Fix: die frueher hier zusaetzlich mitlaufende "Shadow"-Engine
+            // ist entfernt. Sie war seit Umbauplan Punkt 1 mit identischer
+            // Achse, identischem Bias und identischem Threshold konfiguriert
+            // wie die Live-Engine im ActiveSetController, rechnete also
+            // dasselbe Ergebnis — zum Preis einer zweiten vollstaendigen
+            // Pipeline (SignalChain + PeakDetector + TemplateMatcher +
+            // PhaseValidator + QualityScorer) auf jedem Sample.
             viewModelScope.launch {
                 var prevMag = 0.0
                 sensorProvider.samples.collect { sample ->
                     val mag = sample.accelMagnitude.toFloat()
-                    waveformWindow.addLast(mag)
-                    if (waveformWindow.size > WAVEFORM_WINDOW) waveformWindow.removeFirst()
-                    _waveform.value = waveformWindow.toList()
+                    pushWaveformSample(mag)
                     // Simple peak heuristic for the flash: sharp rising edge.
                     if (mag - prevMag > PEAK_DELTA_G && mag > PEAK_MIN_G) {
                         _lastPeakMs.value = sample.timestampMs
                     }
                     prevMag = mag.toDouble()
-                    // Shadow DoD 11b: feed the new pipeline; its repCount is
-                    // tracked only for the diff against the live count.
-                    shadowEngine?.let { engine ->
-                        engine.processSample(
-                            sample.timestampMs,
-                            sample.gx,
-                            sample.gy,
-                            sample.gz,
-                            sample.ax,
-                            sample.ay,
-                            sample.az,
-                        )
-                        if (engine.repCount.value != shadowRepCount) {
-                            shadowRepCount = engine.repCount.value
-                            Log.d(SHADOW_TAG, "shadow rep=$shadowRepCount live=$liveRepCount")
-                        }
-                    }
                 }
             }
         }
@@ -651,58 +693,17 @@ class TrainViewModel
         }
 
         /**
-         * (Re)creates the shadow pipeline for the selected exercise (step 6).
-         * The engine is created with the same rotation axis/bias and level
-         * parameters as the live engine once the profile is loaded - the
-         * shadow diff is only meaningful when both engines project the gyro
-         * signal the same way (Umbauplan Punkt 1 + 2).
+         * (Re)sets the per-exercise counters for the diff harness. Die frueher
+         * hier erzeugte zweite Engine ist entfallen (siehe Sample-Collector).
          */
         private fun resetShadowEngine() {
-            shadowRepCount = 0
             liveRepCount = 0
-            val exercise =
-                _selectedExercise.value ?: run {
-                    shadowEngine = null
-                    return
-                }
-            val deviceId =
-                connectedDeviceId.value ?: run {
-                    shadowEngine = null
-                    return
-                }
-            shadowEngine = null
-            viewModelScope.launch {
-                val result = calibrationProfileRepository.load(exercise.id, deviceId)
-                val profile = (result as? AppResult.Success)?.value
-                shadowEngine =
-                    ExerciseEnginePipeline(
-                        ExerciseEngineConfig(
-                            rotationAxis = profile?.rotationAxis ?: NEUTRAL_AXIS,
-                            gyroBias = profile?.gyroBias ?: NEUTRAL_BIAS,
-                            expectedProminence = profile?.expectedProminence ?: 50.0,
-                            expectedDurationMs = profile?.expectedDurationMs ?: 1_000.0,
-                            detectionThreshold = profile?.detectionThreshold ?: 32.5,
-                            hasValidCalibration = profile != null,
-                            // Rollout (Umbauplan Punkte 4/8): Flags bleiben
-                            // false, bis das Gate 11b gruen ist.
-                        ),
-                    )
-                profile?.let {
-                    shadowEngine?.setTemplate(it.repTemplate)
-                    Log.d(
-                        SHADOW_TAG,
-                        "shadow engine configured: axis=${it.rotationAxis}, " +
-                            "template=${it.repTemplate.size} samples, " +
-                            "theta=${it.detectionThreshold}, durMs=${it.expectedDurationMs}",
-                    )
-                }
-            }
         }
 
-        /** Logs the shadow-vs-live diff at session end (shadow DoD metric). */
+        /** Logs the confirmed-vs-counted diff at session end (DoD metric). */
         private fun logShadowDiff(reason: String) {
-            if (shadowEngine == null) return
-            Log.d(SHADOW_TAG, "diff($reason): shadow=$shadowRepCount live=$liveRepCount")
+            if (liveRepCount == 0) return
+            Log.d(SHADOW_TAG, "diff($reason): live=$liveRepCount")
         }
 
         /** P0-Fix: ViewModel-Ende raeumt das aktive Set vollstaendig ab. */
@@ -722,21 +723,20 @@ class TrainViewModel
             /** Minimum magnitude in g for a peak (ignores rest jitter). */
             const val PEAK_MIN_G = 1.3
 
-            /** Logcat tag for the shadow-vs-live diff (DoD 11b). */
+            /** Logcat tag for the confirmed-vs-counted diff (DoD 11b). */
             const val SHADOW_TAG = "FlowRepShadow"
-
-            /** Neutral projection axis (identity magnitude) without calibration. */
-            val NEUTRAL_AXIS = listOf(0.0, 0.0, 1.0)
-
-            /** Zero gyro bias without calibration. */
-            val NEUTRAL_BIAS = listOf(0.0, 0.0, 0.0)
-
-            /** Get-ready countdown before a live-counted set starts. */
-            const val COUNTDOWN_SECONDS = 3
 
             /** Umbauplan Phase 10.5: sinnvolle Eingabegrenzen. */
             const val MAX_REASONABLE_WEIGHT_KG = 1_000.0
             const val MAX_REASONABLE_REPS = 500
+
+            /**
+             * P2-Fix #19: erlaubte Abweichung zwischen bestaetigter Rep-Zahl
+             * und Autokorrelations-Schaetzung. 2 ist bewusst tolerant: die
+             * letzte Wiederholung ist am Set-Ende oft unvollstaendig und
+             * Tempowechsel innerhalb des Satzes verschieben die Periode.
+             */
+            const val MAX_PLAUSIBILITY_DEVIATION = 2
         }
     }
 
@@ -750,21 +750,5 @@ private fun tickerFlow(periodMs: Long): kotlinx.coroutines.flow.Flow<Unit> =
         while (true) {
             emit(Unit)
             kotlinx.coroutines.delay(periodMs)
-        }
-    }
-
-/** German user text for a sensor connection failure (BleErrorMapper text). */
-private fun sensorErrorText(error: com.dropsync.core.common.AppError): String =
-    when (error) {
-        is com.dropsync.core.common.AppError.PermissionDenied -> {
-            "Bluetooth-Berechtigung fehlt. Bitte in den Einstellungen erlauben."
-        }
-
-        is com.dropsync.core.common.AppError.Unknown -> {
-            error.debugMessage ?: "Verbindung fehlgeschlagen."
-        }
-
-        else -> {
-            "Verbindung fehlgeschlagen."
         }
     }

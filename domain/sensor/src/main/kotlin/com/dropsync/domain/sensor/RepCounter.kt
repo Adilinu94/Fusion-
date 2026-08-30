@@ -70,6 +70,13 @@ class RepCounter(
     private var pendingWentBelowStartMin = false
     private var pendingSawNegative = false
 
+    /**
+     * Timestamp des letzten in das Pending-Fenster aufgenommenen Frames.
+     * Zeitbasis der Rep-Dauer (Umbauplan Phase 2.5); die Sample-Anzahl ist
+     * bei Paketverlust KEIN Zeitmass.
+     */
+    private var pendingLastMs: Long = 0L
+
     /** Punkt 4: Accel-Peaks (Timestamp) der letzten Frames. */
     private val recentAccelPeakTimestamps = ArrayDeque<Long>()
 
@@ -99,6 +106,7 @@ class RepCounter(
         val window = pendingWindow ?: return RepResult.NONE
         val value = frame.smoothedGp
         window.add(value)
+        pendingLastMs = frame.timestampMs
         if (value < 0) pendingSawNegative = true
         if (value < pendingStartMin) pendingWentBelowStartMin = true
 
@@ -121,6 +129,7 @@ class RepCounter(
         pendingPeak = peak
         pendingWindow = peak.window.toMutableList()
         pendingStartMs = peak.timestampMs
+        pendingLastMs = peak.timestampMs
         pendingStartMin = peak.window.min()
         pendingWentBelowStartMin = false
         pendingSawNegative = false
@@ -153,14 +162,16 @@ class RepCounter(
     private fun finalizePending(): RepResult {
         val peak = pendingPeak!!
         val window = pendingWindow!!
+        val lastMs = pendingLastMs
         pendingPeak = null
         pendingWindow = null
-        return decide(peak, window)
+        return decide(peak, window, lastMs)
     }
 
     private fun decide(
         peak: PeakEvent,
         window: List<Double>,
+        lastMs: Long,
     ): RepResult {
         // Punkt 4: erst beim Finalisieren voten - der Accel-Peak feuert
         // wegen der Falling-Debounce oft einige Samples spaeter als der
@@ -193,7 +204,7 @@ class RepCounter(
             )
         }
 
-        val durationMs = windowDurationMs(peak, window)
+        val durationMs = windowDurationMs(peak, window, lastMs)
         val qualityResult =
             qualityScorer.score(
                 correlation = if (matchResult.noTemplate) 1.0 else matchResult.correlation,
@@ -224,14 +235,31 @@ class RepCounter(
     }
 
     /**
-     * Umbauplan Phase 2.5: rep duration from the frame timestamps, not the
-     * sample count. The pending extension collects only values, so the
-     * duration in ms is reconstructed from the window size and sample rate.
+     * Umbauplan Phase 2.5: Rep-Dauer aus den Frame-TIMESTAMPS, nicht aus der
+     * Sample-Anzahl.
+     *
+     * Der Peak beginnt bei `peak.timestampMs - peak.durationMs` (Anfang der
+     * Exkursion, siehe [PeakEvent.durationMs]) und das Pending-Fenster endet
+     * beim letzten aufgenommenen Frame ([pendingLastMs]). Bei Paketverlust
+     * fehlen Samples, die physische Zeit vergeht aber weiter — die frueher
+     * hier verwendete Rechnung `window.size / sampleRateHz` unterschaetzte
+     * die Dauer dann systematisch. Das wirkte doppelt schaedlich: der
+     * `tempoScore` (20 % Gewicht) verwarf gute Reps, und die adaptive
+     * Refraktaerzeit sank, was Doppelzaehlungen wahrscheinlicher machte.
+     *
+     * Rueckfall auf die Sample-Rechnung nur, wenn die Timestamps keine
+     * positive Spanne ergeben (Fake-Provider ohne Zeitbasis, Tests).
      */
     private fun windowDurationMs(
         peak: PeakEvent,
         window: List<Double>,
-    ): Long = (window.size * (1_000.0 / peakDetector.sampleRateHz)).toLong()
+        lastMs: Long,
+    ): Long {
+        val excursionStartMs = peak.timestampMs - peak.durationMs
+        val spanMs = lastMs - excursionStartMs
+        if (spanMs > 0) return spanMs
+        return (window.size * (1_000.0 / peakDetector.sampleRateHz)).toLong()
+    }
 
     private fun trackForAdaptation(
         prominence: Double,
@@ -264,6 +292,7 @@ class RepCounter(
         pendingPeak = null
         pendingWindow = null
         pendingStartMs = 0L
+        pendingLastMs = 0L
         pendingStartMin = 0.0
         pendingWentBelowStartMin = false
         pendingSawNegative = false
@@ -280,6 +309,7 @@ class RepCounter(
         pendingPeak = null
         pendingWindow = null
         pendingStartMs = 0L
+        pendingLastMs = 0L
         pendingStartMin = 0.0
         pendingWentBelowStartMin = false
         pendingSawNegative = false
@@ -295,6 +325,12 @@ class RepCounter(
         theta: Double,
         expectedDurationMs: Double? = null,
     ) = peakDetector.updateThreshold(theta, expectedDurationMs)
+
+    /** P2-Fix #21: reicht die gemessene Abtastrate an beide Detektoren. */
+    fun updateSampleRate(rateHz: Double) {
+        peakDetector.updateSampleRate(rateHz)
+        accelPeakDetector?.updateSampleRate(rateHz)
+    }
 
     val hasTemplate: Boolean
         get() = templateMatcher.hasTemplate

@@ -20,13 +20,28 @@ import kotlin.math.sqrt
  * respective axis when viewed from the axis tip (right-hand rule).
  */
 class OrientationTracker(
-    private val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
     private val beta: Double = 0.1,
 ) {
     private var q0 = 1.0
     private var q1 = 0.0
     private var q2 = 0.0
     private var q3 = 0.0
+
+    /**
+     * P2-Fix #21: gemessene Abtastrate. Das Integrations-dt haengt direkt
+     * daran - mit fix 50 Hz und real 30 Hz integriert der Filter jede
+     * Drehrate um Faktor 0.6 zu klein und die nachgefuehrte Achse laeuft
+     * der echten Rotation systematisch hinterher.
+     */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
+    /** Uebernimmt eine neue Abtastrate; die Orientierung bleibt erhalten. */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        sampleRateHz = rateHz
+    }
 
     /**
      * Updates the orientation with one IMU sample.

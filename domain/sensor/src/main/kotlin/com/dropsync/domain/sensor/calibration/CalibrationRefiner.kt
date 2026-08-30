@@ -4,6 +4,7 @@ import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.ExerciseEngineConfig
 import com.dropsync.domain.sensor.ExerciseEnginePipeline
 import com.dropsync.domain.sensor.ProfileStatus
+import com.dropsync.domain.sensor.SampleRateEstimator
 import com.dropsync.domain.sensor.SensorSample
 import kotlin.math.abs
 import kotlin.math.max
@@ -19,6 +20,12 @@ import kotlin.math.min
  * anschliessend durch die echte Live-Pipeline geschickt und nur gespeichert,
  * wenn sie den bestaetigten Count reproduziert. Parameteraenderungen sind
  * pro Set begrenzt.
+ *
+ * P2-Fix #21: die Abtastrate ist NICHT mehr fix 50 Hz, sondern wird aus den
+ * Timestamps des gepufferten Sets gemessen. Vorher lernte der Refiner bei
+ * real 30 Hz systematisch falsche Dauern (Faktor 0.6) und alle abgeleiteten
+ * Fenster (Refraktaerzeit, Zweiphasen-Fenster, Prominenzfenster) waren um
+ * denselben Faktor zu kurz.
  */
 object CalibrationRefiner {
     /** Fraction of the new estimate blended into the stored profile. */
@@ -27,7 +34,8 @@ object CalibrationRefiner {
     /** Umbauplan Phase 7.3: maximale relative Parameteraenderung pro Set. */
     private const val MAX_RELATIVE_STEP = 0.25
 
-    private const val SAMPLE_RATE_HZ = 50.0
+    /** Rueckfall, wenn die Timestamps keine Rate hergeben (Tests, Fakes). */
+    private const val FALLBACK_SAMPLE_RATE_HZ = 50.0
 
     /**
      * Returns an improved [CalibrationProfile] for [correctedReps] performed
@@ -39,26 +47,27 @@ object CalibrationRefiner {
         correctedReps: Int,
         profile: CalibrationProfile,
     ): CalibrationProfile? {
-        if (correctedReps < 1 || samples.size < SAMPLE_RATE_HZ) return null
+        val rateHz = measureSampleRate(samples)
+        if (correctedReps < 1 || samples.size < rateHz) return null
         val signal = project(samples, profile.rotationAxis, profile.gyroBias)
 
         // P0-Fix: es muessen GENAU correctedReps plausible Peaks gefunden
         // werden - eine Teil- oder Uebererkennung darf nichts lernen.
-        val peaks = detectPeaks(signal, correctedReps + 1)
+        val peaks = detectPeaks(signal, correctedReps + 1, rateHz)
         if (peaks.size != correctedReps) return null
 
         // Jeder Kandidat muss zweiphasig sein (signiertes GP): um den Peak
         // herum muessen sowohl positive als auch negative Anteile liegen.
-        val plausible = peaks.all { isTwoPhasePeak(signal, it) }
+        val plausible = peaks.all { isTwoPhasePeak(signal, it, rateHz) }
         if (!plausible) return null
 
         // Rep duration from the spacing between consecutive corrected peaks.
         val intervals = (1 until peaks.size).map { peaks[it] - peaks[it - 1] }
         val newDurationSamples = if (intervals.isNotEmpty()) median(intervals.map { it.toDouble() }) else null
-        val newDurationMs = newDurationSamples?.let { it * (1_000.0 / SAMPLE_RATE_HZ) }
+        val newDurationMs = newDurationSamples?.let { it * (1_000.0 / rateHz) }
 
         // Prominence implied by the corrected peaks.
-        val newProminence = median(peaks.map { prominenceAt(signal, it) })
+        val newProminence = median(peaks.map { prominenceAt(signal, it, rateHz) })
 
         // Template re-extracted around the corrected peaks.
         val newTemplate = extractTemplate(signal, peaks)
@@ -86,9 +95,20 @@ object CalibrationRefiner {
 
         // Umbauplan Phase 7.3: das angepasste Profil muss den bestaetigten
         // Count durch die ECHTE Live-Pipeline reproduzieren.
-        if (!revalidates(samples, correctedReps, candidate)) return null
+        if (!revalidates(samples, correctedReps, candidate, rateHz)) return null
 
         return candidate
+    }
+
+    /**
+     * P2-Fix #21: misst die tatsaechliche Abtastrate des gepufferten Sets
+     * aus den Sample-Timestamps. Ohne verwertbare Timestamps (Fakes, Tests)
+     * gilt [FALLBACK_SAMPLE_RATE_HZ].
+     */
+    private fun measureSampleRate(samples: List<SensorSample>): Double {
+        val estimator = SampleRateEstimator(nominalRateHz = FALLBACK_SAMPLE_RATE_HZ)
+        for (s in samples) estimator.onSample(s.timestampMs)
+        return estimator.estimatedRateHz
     }
 
     /**
@@ -100,17 +120,23 @@ object CalibrationRefiner {
         samples: List<SensorSample>,
         correctedReps: Int,
         candidate: CalibrationProfile,
+        sampleRateHz: Double,
     ): Boolean {
         val pipeline =
             ExerciseEnginePipeline(
                 ExerciseEngineConfig(
-                    sampleRateHz = SAMPLE_RATE_HZ,
+                    sampleRateHz = sampleRateHz,
                     rotationAxis = candidate.rotationAxis,
                     gyroBias = candidate.gyroBias,
                     expectedProminence = candidate.expectedProminence,
                     expectedDurationMs = candidate.expectedDurationMs,
                     detectionThreshold = candidate.detectionThreshold,
                     hasValidCalibration = true,
+                    // P2-Fix #22: die Revalidierung muss mit DENSELBEN
+                    // Kanaelen laufen wie die Live-Pipeline, sonst
+                    // reproduziert sie einen Count, den es live nie gibt.
+                    accelEnabled = candidate.accelVotingAvailable,
+                    accelThreshold = candidate.accelThreshold,
                 ),
             ).also { it.setTemplate(candidate.repTemplate) }
         for (s in samples) {
@@ -163,9 +189,10 @@ object CalibrationRefiner {
     private fun detectPeaks(
         signal: DoubleArray,
         count: Int,
+        sampleRateHz: Double,
     ): List<Int> {
         if (signal.size < 3) return emptyList()
-        val refractory = (SAMPLE_RATE_HZ * 0.3).toInt() // >= 0.3 s between reps
+        val refractory = (sampleRateHz * 0.3).toInt() // >= 0.3 s between reps
         val candidates = mutableListOf<Int>()
         for (i in 1 until signal.size - 1) {
             if (signal[i] >= signal[i - 1] && signal[i] >= signal[i + 1] && signal[i] > 0) {
@@ -187,8 +214,9 @@ object CalibrationRefiner {
     private fun isTwoPhasePeak(
         signal: DoubleArray,
         index: Int,
+        sampleRateHz: Double,
     ): Boolean {
-        val half = (SAMPLE_RATE_HZ * 0.6).toInt() // ~0.6 s window each side
+        val half = (sampleRateHz * 0.6).toInt() // ~0.6 s window each side
         val start = max(0, index - half)
         val end = min(signal.size, index + half)
         var sawPositive = false
@@ -204,8 +232,9 @@ object CalibrationRefiner {
     private fun prominenceAt(
         signal: DoubleArray,
         index: Int,
+        sampleRateHz: Double,
     ): Double {
-        val half = (SAMPLE_RATE_HZ * 0.5).toInt()
+        val half = (sampleRateHz * 0.5).toInt()
         val start = maxOf(0, index - half)
         val end = minOf(signal.size, index + half)
         var localMin = Double.MAX_VALUE

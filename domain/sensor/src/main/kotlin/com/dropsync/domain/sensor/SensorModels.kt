@@ -107,13 +107,29 @@ data class CalibrationProfile(
     val status: ProfileStatus = ProfileStatus.ACTIVE,
     /** Validierte Sets dieser Revision (Promotion bei genug Beweisen). */
     val validatedSetCount: Int = 0,
+    /**
+     * P2-Fix #22: kalibrierte Accel-Schwelle (Abweichung der Magnitude von
+     * 1 g). 0.0 = nicht kalibriert; dann laeuft die Live-Pipeline OHNE
+     * Accel-Voting weiter. Vorher stand im Code eine geratene Konstante
+     * (0.1625, aus der Gyro-Schwelle geteilt durch 200), weshalb der Kanal
+     * dauerhaft abgeschaltet blieb.
+     */
+    val accelThreshold: Double = 0.0,
 ) {
+    /**
+     * P2-Fix #22: true, wenn der Accel-Kanal eine belastbare Schwelle hat und
+     * das Voting deshalb live mitlaufen darf.
+     */
+    val accelVotingAvailable: Boolean
+        get() = accelThreshold.isFinite() && accelThreshold > 0.0
+
     companion object {
         /**
          * Current persisted schema. Profiles with a different version are
          * rejected by the codec ("recalibrate" instead of misinterpreting).
          * v4 adds revision/parentRevision/status/validatedSetCount.
+         * v5 adds accelThreshold (P2-Fix #22).
          */
-        const val PROFILE_SCHEMA_VERSION = 4
+        const val PROFILE_SCHEMA_VERSION = 5
     }
 }

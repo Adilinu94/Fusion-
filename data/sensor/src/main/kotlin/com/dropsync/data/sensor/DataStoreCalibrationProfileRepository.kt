@@ -59,7 +59,7 @@ class DataStoreCalibrationProfileRepository
                 AppResult.success(
                     activeRevision(prefs, exerciseId, deviceId)?.let { rev ->
                         decode(prefs[revisionKey(exerciseId, deviceId, rev)].orEmpty(), exerciseId, deviceId)
-                            ?: migrateLegacyIfNeeded(prefs, exerciseId, deviceId, rev)
+                            ?: migrateLegacyIfNeeded(prefs, exerciseId, deviceId)
                     },
                 )
             } catch (e: Exception) {
@@ -248,7 +248,6 @@ class DataStoreCalibrationProfileRepository
             prefs: Preferences,
             exerciseId: Long,
             deviceId: String,
-            fallbackRevision: Int,
         ): CalibrationProfile? {
             val legacyRaw = prefs[legacyKey(exerciseId, deviceId)] ?: return null
             val migrated = decodeLegacy(legacyRaw, exerciseId, deviceId) ?: return null
@@ -264,13 +263,13 @@ class DataStoreCalibrationProfileRepository
         // --- Codec ------------------------------------------------------------
 
         /**
-         * Schema v4 layout (semicolon-separated):
+         * Schema v5 layout (semicolon-separated):
          * 0: schemaVersion, 1: engineVersion, 2: signalKind,
          * 3: rotationAxis (csv), 4: gyroBias (csv), 5: repTemplate (csv),
          * 6: expectedProminence, 7: qualityScore, 8: detectionThreshold,
          * 9: noiseFloor, 10: expectedDurationMs,
          * 11: revision, 12: parentRevision (-1 = null), 13: status,
-         * 14: validatedSetCount
+         * 14: validatedSetCount, 15: accelThreshold (P2-Fix #22)
          */
         private fun encode(profile: CalibrationProfile): String =
             buildString {
@@ -303,8 +302,17 @@ class DataStoreCalibrationProfileRepository
                 append(profile.status.name)
                 append(';')
                 append(profile.validatedSetCount)
+                append(';')
+                append(profile.accelThreshold)
             }
 
+        /**
+         * Liest v5 UND v4. v4-Bloebe (15 Felder, ohne `accelThreshold`) werden
+         * lesend auf v5 hochgezogen: `accelThreshold = 0.0` bedeutet "nicht
+         * kalibriert", die Live-Pipeline laeuft dann wie bisher ohne
+         * Accel-Voting. So muss niemand wegen P2-Fix #22 neu kalibrieren; der
+         * Wert entsteht bei der naechsten Kalibrierung von selbst.
+         */
         private fun decode(
             raw: String,
             exerciseId: Long,
@@ -312,10 +320,12 @@ class DataStoreCalibrationProfileRepository
         ): CalibrationProfile? {
             if (raw.isEmpty()) return null
             val parts = raw.split(';')
-            if (parts.size != 15) return null
+            if (parts.size != V5_FIELD_COUNT && parts.size != V4_FIELD_COUNT) return null
             val schema = parts[0].toIntOrNull() ?: return null
-            // Versioned read: only the current schema is interpreted.
-            if (schema != CalibrationProfile.PROFILE_SCHEMA_VERSION) return null
+            // Versioned read: nur die aktuelle und die direkt vorhergehende
+            // Revision werden interpretiert.
+            val expectedSchema = if (parts.size == V5_FIELD_COUNT) CalibrationProfile.PROFILE_SCHEMA_VERSION else 4
+            if (schema != expectedSchema) return null
             val engine =
                 parts[1].let { name ->
                     RepEngineVersion.entries.firstOrNull { it.name == name }
@@ -339,9 +349,16 @@ class DataStoreCalibrationProfileRepository
                     ProfileStatus.entries.firstOrNull { it.name == name }
                 } ?: return null
             val validatedSets = parts[14].toIntOrNull() ?: return null
+            val accelThreshold =
+                if (parts.size == V5_FIELD_COUNT) {
+                    parts[15].toDoubleOrNull() ?: return null
+                } else {
+                    0.0
+                }
             if (axis.size != 3 || bias.size != 3 || template.isEmpty()) return null
             if (!threshold.isFinite() || threshold < 0.0) return null
             if (!durationMs.isFinite() || durationMs <= 0.0) return null
+            if (!accelThreshold.isFinite() || accelThreshold < 0.0) return null
             return CalibrationProfile(
                 exerciseId = exerciseId,
                 deviceId = deviceId,
@@ -350,7 +367,7 @@ class DataStoreCalibrationProfileRepository
                 repTemplate = template,
                 expectedProminence = prominence,
                 qualityScore = quality,
-                schemaVersion = schema,
+                schemaVersion = CalibrationProfile.PROFILE_SCHEMA_VERSION,
                 engineVersion = engine,
                 signalKind = signalKind,
                 detectionThreshold = threshold,
@@ -360,6 +377,7 @@ class DataStoreCalibrationProfileRepository
                 parentRevision = parentRaw.takeIf { it >= 0 },
                 status = status,
                 validatedSetCount = validatedSets,
+                accelThreshold = accelThreshold,
             )
         }
 
@@ -414,5 +432,13 @@ class DataStoreCalibrationProfileRepository
                 status = ProfileStatus.ACTIVE,
                 validatedSetCount = 0,
             )
+        }
+
+        private companion object {
+            /** Feldanzahl im v5-Blob (mit accelThreshold). */
+            const val V5_FIELD_COUNT = 16
+
+            /** Feldanzahl im v4-Blob (ohne accelThreshold). */
+            const val V4_FIELD_COUNT = 15
         }
     }

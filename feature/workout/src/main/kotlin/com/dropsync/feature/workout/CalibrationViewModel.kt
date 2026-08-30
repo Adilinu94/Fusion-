@@ -3,6 +3,7 @@ package com.dropsync.feature.workout
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
+import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
 import com.dropsync.domain.sensor.ProfileStatus
@@ -19,6 +20,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -33,6 +35,7 @@ class CalibrationViewModel
     constructor(
         private val sensorProvider: SensorProvider,
         private val calibrationProfileRepository: CalibrationProfileRepository,
+        private val dispatchers: DispatcherProvider,
     ) : ViewModel() {
         private val controller = CalibrationController(sampleRateHz = 50.0)
 
@@ -45,8 +48,9 @@ class CalibrationViewModel
         private val _bufferedSamples = MutableStateFlow(0)
         val bufferedSamples: StateFlow<Int> = _bufferedSamples.asStateFlow()
 
-        private val _error = MutableStateFlow<String?>(null)
-        val error: StateFlow<String?> = _error.asStateFlow()
+        /** P3-Fix #27: typisierter Fehler; Text entsteht erst im Composable. */
+        private val errorState = MutableStateFlow<CalibrationUiError?>(null)
+        internal val error: StateFlow<CalibrationUiError?> = errorState.asStateFlow()
 
         private val _saved = MutableStateFlow(false)
         val saved: StateFlow<Boolean> = _saved.asStateFlow()
@@ -71,7 +75,7 @@ class CalibrationViewModel
             this.deviceId = deviceId
             controller.start()
             _stage.value = controller.stage
-            _error.value = null
+            errorState.value = null
             _saved.value = false
 
             collectJob?.cancel()
@@ -93,25 +97,48 @@ class CalibrationViewModel
                 }
         }
 
-        /** "Weiter" — ends the current stage; shows the German gate message on failure. */
+        /**
+         * "Weiter" — ends the current stage; exposes a typed failure on failure.
+         *
+         * P1-Fix: `finishStage()` fuehrt in Stufe B/C den Brute-Force-Sweep aus
+         * (20 Thresholds x 2 Prominenzen x 5 Refraktaerfaktoren, jeweils mit
+         * drei vollstaendigen Zaehl-Laeufen ueber das Signal — plus einmal ueber
+         * das 3x gestreckte). Das sind bei einem 15-s-Set mehrere
+         * Hunderttausend Sample-Operationen. Vorher lief das ueber
+         * `viewModelScope` auf `Dispatchers.Main.immediate`, also auf dem
+         * UI-Thread. Jetzt auf dem CPU-Dispatcher; die UI-Zustaende werden
+         * danach wieder auf dem Main-Thread gesetzt.
+         */
         fun finishStage() {
-            val failure = controller.finishStage()
-            _error.value = failure
-            _stage.value = controller.stage
-            // Preview the learned quality once the review stage is reached.
-            if (controller.stage == CalibrationController.Stage.REVIEW) {
-                _qualityScore.value = controller.finalize()?.qualityScore
+            if (_busy.value) return
+            _busy.value = true
+            viewModelScope.launch {
+                val failure = withContext(dispatchers.default) { controller.finishStage() }
+                errorState.value = failure?.let(CalibrationUiError::GateFailure)
+                _stage.value = controller.stage
+                // Preview the learned quality once the review stage is reached.
+                if (controller.stage == CalibrationController.Stage.REVIEW) {
+                    _qualityScore.value = withContext(dispatchers.default) { controller.finalize()?.qualityScore }
+                }
+                _busy.value = false
             }
         }
 
+        /** True, solange eine Stufenauswertung laeuft (UI sperrt "Weiter"). */
+        private val _busy = MutableStateFlow(false)
+        val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
         /** Persists the learned profile once the review stage is confirmed. */
         fun confirmAndSave() {
-            val result: GuidedCalibrationResult =
-                controller.finalize() ?: run {
-                    _error.value = "Kalibrierung unvollstaendig — bitte neu starten."
-                    return
-                }
+            if (_busy.value) return
+            _busy.value = true
             viewModelScope.launch {
+                val result: GuidedCalibrationResult? = withContext(dispatchers.default) { controller.finalize() }
+                if (result == null) {
+                    errorState.value = CalibrationUiError.Incomplete
+                    _busy.value = false
+                    return@launch
+                }
                 // Umbauplan Phase 1.4: theta wird DIREKT persistiert - keine
                 // verlustbehaftete SPK/NPK-Rekonstruktion mehr.
                 // Umbauplan Phase 7.4: eine neue Kalibrierung startet als
@@ -132,11 +159,16 @@ class CalibrationViewModel
                         parentRevision = null,
                         status = ProfileStatus.ACTIVE,
                         validatedSetCount = 0,
+                        // P2-Fix #22: aus dem KNOWN_SET gemessene Accel-Schwelle.
+                        // 0.0 = keine trennscharfe Schwelle gefunden, dann laeuft
+                        // die Live-Pipeline ohne Accel-Voting.
+                        accelThreshold = result.accelThreshold,
                     )
                 when (calibrationProfileRepository.save(profile)) {
                     is AppResult.Success -> _saved.value = true
-                    is AppResult.Failure -> _error.value = "Speichern fehlgeschlagen."
+                    is AppResult.Failure -> errorState.value = CalibrationUiError.SaveFailed
                 }
+                _busy.value = false
             }
         }
 

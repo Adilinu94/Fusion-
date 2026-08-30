@@ -30,6 +30,10 @@ class ExerciseEnginePipelineIsolationTest {
         axis: List<Double> = listOf(1.0, 0.0, 0.0),
         threshold: Double = 32.5,
         accelEnabled: Boolean = false,
+        // P2-Fix #22: der Accel-Kanal braucht eine kalibrierte Schwelle. Im
+        // Test wird sie fest vorgegeben; live kommt sie aus dem KNOWN_SET der
+        // Guided Calibration.
+        accelThreshold: Double = 0.1625,
     ) = ExerciseEnginePipeline(
         ExerciseEngineConfig(
             rotationAxis = axis,
@@ -38,6 +42,7 @@ class ExerciseEnginePipelineIsolationTest {
             expectedDurationMs = 2_000.0,
             expectedProminence = 1.0,
             accelEnabled = accelEnabled,
+            accelThreshold = accelThreshold,
         ),
     )
 

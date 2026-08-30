@@ -25,10 +25,24 @@ data class ExerciseEngineConfig(
     val hasValidCalibration: Boolean = false,
     /** Punkt 4: Accel-Kanal + Voting aktiv (Feature-Flag fuer den Rollout). */
     val accelEnabled: Boolean = false,
+    /**
+     * P2-Fix #22: kalibrierte Schwelle des Accel-Kanals (Abweichung der
+     * Magnitude von 1 g). Vorher stand hier eine geratene Konstante
+     * (0.1625 = 32.5/200) ohne physikalischen Bezug — genau der Grund, warum
+     * [accelEnabled] dauerhaft aus blieb. Wird der Kanal aktiviert, MUSS ein
+     * kalibrierter Wert > 0 vorliegen.
+     */
+    val accelThreshold: Double = 0.0,
     /** Punkt 5: Groesse des Template-Pools (Formdrift). */
     val templatePoolSize: Int = 5,
     /** Punkt 8: Madgwick-Orientierungs-Tracking der kalibrierten Achse. */
     val orientationTrackingEnabled: Boolean = false,
+    /**
+     * P2-Fix #24: ZUPT-Segmentierung. In den Ruhefenstern zwischen den
+     * Wiederholungen wird der Gyro-Bias nachgemessen (Temperaturdrift des
+     * MPU6886) und ein Pending-Rep, der in echte Ruhe hineinragt, verworfen.
+     */
+    val zuptEnabled: Boolean = true,
 ) {
     init {
         require(rotationAxis.size == 3) { "rotationAxis must have 3 components" }
@@ -36,6 +50,12 @@ data class ExerciseEngineConfig(
         require(templatePoolSize >= 1) { "templatePoolSize must be >= 1" }
         require(detectionThreshold.isFinite() && detectionThreshold >= 0.0) {
             "detectionThreshold must be finite and >= 0"
+        }
+        // P2-Fix #22: der Accel-Kanal darf nur mit KALIBRIERTER Schwelle
+        // laufen. Ein geratener Wert wuerde entweder alles durchlassen oder
+        // gute Wiederholungen verwerfen - beides schlimmer als kein Voting.
+        require(!accelEnabled || (accelThreshold.isFinite() && accelThreshold > 0.0)) {
+            "accelEnabled requires a calibrated accelThreshold > 0"
         }
     }
 }
@@ -108,12 +128,14 @@ class ExerciseEnginePipeline(
             qualityScorer = qualityScorer,
             accelPeakDetector =
                 if (config.accelEnabled) {
-                    // Punkt 4: Accel-Signale sind eine Magnituden-Abweichung
-                    // (~0 im Ruhezustand), also deutlich kleiner als Gyro.
-                    // Konservative Levels: theta niedrig, Prominenz niedrig.
+                    // Punkt 4 + P2-Fix #22: Accel-Signale sind eine
+                    // Magnituden-Abweichung (~0 im Ruhezustand), also deutlich
+                    // kleiner als Gyro. Die Schwelle kommt jetzt aus der
+                    // Kalibrierung (gemessen am KNOWN_SET), nicht mehr aus
+                    // einer geratenen Konstante.
                     PeakDetector(
                         sampleRateHz = config.sampleRateHz,
-                        threshold = 0.1625,
+                        threshold = config.accelThreshold,
                         prominenceRatio = 0.2,
                         signal = { it.smoothedAccel },
                     )
@@ -140,6 +162,48 @@ class ExerciseEnginePipeline(
     /** Umbauplan Phase 2.6: letzter Sample-Timestamp (Gap-Erkennung). */
     private var lastSampleTimestampMs: Long? = null
 
+    /**
+     * P2-Fix #21: schaetzt die TATSAECHLICHE Abtastrate. Bisher war die
+     * gesamte Kette auf 50 Hz verdrahtet; die reale Rate haengt aber an
+     * Firmware-Takt, BLE-Uebertragung und Paketverlust.
+     */
+    private val sampleRateEstimator = SampleRateEstimator(nominalRateHz = config.sampleRateHz)
+
+    /** Letzte an die Filter durchgereichte Rate (verhindert Mikro-Updates). */
+    private var appliedSampleRateHz: Double = config.sampleRateHz
+
+    /** Aktuelle Schaetzung der Abtastrate in Hz (Diagnose/Telemetrie). */
+    val estimatedSampleRateHz: Double
+        get() = sampleRateEstimator.estimatedRateHz
+
+    /**
+     * P2-Fix #19: Ringpuffer des projizierten, gefilterten Signals fuer die
+     * Autokorrelations-Plausibilitaetspruefung am Set-Ende. Bewusst ein
+     * Ringpuffer mit fester Groesse: ein Satz mit 30 Wiederholungen bei
+     * 50 Hz belegt so konstant ~48 KB statt unbegrenzt zu wachsen.
+     */
+    private val signalRing = DoubleArray(SIGNAL_RING_SIZE)
+    private var signalHead = 0
+    private var signalFill = 0
+
+    /**
+     * P2-Fix #24: erkennt Ruhefenster fuer Bias-Nachfuehrung und
+     * Satz-Segmentierung. null, wenn per Config abgeschaltet.
+     */
+    private val zupt = if (config.zuptEnabled) ZuptDetector() else null
+
+    /** Anzahl der nachgefuehrten Bias-Korrekturen (Diagnose). */
+    var zuptBiasUpdates = 0
+        private set
+
+    /** Anzahl der wegen Ruhe verworfenen Pending-Reps (Diagnose). */
+    var zuptAbortedPending = 0
+        private set
+
+    /** P2-Fix #24: true, solange der Sensor als ruhend erkannt ist. */
+    val isStationary: Boolean
+        get() = zupt?.isStationary == true
+
     val isSettled: Boolean
         get() = signalChain.isSettled
     val hasTemplate: Boolean
@@ -160,12 +224,15 @@ class ExerciseEnginePipeline(
             onLargeGap()
         }
         lastSampleTimestampMs = timestampMs
+        trackSampleRate(timestampMs)
+        applyZupt(timestampMs, gx, gy, gz, ax, ay, az)
         val frame = signalChain.process(timestampMs, gx, gy, gz, ax, ay, az)
         if (!frame.isSettled) {
             framesRejected++
             return EngineFrameResult(frame = frame, repResult = RepResult.NONE)
         }
         framesProcessed++
+        pushSignalSample(frame.smoothedGp)
         val repResult = repCounter.process(frame)
         if (repResult.repCounted) {
             _repCount.value = repCounter.repCount
@@ -185,6 +252,101 @@ class ExerciseEnginePipeline(
     }
 
     /**
+     * P2-Fix #21: nimmt den Timestamp in die Ratenschaetzung auf und reicht
+     * eine belastbare neue Rate an Filter und Detektoren durch.
+     *
+     * Die Weitergabe passiert nur bei einer relevanten Abweichung
+     * ([SAMPLE_RATE_UPDATE_TOLERANCE_HZ]). Sonst wuerde jeder einzelne
+     * Median-Sprung von 49.9 auf 50.1 Hz alle Filterkonstanten neu berechnen,
+     * ohne dass sich am Verhalten etwas aendert.
+     */
+    private fun trackSampleRate(timestampMs: Long) {
+        sampleRateEstimator.onSample(timestampMs)
+        if (!sampleRateEstimator.isConfident) return
+        val estimated = sampleRateEstimator.estimatedRateHz
+        if (kotlin.math.abs(estimated - appliedSampleRateHz) < SAMPLE_RATE_UPDATE_TOLERANCE_HZ) return
+        appliedSampleRateHz = estimated
+        signalChain.updateSampleRate(estimated)
+        repCounter.updateSampleRate(estimated)
+    }
+
+    /** P2-Fix #19: schreibt einen Signalwert in den Ringpuffer. */
+    private fun pushSignalSample(value: Double) {
+        signalRing[signalHead] = value
+        signalHead = (signalHead + 1) % SIGNAL_RING_SIZE
+        if (signalFill < SIGNAL_RING_SIZE) signalFill++
+    }
+
+    /**
+     * P2-Fix #24: fuehrt die ZUPT-Segmentierung auf den ROHEN Werten aus.
+     *
+     * Zwei Wirkungen:
+     * 1. Bestaetigt der Detektor ein Ruhefenster, wird der dort gemessene
+     *    Gyro-Bias uebernommen. Das ist der einzige Zeitpunkt, an dem der Bias
+     *    beobachtbar ist: wo keine Rotation stattfindet, IST die gemessene
+     *    Drehrate der Bias. Ohne diese Nachfuehrung verschiebt die
+     *    Temperaturdrift des MPU6886 die projizierte Spur gegen die
+     *    kalibrierte Schwelle theta.
+     * 2. Setzt echte Ruhe ein, waehrend noch ein Pending-Rep offen ist, war
+     *    dieser ein Artefakt: eine Wiederholung, deren Rueckbewegung nie kam.
+     *    Sie wird verworfen statt nach dem Zeitlimit doch bewertet zu werden.
+     *
+     * WICHTIG: der Detektor bekommt die unkorrigierten Gyro-Werte. Mit
+     * bereits korrigierten Werten wuerde er immer denselben Bias bestaetigen,
+     * den er schon anwendet — die Drift bliebe unsichtbar.
+     */
+    private fun applyZupt(
+        timestampMs: Long,
+        gx: Double,
+        gy: Double,
+        gz: Double,
+        ax: Double,
+        ay: Double,
+        az: Double,
+    ) {
+        val detector = zupt ?: return
+        val result = detector.onSample(timestampMs, gx, gy, gz, ax, ay, az)
+        if (!result.zuptConfirmed) return
+
+        // Ruhe bestaetigt: ein noch offener Pending-Rep hat keine
+        // Rueckbewegung mehr zu erwarten.
+        repCounter.abortPending()
+        zuptAbortedPending++
+
+        detector.biasEstimate?.let { bias ->
+            signalChain.updateGyroBias(bias)
+            zuptBiasUpdates++
+        }
+    }
+
+    /** Signalhistorie in chronologischer Reihenfolge (P2-Fix #19). */
+    private fun signalHistory(): DoubleArray {
+        val out = DoubleArray(signalFill)
+        val start = if (signalFill < SIGNAL_RING_SIZE) 0 else signalHead
+        for (i in 0 until signalFill) {
+            out[i] = signalRing[(start + i) % SIGNAL_RING_SIZE]
+        }
+        return out
+    }
+
+    /**
+     * P2-Fix #19: prueft den aktuellen Zaehlerstand per Autokorrelation
+     * gegen die im Signal enthaltene Periodizitaet. Am Set-Ende aufzurufen.
+     *
+     * Die Pruefung KORRIGIERT nicht — sie liefert nur eine unabhaengige
+     * Zweitmeinung, die geloggt und (spaeter) dem Nutzer angezeigt werden
+     * kann. Der Grund: die Autokorrelation kann die Zahl nicht exakt
+     * bestimmen (Randeffekte, Tempowechsel), sie erkennt aber sehr gut, ob
+     * die kalibrierte Schwelle noch zum tatsaechlichen Signal passt.
+     */
+    fun checkPlausibility(): RepCountPlausibility.Result =
+        RepCountPlausibility.check(
+            signal = signalHistory(),
+            sampleRateHz = appliedSampleRateHz,
+            countedReps = repCounter.repCount,
+        )
+
+    /**
      * Umbauplan Phase 2.6: bei einer grossen Zeitluecke (>= 150-250 ms)
      * werden laufender Peak, Pending-Rep und Filterzustand verworfen und
      * die Filter schwingen neu ein. Physische Zeit wird so nie komprimiert.
@@ -202,11 +364,13 @@ class ExerciseEnginePipeline(
             onLargeGap()
         }
         lastSampleTimestampMs = frame.timestampMs
+        trackSampleRate(frame.timestampMs)
         if (!frame.isSettled) {
             framesRejected++
             return
         }
         framesProcessed++
+        pushSignalSample(frame.smoothedGp)
         val repResult = repCounter.process(frame)
         if (repResult.repCounted) {
             _repCount.value = repCounter.repCount
@@ -248,10 +412,31 @@ class ExerciseEnginePipeline(
         framesRejected = 0
         largeGapCount = 0
         lastSampleTimestampMs = null
+        sampleRateEstimator.reset()
+        appliedSampleRateHz = config.sampleRateHz
+        signalChain.updateSampleRate(config.sampleRateHz)
+        repCounter.updateSampleRate(config.sampleRateHz)
+        signalHead = 0
+        signalFill = 0
+        zupt?.reset()
+        zuptBiasUpdates = 0
+        zuptAbortedPending = 0
     }
 
     companion object {
         /** Umbauplan Phase 2.6: Luecke, ab der Zustand verworfen wird. */
         const val LARGE_GAP_MS = 250L
+
+        /**
+         * P2-Fix #21: Mindestabweichung, ab der die gemessene Rate an die
+         * Filter durchgereicht wird.
+         */
+        const val SAMPLE_RATE_UPDATE_TOLERANCE_HZ = 1.5
+
+        /**
+         * P2-Fix #19: Groesse des Signal-Ringpuffers. 3000 Samples sind bei
+         * 50 Hz eine Minute - deutlich mehr als jeder normale Satz.
+         */
+        const val SIGNAL_RING_SIZE = 3_000
     }
 }

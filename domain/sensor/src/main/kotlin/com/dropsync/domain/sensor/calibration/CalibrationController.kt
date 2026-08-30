@@ -46,6 +46,13 @@ data class GuidedCalibrationResult(
     val expectedDurationMs: Double,
     val repTemplate: List<Double>,
     val qualityScore: Double,
+    /**
+     * P2-Fix #22: kalibrierte Schwelle des Accel-Kanals (Abweichung der
+     * Magnitude von 1 g). 0.0 bedeutet "nicht kalibriert" — dann bleibt das
+     * Accel-Voting aus, statt mit einem geratenen Wert gute Wiederholungen
+     * zu verwerfen.
+     */
+    val accelThreshold: Double = 0.0,
 )
 
 /**
@@ -144,11 +151,15 @@ class CalibrationController(
     }
 
     /**
-     * Ends the current stage and evaluates its buffer. Returns a German
-     * failure message when a quality gate failed (stage is repeated), null on
-     * success.
+     * Ends the current stage and evaluates its buffer. Returns a
+     * [CalibrationFailure] when a quality gate failed (stage is repeated),
+     * null on success.
+     *
+     * P3-Fix #27: der Rueckgabewert traegt nur noch Grund und Messwerte. Den
+     * anzuzeigenden Text baut die UI-Schicht daraus zusammen — dieses Modul
+     * hat keine Ressourcen und kein Gebietsschema.
      */
-    fun finishStage(): String? {
+    fun finishStage(): CalibrationFailure? {
         if (!isRunning) return null
         return when (stage) {
             Stage.REST -> {
@@ -246,41 +257,92 @@ class CalibrationController(
             expectedDurationMs = medT * 1_000.0,
             repTemplate = repTemplate,
             qualityScore = quality,
+            accelThreshold = calibrateAccelThreshold(marks),
         )
+    }
+
+    /**
+     * P2-Fix #22: leitet die Accel-Schwelle aus dem KNOWN_SET ab, statt sie
+     * zu raten.
+     *
+     * Vorher stand im Code eine feste 0.1625 — ein aus der Gyro-Schwelle
+     * (32.5 deg/s) durch Division mit 200 entstandener Wert ohne
+     * physikalischen Bezug. Genau deshalb blieb `accelEnabled` aus: mit einer
+     * geratenen Schwelle haette das Voting entweder alles durchgelassen
+     * (Schwelle zu tief) oder gute Wiederholungen verworfen (zu hoch).
+     *
+     * Vorgehen: an den bereits validierten Rep-Positionen des KNOWN_SET wird
+     * die Spitze der Accel-Abweichung gemessen. Die Schwelle liegt bei
+     * [ACCEL_PEAK_FRACTION] des Medians dieser Spitzen und muss zugleich
+     * klar ueber dem Ruherauschen liegen. Findet sich keine belastbare
+     * Trennung, gibt die Funktion 0.0 zurueck und das Voting bleibt aus —
+     * lieber kein zweiter Kanal als ein falsch parametrisierter.
+     */
+    private fun calibrateAccelThreshold(marks: List<RepMark>): Double {
+        if (marks.size < MIN_ACCEL_CALIBRATION_PEAKS) return 0.0
+        val restS = rest ?: return 0.0
+        if (bufB.isEmpty()) return 0.0
+
+        val deviation = accelDeviation(bufB)
+        val noiseSigma = restS.sigmaAccel
+        val half = max(1, (sampleRateHz * ACCEL_PEAK_WINDOW_S).toInt())
+        val peaks =
+            marks.mapNotNull { mark ->
+                val start = max(0, mark.sampleIndex - half)
+                val end = min(deviation.size, mark.sampleIndex + half)
+                if (end > start) deviation.copyOfRange(start, end).max() else null
+            }
+        if (peaks.size < MIN_ACCEL_CALIBRATION_PEAKS) return 0.0
+
+        val candidate = ACCEL_PEAK_FRACTION * median(peaks)
+        val noiseCeiling = ACCEL_NOISE_MARGIN * max(noiseSigma, MIN_ACCEL_NOISE_SIGMA)
+        // Die Schwelle muss deutlich ueber dem Rauschen UND deutlich unter den
+        // gemessenen Spitzen liegen; sonst ist der Kanal nicht trennscharf.
+        if (candidate <= noiseCeiling) return 0.0
+        return candidate
+    }
+
+    /**
+     * Gefilterte Abweichung der Accel-Magnitude von 1 g — dieselbe Groesse,
+     * die [com.dropsync.domain.sensor.SignalChain] live als `smoothedAccel`
+     * berechnet. Die Kalibrierung MUSS auf demselben Signal messen, auf dem
+     * die Live-Pipeline spaeter entscheidet.
+     */
+    private fun accelDeviation(buf: List<SensorSample>): DoubleArray {
+        val raw = DoubleArray(buf.size) { abs(buf[it].accelMagnitude - 1.0) }
+        return ema(raw, ACCEL_EMA_ALPHA)
     }
 
     // --- Stage evaluation -------------------------------------------------
 
-    private fun finishRest(): String? {
+    private fun finishRest(): CalibrationFailure? {
         val seconds = bufRest.size / sampleRateHz
         if (seconds < CalibrationThresholds.REST_MIN_SECONDS) {
-            return "Zu kurz: noch ${"%.1f".format(seconds)} s von " +
-                "${CalibrationThresholds.REST_MIN_SECONDS.toInt()} s Mindest-Ruhe. " +
-                "Arm still halten, dann erneut Weiter."
+            return CalibrationFailure.RestTooShort(
+                measuredSeconds = seconds,
+                requiredSeconds = CalibrationThresholds.REST_MIN_SECONDS,
+            )
         }
         val stats = restStats(bufRest)
         if (!stats.gateOk) {
-            val reasons = mutableListOf<String>()
-            if (stats.gyroMagMean >= CalibrationThresholds.REST_GYRO_MEAN_MAX_DEG_PER_SEC) {
-                reasons.add("|gyro| ${"%.1f".format(stats.gyroMagMean)} deg/s")
-            }
-            if (stats.sigmaAccel >= CalibrationThresholds.REST_ACCEL_SIGMA_MAX_G) {
-                reasons.add("Accel-Rauschen ${"%.3f".format(stats.sigmaAccel)} g")
-            }
+            val gyroFailed = stats.gyroMagMean >= CalibrationThresholds.REST_GYRO_MEAN_MAX_DEG_PER_SEC
+            val accelFailed = stats.sigmaAccel >= CalibrationThresholds.REST_ACCEL_SIGMA_MAX_G
             bufRest.clear()
-            return "Ruhe-Gate nicht bestanden: ${reasons.joinToString("; ")}. " +
-                "Arm in Startposition still halten, 2-3 s warten, dann Weiter."
+            return CalibrationFailure.RestGateFailed(
+                gyroMagMean = stats.gyroMagMean.takeIf { gyroFailed },
+                accelSigma = stats.sigmaAccel.takeIf { accelFailed },
+            )
         }
         rest = stats
         stage = Stage.SINGLE_REP
         return null
     }
 
-    private fun finishSingleRep(): String? {
+    private fun finishSingleRep(): CalibrationFailure? {
         val res = axisAnalysis(bufA, rest!!)
         if (res == null) {
             bufA.clear()
-            return "Kein Bewegungsfenster gefunden. Bitte genau 1 deutliche Wiederholung ausfuehren."
+            return CalibrationFailure.NoMotionWindow
         }
         axisResult = res
         stage = Stage.KNOWN_SET
@@ -295,10 +357,10 @@ class CalibrationController(
         sweepCfg = knownCountSweep(signalsB!!, metaB!!, axis.t0, knownSetCount)
         val cfg = sweepCfg
         if (cfg != null) {
-            val (theta, _, _, _) = medianMinusKMad(cfg.peakHoehen, cfg.theta)
-            cfg.theta = theta
+            val robustThreshold = medianMinusKMad(cfg.peakHoehen, cfg.theta)
+            cfg.theta = robustThreshold.theta
             baselineChosen = metaB!![cfg.signal]!!.first
-            thetaFinal = theta
+            thetaFinal = robustThreshold.theta
             quality = 1.0 - min(1.0, cfg.cv)
         } else {
             thetaFinal = null
@@ -307,7 +369,7 @@ class CalibrationController(
         }
     }
 
-    private fun finishKnownSet(): String? {
+    private fun finishKnownSet(): CalibrationFailure? {
         runBSweep()
         // A failed sweep does NOT block: stage C still records, review corrects.
         stage = Stage.SLOW_SET
@@ -332,7 +394,7 @@ class CalibrationController(
         if (res.ok) thetaFinal = res.theta
     }
 
-    private fun finishSlowSet(): String? {
+    private fun finishSlowSet(): CalibrationFailure? {
         runC()
         stage = Stage.REVIEW
         return null
@@ -687,6 +749,26 @@ class CalibrationController(
             }
         }
         return reps
+    }
+
+    companion object {
+        /** P2-Fix #22: so viele validierte Peaks braucht die Accel-Kalibrierung. */
+        const val MIN_ACCEL_CALIBRATION_PEAKS = 3
+
+        /** Halbes Suchfenster um einen Rep-Peak (s). */
+        const val ACCEL_PEAK_WINDOW_S = 0.4
+
+        /** Anteil der gemessenen Accel-Spitze, der als Schwelle dient. */
+        const val ACCEL_PEAK_FRACTION = 0.35
+
+        /** Faktor, um den die Schwelle ueber dem Ruherauschen liegen muss. */
+        const val ACCEL_NOISE_MARGIN = 4.0
+
+        /** Untergrenze fuer sigma, damit ein "zu ruhiges" Rest-Fenster nicht 0 liefert. */
+        const val MIN_ACCEL_NOISE_SIGMA = 0.005
+
+        /** EMA-Alpha der Accel-Glaettung (grob wie One-Euro bei 2 Hz/50 Hz). */
+        const val ACCEL_EMA_ALPHA = 0.2
     }
 }
 

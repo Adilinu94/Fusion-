@@ -24,12 +24,14 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.domain.sensor.DeviceEvent
 import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorErrorReason
 import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -58,12 +60,23 @@ import kotlin.coroutines.resume
  * - MTU 185 is REQUESTED to dodge the HyperOS MTU-517 off-by-one boundary
  *   bug; HyperOS ignores client requests and negotiates 517 anyway, which
  *   fits the 53-byte v2 payload.
- * - NO CCCD on the SensorData characteristic: HyperOS caches the last
- *   notified value and returns it for every read(). Without a CCCD, Android
- *   issues real over-the-air reads; the firmware calls setValue()
- *   unconditionally so read() gets fresh data. Streaming therefore polls
- *   read() at ~30 Hz instead of waiting for notifications.
  * - DeviceEvent (fee4, M5 button): notify when available + 250 ms poll.
+ *
+ * P2-Fix #23 — Sample-Transport: NOTIFY ist die Grundeinstellung,
+ * `read()`-Polling nur noch der Fallback.
+ *
+ * Die Flutter-Implementierung nutzte durchgehend Polling, weil HyperOS bei
+ * gesetztem CCCD den zuletzt notifizierten Wert cached und ihn fuer jeden
+ * `read()` zurueckgibt. Dieser geraetespezifische Workaround war hier zur
+ * Grundeinstellung fuer ALLE Geraete geworden — mit erheblichen Kosten: jeder
+ * Sample-Batch braucht einen vollen GATT-Round-Trip, die effektive Rate haengt
+ * damit an der Latenz statt am Firmware-Takt (20 ms/Sample). Notify liefert
+ * die Batches ungefragt und ohne Anfrage-Overhead.
+ *
+ * Die Erkennung laeuft empirisch, nicht ueber eine Geraetemodell-Liste (die
+ * waere immer unvollstaendig): kommt im Probe-Fenster mindestens eine
+ * Notification, bleibt es bei Notify; sonst wird der CCCD wieder abgeschaltet
+ * (sonst liefert HyperOS den Cache) und der Poll-Loop uebernimmt.
  *
  * All GATT operations are serialized through [BleGattClient]: the Android BLE
  * stack allows one outstanding operation at a time.
@@ -80,7 +93,12 @@ class BleSensorProvider
         @ApplicationContext private val context: Context,
         private val dispatchers: DispatcherProvider,
     ) : SensorProvider {
-        private val scope = CoroutineScope(dispatchers.default)
+        // SupervisorJob (P0-Fix): ohne ihn reisst eine Exception in EINEM
+        // Child (JitterBuffer-Tick, Device-Event-Poll, MTU-Timeout) den
+        // gesamten Scope ab — inklusive Poll-Loop. Danach ist der Provider
+        // still tot: connectionState bleibt auf STREAMING, es kommen aber
+        // keine Samples mehr.
+        private val scope = CoroutineScope(SupervisorJob() + dispatchers.default)
 
         private val _connectionState = MutableStateFlow(SensorConnectionState.DISCONNECTED)
         override val connectionState: StateFlow<SensorConnectionState> = _connectionState.asStateFlow()
@@ -110,7 +128,21 @@ class BleSensorProvider
         private var pollJob: Job? = null
         private var deviceEventPollJob: Job? = null
         private var mtuTimeoutJob: Job? = null
+
+        /** P2-Fix #23: prueft, ob Notifications ankommen (sonst Poll-Fallback). */
+        private var notifyProbeJob: Job? = null
+
+        /** Batches, die per Notification eintrafen (Transport-Erkennung). */
+        private var notifiedBatches = 0
+
         private var lastDeviceEventSeq = 0
+
+        /**
+         * P2-Fix #23: true, sobald der Notify-Transport bestaetigt ist.
+         * Diagnose-Sichtbarkeit fuer die Sensor-Health-Anzeige.
+         */
+        var usingNotifyTransport = false
+            private set
 
         /** Aufeinanderfolgende Protokollfehler (Cleanup-Grund). */
         private var consecutiveProtocolErrors = 0
@@ -144,11 +176,14 @@ class BleSensorProvider
             if (!hasBlePermissions()) {
                 return AppResult.failure(AppError.PermissionDenied("BLUETOOTH_SCAN/BLUETOOTH_CONNECT"))
             }
+            // P3-Fix #27: nur noch klassifizierte Gruende nach oben, keine
+            // fertig formulierten deutschen Saetze (die Datenschicht kennt
+            // keine Locale).
             val adapter =
                 bluetoothAdapter()
-                    ?: return AppResult.failure(AppError.Unknown("BluetoothAdapter nicht verfuegbar"))
+                    ?: return AppResult.failure(BleErrorMapper.error(SensorErrorReason.ADAPTER_UNAVAILABLE))
             if (!adapter.isEnabled) {
-                return AppResult.failure(AppError.Unknown("Bluetooth ist nicht aktiv"))
+                return AppResult.failure(BleErrorMapper.error(SensorErrorReason.BLUETOOTH_OFF))
             }
 
             _connectionState.value = SensorConnectionState.CONNECTING
@@ -161,7 +196,7 @@ class BleSensorProvider
                             ?: run {
                                 cleanupConnection(DisconnectReason.SCAN_FAILED)
                                 return AppResult.failure(
-                                    AppError.Unknown("FlowRep-Sensor nicht gefunden (15s Scan)"),
+                                    BleErrorMapper.error(SensorErrorReason.NOT_FOUND),
                                 )
                             }
                     }
@@ -255,27 +290,31 @@ class BleSensorProvider
                         }
 
                         is GattEvent.ServicesDiscovered -> {
-                            onServicesDiscovered(device, cont)
+                            onServicesDiscovered(cont)
                         }
 
                         is GattEvent.Disconnected -> {
                             // P0-Fix: Remote-Disconnect raeumt ALLES auf
                             // (Jobs, Jitterbuffer, GATT, Zustaende).
                             if (cont.isActive) {
-                                cont.resume(AppResult.failure(AppError.Unknown("Verbindung getrennt")))
+                                cont.resume(
+                                    AppResult.failure(BleErrorMapper.error(SensorErrorReason.DISCONNECTED)),
+                                )
                             }
                             scope.launch { cleanupConnection(DisconnectReason.REMOTE_DISCONNECT) }
                         }
 
                         is GattEvent.Notification -> {
-                            onDeviceEventBytes(event.value)
+                            onNotification(event)
                         }
 
                         // Umbauplan Phase 2.1: GATT-Operation haengt (kein
                         // Callback) - Verbindung als fehlerhaft behandeln.
                         is GattEvent.OperationTimedOut -> {
                             if (cont.isActive) {
-                                cont.resume(AppResult.failure(AppError.Unknown("GATT-Timeout")))
+                                cont.resume(
+                                    AppResult.failure(BleErrorMapper.error(SensorErrorReason.TIMEOUT)),
+                                )
                             }
                             scope.launch { cleanupConnection(DisconnectReason.GATT_TIMEOUT) }
                         }
@@ -323,13 +362,12 @@ class BleSensorProvider
             gattClient.discoverServices()
         }
 
-        private fun onServicesDiscovered(
-            device: BluetoothDevice,
-            cont: kotlinx.coroutines.CancellableContinuation<AppResult<Unit>>,
-        ) {
+        private fun onServicesDiscovered(cont: kotlinx.coroutines.CancellableContinuation<AppResult<Unit>>) {
             val service = gattClient.getService(SERVICE_UUID)
             if (service == null) {
-                if (cont.isActive) cont.resume(AppResult.failure(AppError.Unknown("Service fee0 nicht gefunden")))
+                if (cont.isActive) {
+                    cont.resume(AppResult.failure(BleErrorMapper.error(SensorErrorReason.SERVICE_MISSING)))
+                }
                 scope.launch { cleanupConnection(DisconnectReason.SERVICE_MISSING) }
                 return
             }
@@ -338,7 +376,9 @@ class BleSensorProvider
             batteryChar = service.getCharacteristic(BATTERY_LEVEL_UUID)
             deviceEventChar = service.getCharacteristic(DEVICE_EVENT_UUID)
             if (sensorDataChar == null || controlPointChar == null) {
-                if (cont.isActive) cont.resume(AppResult.failure(AppError.Unknown("GATT-Charakteristik fehlt")))
+                if (cont.isActive) {
+                    cont.resume(AppResult.failure(BleErrorMapper.error(SensorErrorReason.SERVICE_MISSING)))
+                }
                 scope.launch { cleanupConnection(DisconnectReason.CHARACTERISTIC_MISSING) }
                 return
             }
@@ -347,20 +387,130 @@ class BleSensorProvider
             gattClient.requestHighConnectionPriority()
             _connectionState.value = SensorConnectionState.CONNECTED
             if (cont.isActive) cont.resume(AppResult.success(Unit))
-            // Firmware auto-starts streaming in connect; delay the polling
-            // start so the first reads don't pull stale data into the baseline.
+            // Firmware auto-starts streaming in connect; delay the streaming
+            // start so the first frames don't pull stale data into the baseline.
             scope.launch {
                 delay(FIRMWARE_STREAM_DELAY_MS)
-                startPolling()
+                startStreamingTransport()
             }
+        }
+
+        // --- Sample transport: Notify bevorzugt, Polling als Fallback ---------
+
+        /**
+         * P2-Fix #23: startet den Sample-Transport mit NOTIFY und faellt nur
+         * dann auf `read()`-Polling zurueck, wenn keine Notification eintrifft.
+         *
+         * Warum die Umstellung: der Kommentar oben ("NO CCCD ... polls read()
+         * at ~30 Hz") beschreibt einen HyperOS-spezifischen Workaround, der
+         * hier zur Grundeinstellung fuer ALLE Geraete geworden war. Das kostet
+         * auf normalen Android-Stacks erheblich: jeder Sample-Batch braucht
+         * einen vollen GATT-Round-Trip (Request + Response), waehrend Notify
+         * die Batches ungefragt und ohne Anfrage-Overhead liefert. Die
+         * effektive Rate haengt beim Polling an der Round-Trip-Latenz statt am
+         * Firmware-Takt — genau die Ursache, weshalb die Pipeline reale Raten
+         * deutlich unter den nominalen 50 Hz sieht (siehe #21).
+         *
+         * Die Erkennung ist bewusst empirisch statt per Geraetemodell-Liste:
+         * eine Liste ist immer unvollstaendig und veraltet. Kommt innerhalb von
+         * [NOTIFY_PROBE_MS] mindestens ein Batch per Notification, bleibt es
+         * bei Notify; sonst laeuft der bisherige Poll-Pfad an.
+         */
+        private fun startStreamingTransport() {
+            notifyProbeJob?.cancel()
+            pollJob?.cancel()
+            dedupTracker.reset()
+            consecutiveProtocolErrors = 0
+            notifiedBatches = 0
+            usingNotifyTransport = false
+            jitterBuffer.reset()
+            jitterBuffer.start()
+            _connectionState.value = SensorConnectionState.STREAMING
+
+            gattClient.enableNotification(sensorDataChar ?: return)
+            notifyProbeJob =
+                scope.launch {
+                    delay(NOTIFY_PROBE_MS)
+                    if (notifiedBatches >= MIN_NOTIFY_PROBE_BATCHES) {
+                        usingNotifyTransport = true
+                        Log.d(LOG_TAG, "Sample-Transport: NOTIFY ($notifiedBatches Batches im Probe-Fenster)")
+                    } else {
+                        // HyperOS-Fallback: die Notification bleibt aus (oder
+                        // liefert nur den gecachten Wert). Notify wird
+                        // abgeschaltet, damit der Stack echte Over-the-Air-Reads
+                        // ausfuehrt statt den zuletzt notifizierten Wert zu
+                        // wiederholen.
+                        Log.w(LOG_TAG, "Sample-Transport: keine Notifications, Fallback auf read()-Polling")
+                        gattClient.disableNotification(sensorDataChar)
+                        startPolling()
+                    }
+                }
+        }
+
+        /**
+         * Verteilt eine Notification auf den passenden Kanal. Die
+         * Sample-Charakteristik (fee1) liefert Sample-Batches, fee4 die
+         * Geraete-Events (M5-Taste).
+         */
+        private fun onNotification(event: GattEvent.Notification) {
+            when (event.characteristicUuid) {
+                SENSOR_DATA_UUID -> {
+                    notifiedBatches++
+                    handleSensorBatch(event.value)
+                }
+
+                DEVICE_EVENT_UUID -> {
+                    onDeviceEventBytes(event.value)
+                }
+
+                else -> {
+                    Unit
+                }
+            }
+        }
+
+        /**
+         * Verarbeitet einen rohen Sample-Batch. Gemeinsamer Pfad fuer Notify
+         * und Polling — Dedup, Parse-Fehlerzaehlung und Health muessen in
+         * beiden Transportwegen identisch sein.
+         *
+         * Wirft [BleProtocolException] weiter an den Aufrufer: der Poll-Loop
+         * behandelt eine Fehlerserie als Verbindungsabbruch, der
+         * Notification-Pfad zaehlt nur.
+         */
+        private fun handleSensorBatch(bytes: ByteArray): Boolean {
+            if (bytes.size != BleProtocolParser.V1_TOTAL_BYTES &&
+                bytes.size != BleProtocolParser.V2_TOTAL_BYTES
+            ) {
+                parseErrors++
+                updateHealth()
+                return false
+            }
+            val batchTimestamp = BleProtocolParser.timestampOf(bytes)
+            if (dedupTracker.shouldSkip(batchTimestamp)) {
+                updateHealth()
+                return false
+            }
+            val samples = BleProtocolParser.parseBatch(bytes)
+            consecutiveProtocolErrors = 0
+            receivedBatches++
+            jitterBuffer.addBatch(samples)
+            updateHealth()
+            return true
         }
 
         // --- Polling (HyperOS-safe read() loop) ------------------------------
 
+        /**
+         * P2-Fix #23: NUR noch Fallback. Wird von [startStreamingTransport]
+         * gestartet, wenn im Probe-Fenster keine Notification eintraf.
+         *
+         * Der Loop haelt bewusst kein `delay` zwischen den Reads: die
+         * GATT-Round-Trip-Zeit bestimmt die Rate. Genau das ist der Grund,
+         * warum dieser Pfad nur noch der Notfallweg ist.
+         */
         private fun startPolling() {
             pollJob?.cancel()
-            dedupTracker.reset()
-            consecutiveProtocolErrors = 0
             jitterBuffer.reset()
             jitterBuffer.start()
             _connectionState.value = SensorConnectionState.STREAMING
@@ -370,23 +520,7 @@ class BleSensorProvider
                     while (isActive && gattClient.isConnected) {
                         try {
                             val bytes = gattClient.read(sensorDataChar) ?: continue
-                            if (bytes.size != BleProtocolParser.V1_TOTAL_BYTES &&
-                                bytes.size != BleProtocolParser.V2_TOTAL_BYTES
-                            ) {
-                                parseErrors++
-                                updateHealth()
-                                continue
-                            }
-                            val batchTimestamp = BleProtocolParser.timestampOf(bytes)
-                            if (dedupTracker.shouldSkip(batchTimestamp)) {
-                                updateHealth()
-                                continue
-                            }
-                            val samples = BleProtocolParser.parseBatch(bytes)
-                            consecutiveProtocolErrors = 0
-                            receivedBatches++
-                            jitterBuffer.addBatch(samples)
-                            updateHealth()
+                            handleSensorBatch(bytes)
                         } catch (e: BleProtocolException) {
                             // Umbauplan Phase 2.4: unbekannte Versionen oder
                             // kaputte Pakete sind Sensorfehler - bei einer
@@ -394,10 +528,7 @@ class BleSensorProvider
                             parseErrors++
                             consecutiveProtocolErrors++
                             if (consecutiveProtocolErrors >= MAX_CONSECUTIVE_PROTOCOL_ERRORS) {
-                                Log.w(
-                                    "BleSensorProvider",
-                                    "Zu viele Protokollfehler, Verbindung wird beendet",
-                                )
+                                Log.w(LOG_TAG, "Zu viele Protokollfehler, Verbindung wird beendet")
                                 scope.launch { cleanupConnection(DisconnectReason.PROTOCOL_ERROR) }
                                 return@launch
                             }
@@ -406,7 +537,7 @@ class BleSensorProvider
                         } catch (e: Exception) {
                             // Transient GATT errors are expected in a tight read
                             // loop; back off briefly instead of killing the stream.
-                            Log.d("BleSensorProvider", "polling transient: ${e.message}")
+                            Log.d(LOG_TAG, "polling transient: ${e.message}")
                             delay(POLL_ERROR_BACKOFF_MS)
                         }
                         // No deliberate delay: the GATT round-trip governs the rate.
@@ -477,11 +608,15 @@ class BleSensorProvider
         private suspend fun cleanupConnection(reason: DisconnectReason) {
             pollJob?.cancel()
             pollJob = null
+            notifyProbeJob?.cancel()
+            notifyProbeJob = null
             deviceEventPollJob?.cancel()
             deviceEventPollJob = null
             mtuTimeoutJob?.cancel()
             mtuTimeoutJob = null
             consecutiveProtocolErrors = 0
+            notifiedBatches = 0
+            usingNotifyTransport = false
             sensorDataChar = null
             controlPointChar = null
             batteryChar = null
@@ -494,7 +629,7 @@ class BleSensorProvider
             _connectedDeviceId.value = null
             _connectionState.value = SensorConnectionState.DISCONNECTED
             updateHealth()
-            Log.d("BleSensorProvider", "cleanupConnection($reason)")
+            Log.d(LOG_TAG, "cleanupConnection($reason)")
         }
 
         /** Umbauplan Phase 3: Paketverlust und Gaps als Health-Flow. */
@@ -557,6 +692,20 @@ class BleSensorProvider
             private const val FIRMWARE_STREAM_DELAY_MS = 600L
             private const val DEVICE_EVENT_POLL_MS = 250L
             private const val POLL_ERROR_BACKOFF_MS = 50L
+
+            private const val LOG_TAG = "BleSensorProvider"
+
+            /**
+             * P2-Fix #23: Fenster, in dem mindestens eine Notification
+             * eintreffen muss. 800 ms sind bei 12.5 Batches/s (80 ms Intervall)
+             * grosszuegig — reicht auch bei langsamer Verbindungsaushandlung,
+             * bleibt aber unter der Zeit, die der Nutzer vor dem ersten Satz
+             * braucht.
+             */
+            private const val NOTIFY_PROBE_MS = 800L
+
+            /** So viele Notify-Batches gelten als bestaetigter Transport. */
+            private const val MIN_NOTIFY_PROBE_BATCHES = 2
 
             /** MTU-Timeout: kein onMtuChanged -> Retry (Samsung silent failure). */
             private const val MTU_TIMEOUT_MS = 1_000L
@@ -809,6 +958,39 @@ internal class BleGattClient {
                     }
                 if (!ok) opDone(GattOperationType.DESCRIPTOR)
             }
+        }
+    }
+
+    /**
+     * P2-Fix #23: schaltet Notifications wieder ab.
+     *
+     * Notwendig fuer den HyperOS-Fallback: HyperOS liefert bei GESETZTEM CCCD
+     * fuer jeden `read()` den zuletzt notifizierten (gecachten) Wert zurueck
+     * statt einen echten Over-the-Air-Read auszufuehren. Ohne dieses
+     * Zurueckschalten wuerde der Poll-Fallback denselben Batch endlos
+     * wiederholen und der Dedup-Tracker alles verwerfen.
+     */
+    fun disableNotification(characteristic: BluetoothGattCharacteristic?) {
+        val g = gatt ?: return
+        val ch = characteristic ?: return
+        runCatching {
+            val cccd = ch.getDescriptor(CCCD_UUID)
+            if (cccd != null) {
+                enqueue(GattOperationType.DESCRIPTOR) {
+                    val ok =
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            g.writeDescriptor(cccd, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE) ==
+                                BluetoothStatusCodes.SUCCESS
+                        } else {
+                            @Suppress("DEPRECATION")
+                            cccd.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+                            @Suppress("DEPRECATION")
+                            g.writeDescriptor(cccd)
+                        }
+                    if (!ok) opDone(GattOperationType.DESCRIPTOR)
+                }
+            }
+            g.setCharacteristicNotification(ch, false)
         }
     }
 

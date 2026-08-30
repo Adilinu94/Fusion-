@@ -3,6 +3,7 @@ package com.dropsync.feature.workout
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.testing.FakeCalibrationProfileRepository
 import com.dropsync.core.testing.FakeSensorProvider
+import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.domain.sensor.SensorSample
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -56,6 +57,7 @@ class CalibrationViewModelTest {
         CalibrationViewModel(
             sensorProvider = sensorProvider,
             calibrationProfileRepository = calibrationProfileRepository,
+            dispatchers = TestDispatcherProvider(dispatcher),
         )
 
     /**
@@ -123,24 +125,32 @@ class CalibrationViewModelTest {
         vm.start(exerciseId = 1L, deviceId = "AA:BB:CC:DD:EE:FF")
         dispatcher.scheduler.runCurrent()
 
+        // P1-Fix #15: finishStage() rechnet den Sweep auf dem Default-Dispatcher
+        // statt auf dem UI-Thread. Der Stufenwechsel ist damit asynchron - der
+        // Test muss den Scheduler nach jedem "Weiter" laufen lassen.
+        fun advance() {
+            vm.finishStage()
+            dispatcher.scheduler.runCurrent()
+        }
+
         // REST: 3 s Stille (150 Samples @ 50 Hz).
         emitStream((0 until 150).map { restSample(it * 20L) })
-        vm.finishStage()
+        advance()
         assertNull(vm.error.value)
 
         // SINGLE_REP: genau ein deutlicher Rep.
         emitStream(rep(0))
-        vm.finishStage()
+        advance()
         assertNull(vm.error.value)
 
         // KNOWN_SET: 5 Reps.
         emitStream(reps(5))
-        vm.finishStage()
+        advance()
         assertNull(vm.error.value)
 
         // SLOW_SET: 3 langsame Reps.
         emitStream(reps(3, up = 60, down = 60, pauseSamples = 120))
-        vm.finishStage()
+        advance()
         assertNull(vm.error.value)
 
         assertEquals(

@@ -49,6 +49,16 @@ class ActiveSetController(
     private val _currentSignalQuality = MutableStateFlow(SignalQuality.UNRELIABLE)
     val currentSignalQuality: StateFlow<SignalQuality> = _currentSignalQuality.asStateFlow()
 
+    /**
+     * P2-Fix #19: Ergebnis der Autokorrelations-Plausibilitaetspruefung des
+     * letzten abgeschlossenen Sets. null, solange kein Set abgeschlossen ist.
+     * Die UI kann daraus einen Hinweis ableiten ("Zaehlung wirkt
+     * unplausibel — Kalibrierung pruefen?"), ohne dass eine Ground Truth
+     * vorliegen muss.
+     */
+    private val _lastPlausibility = MutableStateFlow<RepCountPlausibility.Result?>(null)
+    val lastPlausibility: StateFlow<RepCountPlausibility.Result?> = _lastPlausibility.asStateFlow()
+
     private var engine: ExerciseEnginePipeline? = null
     private var exerciseId: Long = -1L
     private var deviceId: String? = null
@@ -58,11 +68,26 @@ class ActiveSetController(
     private val bufferedRepEvents = mutableListOf<RepEvent>()
     private var startedAtMs: Long = 0L
 
+    /** Letzter Abbruchgrund fuer Diagnose und Tests (P4-Fix #30). */
+    var lastAbortReason: SetAbortReason? = null
+        private set
+
     private var countdownJob: Job? = null
     private var sampleJob: Job? = null
     private var eventJob: Job? = null
     private var healthJob: Job? = null
     private var connectionJob: Job? = null
+
+    /**
+     * P0-Fix (Start-Race): `health` und `connectionState` sind StateFlows und
+     * liefern beim Abonnieren SOFORT ihren aktuellen Wert. Stammt dieser noch
+     * aus einer Phase vor STREAMING — oder lief `updateHealth()` seit dem
+     * Wechsel nicht —, brach der Controller das gerade gestartete Set
+     * unmittelbar wieder ab. Bis der Stream sich einmal als brauchbar gezeigt
+     * hat, gilt deshalb eine Anlaufzeit: erst danach loesen UNRELIABLE bzw.
+     * "nicht STREAMING" einen Abbruch aus.
+     */
+    private var streamProvenGood = false
 
     /**
      * Startet ein gezaehltes Set fuer [profile]. Liefert false, wenn bereits
@@ -86,9 +111,16 @@ class ActiveSetController(
                     expectedDurationMs = profile.expectedDurationMs,
                     detectionThreshold = profile.detectionThreshold,
                     hasValidCalibration = true,
-                    // Rollout (Umbauplan Punkte 4/8): accelEnabled und
-                    // orientationTrackingEnabled bleiben false, bis die
-                    // Freigabe-Szenarien (Gate 11b) gruen sind.
+                    // P2-Fix #22: das Accel-Voting laeuft, sobald die
+                    // Kalibrierung eine trennscharfe Schwelle gemessen hat.
+                    // Ohne kalibrierten Wert (Altprofile aus Schema v4)
+                    // bleibt der Kanal aus - lieber kein zweiter Kanal als
+                    // ein falsch parametrisierter.
+                    accelEnabled = profile.accelVotingAvailable,
+                    accelThreshold = profile.accelThreshold,
+                    // Rollout (Umbauplan Punkt 8): orientationTrackingEnabled
+                    // bleibt false, bis die Freigabe-Szenarien (Gate 11b)
+                    // gruen sind.
                 ),
             ).also { it.setTemplate(profile.repTemplate) }
 
@@ -98,6 +130,11 @@ class ActiveSetController(
         this.engineVersion = profile.engineVersion
         startedAtMs = clock.elapsedRealtimeMs()
         _countedReps.value = 0
+        lastAbortReason = null
+        streamProvenGood = false
+        // P2-Fix #19: die Zweitmeinung des Vorgaenger-Sets darf nicht in ein
+        // neues Set hineinragen.
+        _lastPlausibility.value = null
         bufferedSamples.clear()
         bufferedRepEvents.clear()
         _phase.value = ActiveSetPhase.COUNTDOWN
@@ -110,9 +147,11 @@ class ActiveSetController(
         connectionJob =
             scope.launch {
                 connectionState.collect { state ->
-                    if (state != SensorConnectionState.STREAMING &&
-                        _phase.value != ActiveSetPhase.IDLE
-                    ) {
+                    if (state == SensorConnectionState.STREAMING) {
+                        streamProvenGood = true
+                    } else if (streamProvenGood && _phase.value != ActiveSetPhase.IDLE) {
+                        // Erst abbrechen, wenn der Stream vorher wirklich lief
+                        // (P0-Fix Start-Race, siehe [streamProvenGood]).
                         abort(SetAbortReason.DISCONNECT)
                     }
                 }
@@ -155,10 +194,18 @@ class ActiveSetController(
      * Umbauplan Phase 3: ein unzuverlaessiger Stream (oder ein nicht
      * streamendes Geraet) bricht ein laufendes Set ab. Manuelle Eingabe
      * bleibt jederzeit moeglich.
+     *
+     * P0-Fix: der erste, beim Abonnieren nachgelieferte Wert darf das Set
+     * nicht toeten. Erst wenn der Stream sich einmal als brauchbar gezeigt
+     * hat ([streamProvenGood]), wirkt UNRELIABLE als Abbruchgrund.
      */
     private fun onHealth(health: SensorHealth) {
         _currentSignalQuality.value = health.quality
-        if (health.quality == SignalQuality.UNRELIABLE && _phase.value != ActiveSetPhase.IDLE) {
+        if (health.quality != SignalQuality.UNRELIABLE) {
+            streamProvenGood = true
+            return
+        }
+        if (streamProvenGood && _phase.value != ActiveSetPhase.IDLE) {
             abort(SetAbortReason.DISCONNECT)
         }
     }
@@ -167,10 +214,19 @@ class ActiveSetController(
      * Beendet das Set und liefert den gezaehlten Stand. Engine und Puffer
      * bleiben absichtlich stehen, bis [finishAndTakeTrace] oder [abort]
      * aufgeraeumt haben.
+     *
+     * P0-Fix: hier laufen ALLE Jobs aus. Frueher wurde nur der Countdown
+     * gecancelt — Sample-, Health- und Connection-Collector liefen weiter,
+     * bis der Nutzer loggte. Stoppte er ohne zu loggen, blieben drei
+     * Collector unbegrenzt am Flow haengen. Der Zaehlstand ist trotzdem
+     * sicher: `onSample` verwirft ausserhalb von COUNTING ohnehin alles.
+     *
+     * P2-Fix #19: beim Stoppen laeuft die Autokorrelations-Pruefung ueber das
+     * mitgeschnittene Signal, solange die Engine noch steht.
      */
     fun stop(): Int {
-        countdownJob?.cancel()
-        countdownJob = null
+        cancelJobs()
+        _lastPlausibility.value = engine?.checkPlausibility()
         val counted = _countedReps.value
         _phase.value = ActiveSetPhase.IDLE
         _countdownRemaining.value = 0
@@ -184,7 +240,9 @@ class ActiveSetController(
      */
     fun abort(reason: SetAbortReason) {
         cancelJobs()
+        lastAbortReason = reason
         engine = null
+        streamProvenGood = false
         _phase.value = ActiveSetPhase.IDLE
         _countdownRemaining.value = 0
         _countedReps.value = 0
@@ -205,6 +263,13 @@ class ActiveSetController(
             _phase.value = ActiveSetPhase.IDLE
             return null
         }
+        val activeEngine = engine
+        // P2-Fix #19/#21: Zweitmeinung und gemessene Rate gehoeren in den
+        // Mitschnitt. `stop()` hat die Pruefung eventuell schon gerechnet -
+        // dann den vorhandenen Wert wiederverwenden statt erneut ueber das
+        // Signal zu laufen.
+        val plausibility = _lastPlausibility.value ?: activeEngine?.checkPlausibility()
+        val measuredRateHz = activeEngine?.estimatedSampleRateHz ?: SampleRateEstimator.NOMINAL_RATE_HZ
         val trace =
             SetTrace(
                 exerciseId = exerciseId,
@@ -217,6 +282,8 @@ class ActiveSetController(
                 signalQuality = _currentSignalQuality.value,
                 startedAtMs = startedAtMs,
                 durationMs = clock.elapsedRealtimeMs() - startedAtMs,
+                plausibility = plausibility,
+                measuredSampleRateHz = measuredRateHz,
             )
         abort(SetAbortReason.CLEARED)
         return trace

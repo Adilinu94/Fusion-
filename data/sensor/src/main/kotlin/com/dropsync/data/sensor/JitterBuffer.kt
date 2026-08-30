@@ -9,13 +9,24 @@ import java.util.ArrayDeque
 
 /**
  * Turns bursty BLE packets into an even 50 Hz stream (port of
- * jitter_buffer.dart). Latency: bufferSize * tickInterval = 6 * 20 ms =
- * 120 ms (acceptable for rep counting).
+ * jitter_buffer.dart).
+ *
+ * Dimensionierung (P0-Fix): ein BLE-Batch enthaelt
+ * [BleProtocolParser.SAMPLES_PER_BATCH] = 4 Samples, der Tick entnimmt genau
+ * eines je [tickIntervalMs]. Treffen zwei Batches innerhalb eines
+ * Tick-Intervalls ein — im read()-Polling-Loop der Normalfall — liegen
+ * kurzzeitig 8 Samples an. Der frueher verwendete Puffer von 6 Eintraegen
+ * verwarf dabei bei JEDEM Doppel-Batch 2 Samples: keine Jitter-Absorption,
+ * sondern stille Dezimierung des Signals. [DEFAULT_BUFFER_SIZE] fasst
+ * deshalb zwei vollstaendige Batches plus Reserve.
+ *
+ * Latenz: bufferSize * tickInterval nur im Vollzustand; im Regelbetrieb
+ * bestimmt die Batch-Ankunftsrate die Fuellhoehe, nicht die Kapazitaet.
  */
 class JitterBuffer<T>(
     private val scope: CoroutineScope,
     private val onFrame: (T) -> Unit,
-    private val bufferSize: Int = 6,
+    private val bufferSize: Int = DEFAULT_BUFFER_SIZE,
     private val tickIntervalMs: Long = 20,
 ) {
     private val queue = ArrayDeque<T>()
@@ -93,5 +104,14 @@ class JitterBuffer<T>(
         outputFrames = 0
         underrunCount = 0
         totalTicks = 0
+    }
+
+    companion object {
+        /**
+         * Zwei vollstaendige BLE-Batches (2 x 4 Samples) plus Reserve fuer
+         * einen dritten halben. Kleinere Werte verwerfen bei jedem
+         * Doppel-Batch Samples (P0-Fix).
+         */
+        const val DEFAULT_BUFFER_SIZE = 12
     }
 }

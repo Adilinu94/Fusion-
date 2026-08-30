@@ -27,8 +27,18 @@ interface ShadowSessionRecorder {
 
 /**
  * One `"t":"set"` line from `SHADOW_DIFF_HARNESS_PLAN.md` Abschnitt 6.
- * [delta] is `shadowReps - confirmedReps`, the release-gate criterion
+ * [delta] is `predictedReps - confirmedReps`, the release-gate criterion
  * (D3/D4) — but only meaningful when [confirmedRepsEdited] is true.
+ *
+ * Hinweis zum Feld [shadowReps]: es traegt seit dem Entfernen der zweiten,
+ * parallel mitlaufenden Engine denselben Wert wie [liveCountedReps]. Grund:
+ * die "Shadow"-Engine war seit Umbauplan Punkt 1 mit identischer Achse,
+ * identischem Bias und identischem Threshold konfiguriert wie die
+ * Live-Engine — sie rechnete also dasselbe Ergebnis, nur ueber einen
+ * anderen Zeitraum (durchgehend statt nur waehrend eines gezaehlten Sets).
+ * Die Differenz war damit kein Erkenntnisgewinn, sondern ein Artefakt
+ * unterschiedlicher Set-Grenzen. Das Feld bleibt im JSONL-Format, damit
+ * bereits aufgezeichnete Sessions weiter lesbar sind.
  */
 data class ShadowDiffEvent(
     val exerciseId: Long,

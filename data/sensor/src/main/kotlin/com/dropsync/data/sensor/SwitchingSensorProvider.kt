@@ -9,7 +9,9 @@ import com.dropsync.domain.sensor.SensorSample
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.map
 
 /**
  * Runtime-switching sensor provider (Fusion Phase 4 step 4): exposes the
@@ -25,11 +27,20 @@ internal class SwitchingSensorProvider(
     private val ble: SensorProvider,
     private val fake: SensorProvider,
 ) : SensorProvider {
-    /** True while the real chip is (or is about to be) connected. */
+    /**
+     * True while the real chip is (or is about to be) connected.
+     *
+     * `distinctUntilChanged` ist zwingend: `connectionState` laeuft
+     * CONNECTING -> CONNECTED -> STREAMING, also drei Emissionen mit
+     * demselben Booleanwert. Ohne den Operator wuerde `flatMapLatest`
+     * dreimal ab- und neu abonnieren; da `ble.samples` ein SharedFlow ohne
+     * Replay ist, gehen alle in der Umschaltluecke emittierten Samples
+     * verloren - genau in der Phase, in der der Stream anlaeuft.
+     */
     private val useBle: Flow<Boolean> =
-        kotlinx.coroutines.flow.flow {
-            ble.connectionState.collect { emit(it != SensorConnectionState.DISCONNECTED) }
-        }
+        ble.connectionState
+            .map { it != SensorConnectionState.DISCONNECTED }
+            .distinctUntilChanged()
 
     override val connectionState: StateFlow<SensorConnectionState>
         get() = ble.connectionState

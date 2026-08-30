@@ -25,4 +25,18 @@ data class SetTrace(
     val startedAtMs: Long,
     /** Dauer des Sets in Millisekunden (Start -> Abschluss). */
     val durationMs: Long,
+    /**
+     * P2-Fix #19: unabhaengige Zweitmeinung zur Rep-Zahl aus der
+     * Autokorrelation des Signals. Kein Zaehler, sondern eine
+     * Konsistenzpruefung: sie erkennt ohne Ground Truth, ob die kalibrierte
+     * Schwelle noch zum tatsaechlichen Signal passt. null, wenn die Pruefung
+     * nicht lief (z. B. abgebrochenes Set).
+     */
+    val plausibility: RepCountPlausibility.Result? = null,
+    /**
+     * P2-Fix #21: die im Set GEMESSENE Abtastrate in Hz. Die Pipeline nahm
+     * bisher pauschal 50 Hz an; jede Zeitkonstante und jede abgeleitete
+     * Dauer haengt daran, deshalb gehoert der Wert in den Mitschnitt.
+     */
+    val measuredSampleRateHz: Double = SampleRateEstimator.NOMINAL_RATE_HZ,
 )

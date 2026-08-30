@@ -30,7 +30,7 @@ private enum class DetectorState { IDLE, RISING, FALLING }
  * sample index, so BLE packet loss cannot compress physical time.
  */
 class PeakDetector(
-    val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
     // Legacy default: theta = NPK + 0.25 * (SPK - NPK) with SPK=100, NPK=10.
     private var threshold: Double = 32.5,
     private val fallingRatio: Double = 0.5,
@@ -43,6 +43,20 @@ class PeakDetector(
 ) {
     private var spk: Double = threshold
     private var npk: Double = threshold * 0.5
+
+    /**
+     * Aktuell angenommene Abtastrate. P2-Fix #21: nachfuehrbar ueber
+     * [updateSampleRate]; wird nur noch als Rueckfall fuer die
+     * Dauer-Rechnung ohne verwertbare Timestamps benutzt.
+     */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
+    /** Uebernimmt die gemessene Abtastrate (siehe [SampleRateEstimator]). */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        sampleRateHz = rateHz
+    }
 
     private var state = DetectorState.IDLE
     private var currentMax = 0.0

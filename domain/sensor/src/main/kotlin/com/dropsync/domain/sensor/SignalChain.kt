@@ -18,7 +18,7 @@ import kotlin.math.sqrt
 class SignalChain(
     private var rotationAxis: DoubleArray,
     private var gyroBias: DoubleArray,
-    private val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
     private val oneEuroMinCutoff: Double = 1.0,
     private val oneEuroBeta: Double = 0.007,
     private val envelopeCutoffHz: Double = 3.0,
@@ -28,6 +28,15 @@ class SignalChain(
     private val orientationTracker: OrientationTracker? = null,
 ) {
     private var samplesSeen = 0
+
+    /**
+     * Aktuell verwendete Abtastrate. P2-Fix #21: nicht mehr fix, sondern
+     * ueber [updateSampleRate] aus der gemessenen Rate nachgefuehrt (siehe
+     * [SampleRateEstimator]). Alle Zeitkonstanten der Kette haengen daran.
+     */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
     private val oneEuro = OneEuroFilter(oneEuroMinCutoff, oneEuroBeta, sampleRateHz)
     private val envelope = EnvelopeDetector(envelopeCutoffHz, sampleRateHz)
     private val oneEuroAccel = OneEuroFilter(accelOneEuroMinCutoff, oneEuroBeta, sampleRateHz)
@@ -36,6 +45,23 @@ class SignalChain(
     /** True once [settleSamples] frames passed (filters warmed up). */
     val isSettled: Boolean
         get() = samplesSeen >= settleSamples
+
+    /**
+     * P2-Fix #21: uebernimmt eine neue gemessene Abtastrate und reicht sie an
+     * alle Zeitkonstanten weiter (One-Euro-Alpha, Envelope-Decay,
+     * Madgwick-dt). Der Filter-INHALT bleibt erhalten, nur die Konstanten
+     * werden neu berechnet - ein Reset waere hier schaedlich, weil er die
+     * Einschwingphase mitten im Satz erneut ausloesen wuerde.
+     */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        sampleRateHz = rateHz
+        oneEuro.updateSampleRate(rateHz)
+        envelope.updateSampleRate(rateHz)
+        oneEuroAccel.updateSampleRate(rateHz)
+        envelopeAccel.updateSampleRate(rateHz)
+        orientationTracker?.updateSampleRate(rateHz)
+    }
 
     /** Processes one raw sample into a [ProcessedFrame]. */
     fun process(
@@ -53,8 +79,13 @@ class SignalChain(
         val dz = gz - gyroBias[2]
         // Punkt 8: online axis tracking - der Madgwick-Filter dreht die
         // kalibrierte Achse in das aktuelle Sensor-Koordinatensystem.
+        // WICHTIG: der Tracker bekommt die BIAS-KORRIGIERTEN Raten. Mit den
+        // rohen Werten integriert ein konstanter Gyro-Bias (MPU6886: 2-5
+        // deg/s typisch) zu monoton wachsender Orientierungsdrift - die
+        // nachgefuehrte Achse wandert dann WEG von der echten Rotationsachse
+        // und kehrt den Zweck der Nachfuehrung um.
         val tracker = orientationTracker
-        tracker?.update(ax, ay, az, gx, gy, gz)
+        tracker?.update(ax, ay, az, dx, dy, dz)
         val axis =
             if (tracker == null) {
                 rotationAxis
@@ -90,6 +121,28 @@ class SignalChain(
         this.gyroBias = gyroBias.toDoubleArray()
     }
 
+    /**
+     * P2-Fix #24 (ZUPT): uebernimmt einen neu gemessenen Gyro-Bias, ohne die
+     * Achse anzufassen.
+     *
+     * Warum die Achse ausgenommen bleibt: im Ruhezustand ist die
+     * Rotationsachse nicht beobachtbar (es gibt keine Rotation). Der
+     * ZUPT-Detektor kann deshalb nur den Bias liefern; fuer die Achse ist der
+     * [OrientationTracker] zustaendig.
+     *
+     * Der Filterzustand bleibt bewusst erhalten: ein Reset wuerde mitten im
+     * Satz die Einschwingphase erneut ausloesen und dabei echte Samples
+     * verwerfen.
+     */
+    fun updateGyroBias(bias: DoubleArray) {
+        require(bias.size == 3) { "bias must have 3 components" }
+        if (bias.any { !it.isFinite() }) return
+        gyroBias = bias.copyOf()
+    }
+
+    /** Aktuell verwendeter Gyro-Bias (Diagnose/Telemetrie). */
+    fun currentGyroBias(): DoubleArray = gyroBias.copyOf()
+
     /** Full reset (new session / exercise switch / reconnect). */
     fun reset() {
         samplesSeen = 0
@@ -108,10 +161,20 @@ class SignalChain(
 class OneEuroFilter(
     private val minCutoff: Double = 1.0,
     private val beta: Double = 0.007,
-    private val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
 ) {
     private var xPrev: Double? = null
     private var dxPrev: Double = 0.0
+
+    /** P2-Fix #21: gemessene Rate, ueber [updateSampleRate] nachgefuehrt. */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
+    /** Uebernimmt eine neue Abtastrate; Filterzustand bleibt erhalten. */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        sampleRateHz = rateHz
+    }
 
     fun process(x: Double): Double {
         val prev = xPrev
@@ -149,16 +212,26 @@ class OneEuroFilter(
  */
 class EnvelopeDetector(
     private val cutoffHz: Double = 3.0,
-    private val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
 ) {
     private var value: Double = 0.0
-    private val alpha: Double =
-        run {
-            val tau = 1.0 / (2.0 * Math.PI * cutoffHz)
-            val te = 1.0 / sampleRateHz
-            1.0 / (1.0 + tau / te)
-        }
-    private val decay: Double = exp(-1.0 / (cutoffHz * sampleRateHz))
+
+    /** P2-Fix #21: gemessene Rate, ueber [updateSampleRate] nachgefuehrt. */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
+    private var decay: Double = computeDecay(sampleRateHz)
+
+    /**
+     * Uebernimmt eine neue Abtastrate. Der Decay-Faktor haengt direkt an der
+     * Rate: mit fix 50 Hz und real 30 Hz waere die Huellkurve zu langsam
+     * abgefallen und die Aktivitaets-Gates haetten zu spaet reagiert.
+     */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        sampleRateHz = rateHz
+        decay = computeDecay(rateHz)
+    }
 
     fun process(absValue: Double): Double {
         value = max(absValue, value * decay)
@@ -168,4 +241,6 @@ class EnvelopeDetector(
     fun reset() {
         value = 0.0
     }
+
+    private fun computeDecay(rateHz: Double): Double = exp(-1.0 / (cutoffHz * rateHz))
 }
