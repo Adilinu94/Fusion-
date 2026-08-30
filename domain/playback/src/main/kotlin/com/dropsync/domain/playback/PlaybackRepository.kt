@@ -95,4 +95,17 @@ interface PlaybackRepository {
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit>
+
+    /**
+     * Schaltet den Scrubbing-Modus der Wiedergabe (Media3 1.8+).
+     *
+     * Waehrend eines Waveform-Drags setzt die UI das auf `true`: der Player
+     * optimiert dann auf viele schnelle, aufeinanderfolgende Seeks statt
+     * jeden Sprung als vollwertigen Positionswechsel mit Audio-Reset zu
+     * behandeln. Beim Loslassen wieder `false`.
+     *
+     * Best-effort: auf Implementierungen ohne Scrubbing-Unterstuetzung ein
+     * No-op — die Grundfunktion (Seek) haengt nie daran.
+     */
+    suspend fun setScrubbingMode(enabled: Boolean): AppResult<Unit>
 }

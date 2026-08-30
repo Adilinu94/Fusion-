@@ -3,15 +3,19 @@ package com.dropsync.feature.player
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.getOrNull
+import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformDisplayGain
+import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.playback.PlaybackRepository
+import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
+import com.dropsync.domain.playback.RepeatMode
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,7 +24,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
@@ -57,6 +63,8 @@ data class NowPlayingUiState(
     val songId: Long? = null,
     /** Content-URI fuer den Cover-Art-Lader (MediaMetadataRetriever). */
     val contentUri: String? = null,
+    val shuffleEnabled: Boolean = false,
+    val repeatMode: RepeatMode = RepeatMode.OFF,
 )
 
 /** Zustand des Queue-Editors (Plan Phase 6, Punkt 3). */
@@ -92,35 +100,79 @@ class PlayerViewModel
     constructor(
         private val playbackRepository: PlaybackRepository,
         private val libraryRepository: LibraryRepository,
+        private val browseRepository: LibraryBrowseRepository,
         private val trackAnalysisRepository: TrackAnalysisRepository,
         private val markerRepository: MarkerRepository,
         private val audioEngineRepository: AudioEngineRepository,
     ) : ViewModel() {
+        /**
+         * MediaStore-ID des laufenden Titels. Einzige Quelle fuer alle
+         * songabhaengigen Ketten; `distinctUntilChanged` verhindert, dass
+         * jedes Player-Ereignis (Position, Play/Pause) die nachgelagerten
+         * Abfragen erneut anstoesst.
+         */
+        private val currentSongId: StateFlow<Long?> =
+            playbackRepository.state
+                .map { it.currentSongId }
+                .distinctUntilChanged()
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+        /**
+         * Geladene Metadaten MIT der ID, zu der sie gehoeren.
+         *
+         * Die ID ist Teil des Werts, damit die Projektionen unterscheiden
+         * koennen zwischen "Titel hat keine Metadaten" und "Metadaten sind
+         * noch nicht geladen". Ohne diese Unterscheidung veroeffentlichte
+         * `nowPlaying` bei jedem Songwechsel einen Zwischenzustand mit
+         * `isVisible = true` und leerem Titel — auf dem Geraet ein sichtbares
+         * Aufblitzen einer leeren Titelzeile.
+         */
+        private data class LoadedSong(
+            val songId: Long,
+            val song: Song?,
+        )
+
+        /**
+         * Metadaten des laufenden Titels, EINMAL pro Titelwechsel aus der
+         * Bibliothek geladen (P1-Fix). Vorher rief sowohl `miniPlayer` als
+         * auch `nowPlaying` in `mapLatest` ein `getSong()` — also ein
+         * Room-Query pro Player-Ereignis, doppelt.
+         */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        private val currentSong: StateFlow<LoadedSong?> =
+            currentSongId
+                .flatMapLatest { songId ->
+                    if (songId == null) {
+                        flowOf<LoadedSong?>(null)
+                    } else {
+                        flow<LoadedSong?> {
+                            emit(LoadedSong(songId, libraryRepository.getSong(songId).getOrNull()))
+                        }
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+        /**
+         * Paart den Wiedergabezustand mit den Metadaten und laesst nur
+         * zusammengehoerende Paare durch.
+         *
+         * Der Filter ist der Grund, warum es diese Hilfsfunktion gibt: er
+         * unterdrueckt genau die Emissionen, in denen die Metadaten noch zum
+         * VORHERIGEN Titel gehoeren (oder noch fehlen). Die UI zeigt in dem
+         * kurzen Moment weiter den alten Titel statt einer leeren Zeile.
+         */
+        private fun statesWithSong(): kotlinx.coroutines.flow.Flow<Pair<PlaybackState, Song?>> =
+            combine(playbackRepository.state, currentSong) { state, loaded -> state to loaded }
+                .filter { (state, loaded) ->
+                    state.currentSongId == null || loaded?.songId == state.currentSongId
+                }.map { (state, loaded) -> state to loaded?.song }
+
         init {
             // Waveform-Analyse fruehzeitig anstossen (Plan Phase 2/3): sobald ein
             // neuer Titel laeuft, nicht erst beim Oeffnen des Now-Playing-Screens.
             // So ist die Wellenform beim Tap auf einen Titel meist schon bereit;
             // die Analyse ist idempotent und cachebar (kein doppelter Aufwand).
             viewModelScope.launch {
-                playbackRepository.state
-                    .map { it.currentSongId }
-                    .distinctUntilChanged()
-                    .collect { songId -> requestAnalysis(songId) }
-            }
-            // BPM-Lock: Ziel-Kadenz x aktuellem Track-BPM -> Tempo-Faktor.
-            // Laeuft reaktiv: Titelwechsel oder neue BPM-Analyse ziehen die
-            // Geschwindigkeit automatisch nach (nur solange der Lock an ist).
-            viewModelScope.launch {
-                combine(
-                    bpmLock,
-                    targetBpm,
-                    trackBpm,
-                ) { lock, target, bpm -> Triple(lock, target, bpm) }
-                    .collect { (lock, target, bpm) ->
-                        if (lock && bpm != null) {
-                            playbackRepository.setPlaybackSpeed(speedForBpmLock(target, bpm))
-                        }
-                    }
+                currentSongId.collect { songId -> requestAnalysis(songId) }
             }
         }
 
@@ -178,9 +230,7 @@ class PlayerViewModel
         /** BPM des laufenden Titels aus der Analyse (null bis Analyse fertig). */
         @OptIn(ExperimentalCoroutinesApi::class)
         val trackBpm: StateFlow<Float?> =
-            playbackRepository.state
-                .map { it.currentSongId }
-                .distinctUntilChanged()
+            currentSongId
                 .flatMapLatest { songId ->
                     if (songId == null) {
                         flowOf(null)
@@ -197,6 +247,28 @@ class PlayerViewModel
         private val targetBpm = MutableStateFlow(DEFAULT_TARGET_BPM)
         val lockTargetBpm: StateFlow<Int> = targetBpm.asStateFlow()
 
+        // BPM-Lock: Ziel-Kadenz x aktuellem Track-BPM -> Tempo-Faktor.
+        // Laeuft reaktiv: Titelwechsel oder neue BPM-Analyse ziehen die
+        // Geschwindigkeit automatisch nach (nur solange der Lock an ist).
+        // Eigener init-Block NACH den Deklarationen von bpmLock/targetBpm/
+        // trackBpm: viewModelScope laeuft auf Dispatchers.Main.immediate,
+        // d. h. die Coroutine startet synchron im Konstruktor — im ersten
+        // init war trackBpm da noch null (Start-Crash, NPE in combine).
+        init {
+            viewModelScope.launch {
+                combine(
+                    bpmLock,
+                    targetBpm,
+                    trackBpm,
+                ) { lock, target, bpm -> Triple(lock, target, bpm) }
+                    .collect { (lock, target, bpm) ->
+                        if (lock && bpm != null) {
+                            playbackRepository.setPlaybackSpeed(speedForBpmLock(target, bpm))
+                        }
+                    }
+            }
+        }
+
         fun setBpmLock(enabled: Boolean) {
             bpmLock.value = enabled
         }
@@ -207,13 +279,11 @@ class PlayerViewModel
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val miniPlayer: StateFlow<MiniPlayerState> =
-            playbackRepository.state
-                .mapLatest { state ->
-                    val songId = state.currentSongId
-                    if (songId == null) {
+            statesWithSong()
+                .map { (state, song) ->
+                    if (state.currentSongId == null) {
                         MiniPlayerState()
                     } else {
-                        val song = libraryRepository.getSong(songId).getOrNull()
                         MiniPlayerState(
                             isVisible = true,
                             isPlaying = state.isPlaying,
@@ -256,16 +326,24 @@ class PlayerViewModel
             viewModelScope.launch { playbackRepository.seekTo(positionMs) }
         }
 
+        /**
+         * Scrubbing-Modus der Wiedergabe (Media3 1.8+). Die Waveform meldet
+         * Drag-Beginn und -Ende; der Player optimiert dazwischen auf viele
+         * schnelle Seeks. Best-effort — Seeks funktionieren auch ohne.
+         */
+        fun setScrubbing(active: Boolean) {
+            viewModelScope.launch { playbackRepository.setScrubbingMode(active) }
+        }
+
         /** Now-Playing-Projektion (Marker/Waveform-Plan Phase 1). */
         @OptIn(ExperimentalCoroutinesApi::class)
         val nowPlaying: StateFlow<NowPlayingUiState> =
-            playbackRepository.state
-                .mapLatest { state ->
+            statesWithSong()
+                .map { (state, song) ->
                     val songId = state.currentSongId
                     if (songId == null) {
                         NowPlayingUiState()
                     } else {
-                        val song = libraryRepository.getSong(songId).getOrNull()
                         NowPlayingUiState(
                             isVisible = true,
                             isPlaying = state.isPlaying,
@@ -275,9 +353,51 @@ class PlayerViewModel
                             durationMs = state.durationMs,
                             songId = songId,
                             contentUri = song?.contentUri,
+                            shuffleEnabled = state.shuffleEnabled,
+                            repeatMode = state.repeatMode,
                         )
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), NowPlayingUiState())
+
+        /** Favoritenstatus des laufenden Titels aus derselben Quelle wie die Library. */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val isFavorite: StateFlow<Boolean> =
+            currentSongId
+                .flatMapLatest { songId ->
+                    if (songId == null) flowOf(false) else browseRepository.isFavorite(songId)
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
+
+        fun toggleFavorite() {
+            val songId = nowPlaying.value.songId ?: return
+            viewModelScope.launch { browseRepository.setFavorite(songId, !isFavorite.value) }
+        }
+
+        fun toggleShuffle() {
+            viewModelScope.launch {
+                playbackRepository.setShuffle(
+                    !playbackRepository
+                        .snapshotNow()
+                        .getOrNull()
+                        ?.shuffleEnabled
+                        .orDefault(false),
+                )
+            }
+        }
+
+        fun cycleRepeat() {
+            viewModelScope.launch {
+                val current = playbackRepository.snapshotNow().getOrNull()?.repeatMode ?: RepeatMode.OFF
+                val next =
+                    when (current) {
+                        RepeatMode.OFF -> RepeatMode.ALL
+                        RepeatMode.ALL -> RepeatMode.ONE
+                        RepeatMode.ONE -> RepeatMode.OFF
+                    }
+                playbackRepository.setRepeatMode(next)
+            }
+        }
+
+        private fun Boolean?.orDefault(default: Boolean): Boolean = this ?: default
 
         private val tickedPositionMs = MutableStateFlow<Long?>(null)
 
@@ -307,9 +427,7 @@ class PlayerViewModel
          */
         @OptIn(ExperimentalCoroutinesApi::class)
         val waveform: StateFlow<WaveformUiState> =
-            playbackRepository.state
-                .map { it.currentSongId }
-                .distinctUntilChanged()
+            currentSongId
                 .flatMapLatest { songId ->
                     if (songId == null) {
                         flowOf<WaveformUiState>(WaveformUiState.Hidden)
@@ -362,10 +480,7 @@ class PlayerViewModel
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val nowPlayingMarkers: StateFlow<List<SongMarker>> =
-            combine(
-                playbackRepository.state.map { it.currentSongId }.distinctUntilChanged(),
-                markersVersion,
-            ) { songId, _ -> songId }
+            combine(currentSongId, markersVersion) { songId, _ -> songId }
                 .mapLatest { songId ->
                     if (songId == null) {
                         emptyList()

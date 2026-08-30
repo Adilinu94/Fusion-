@@ -2675,3 +2675,66 @@ com/offtrack/core/dj/PlaybackService.smali
 ```
 
 **Hinweis:** Diese Datei dokumentiert statische Analyse und technische Übertragung. Sie ist keine Behauptung, dass die vollständige proprietäre Native-Implementierung oder jede Laufzeitentscheidung der untersuchten Apps rekonstruiert wurde.
+
+## 49. Vertiefte Poweramp-Waveform-Triage (2026-08-26)
+
+Die erneute Prüfung von `D:\\rev-tools\\poweramp_offline_triage` liefert für den Now-Playing-Screen belastbarere Hinweise als die bisherige reine Screenshot-Analyse.
+
+### 49.1 Vorbereitete Track-Daten statt Neuberechnung im Zeichenpfad
+
+`com/maxmpz/audioplayer/player/f0.smali` besitzt das Feld `r:[F`. `Waveseek.x(f0)` liest dieses Float-Array direkt aus dem Playback-Zustand und übergibt es an die Basiskomponente. Ist kein Array verfügbar, baut Poweramp lediglich einen kleinen synthetischen Fallback aus einer begrenzten Sinusfolge auf. Daraus folgt für FlowRep:
+
+- Die Waveform muss vor dem Anzeigen als stabile Track-Geometrie vorliegen.
+- Der UI-Zeichenpfad darf nicht bei jedem Frame neue Song-Samples aus den gesamten Analyse-Buckets ableiten.
+- Ein fehlender Analyse-Cache braucht einen sichtbaren Lade-/Fallback-Zustand, darf aber nicht als normale Track-Waveform ausgegeben werden.
+
+Das belegt nicht die proprietäre Peak-Analyse oder die exakte Bedeutung jedes Float-Wertes. Es belegt aber die Architekturgrenze: vorbereitete Daten werden vom Player-Widget konsumiert.
+
+### 49.2 Laufender Fortschritt über einen Frame-Controller
+
+`com/maxmpz/widget/player/q1.smali` verwendet `Choreographer.postFrameCallback`. `doFrame()` liest die aktuelle Playback-Position, berechnet den Fortschrittsanteil und meldet ihn an das Widget. Wenn eine Zeitreferenz vorhanden ist, wird zwischen Positionsupdates mit der verstrichenen Nanosekundenzeit fortgeschrieben. Ein Positionsunterschied unter ungefähr `0.02` wird nicht als neuer sichtbarer Zustand behandelt.
+
+Übertragbares Muster:
+
+```text
+Playback position event
+    -> monotonic frame interpolation
+    -> primitive progress fraction
+    -> invalidate/draw prepared geometry
+```
+
+Unser 200-ms-Compose-Ticker ist für State-Synchronisation geeignet, bildet aber allein nicht die sichtbare Poweramp-Bewegung nach. Für die exakte Wirkung sollten wir die Waveform-Geometrie stabil halten und die laufende Position unabhängig davon frame-synchron interpolieren. Die Interpolation darf beim Pause-, Seek- oder Titelwechsel sofort auf den autoritativen Wert zurückspringen.
+
+### 49.3 Scrubbing ist ein eigener Lebenszyklus
+
+`com/maxmpz/widget/player/Seek.smali` nutzt eine Positionsauflösung von `0..10000`, mappt Touch-X innerhalb der gepaddeten Widget-Breite auf diesen Bereich und behandelt `DOWN`, `MOVE`, `UP` und `CANCEL` getrennt. Während des Drags wird der sichtbare Zielwert aktualisiert; beim Loslassen wird der Seek abgeschlossen. Ein Abbruch setzt den visuellen Press-/Tracking-Zustand zurück.
+
+Für FlowRep heißt das:
+
+- normaler Playback-Fortschritt, Scrub-Vorschau und finaler `seekTo` müssen getrennte Zustände bleiben;
+- `CANCEL` muss die Vorschau beenden, ohne einen unbeabsichtigten Seek zu committen;
+- die horizontale Seek-Fläche muss ihre eigene Touch-Verantwortung behalten und darf nicht vom Cover-Pager oder Dismiss-Listener abgefangen werden;
+- die sichtbare Position sollte bei kleinen Änderungen nicht unnötig neu gesetzt werden, aber bei aktivem Scrubben direkt reagieren.
+
+### 49.4 Sichtbare Formen und Animationen
+
+Der Fallback in `Waveseek.x(f0)` verwendet eine absolute Sinuskurve, Mindestamplitude `0.01` und je nach Zustand unterschiedliche Skalierungs-/Phasenwerte. Das ist kein Beleg für die echte Musik-Waveform, aber ein Beleg dafür, dass Poweramp auch bei fehlender Analyse einen geometrisch stabilen, nicht leeren Fallback rendert. `Waveseek` verwaltet außerdem eigene Zustände für aktiviert, analysiert/verfügbar und initialisiert; bei Statuswechseln wird der Widget-Renderer aktualisiert statt die Datenquelle im Zeichenpfad neu aufzubauen.
+
+### 49.5 Was die Artefakte nicht belegen
+
+- Die AAPT-Tree-Reports in diesem Offline-Verzeichnis sind leer; exakte XML-Layoutmaße lassen sich daraus nicht ableiten.
+- `libpowerampcore.so` belegt die native Audio-/DSP-Grenze, aber nicht automatisch die konkrete UI-Waveform.
+- Die `milk`-Shader und Blur-Assets gehören zur Visualizer-Schicht und sind keine Grundlage dafür, den Now-Playing-Hintergrund mit einem Visualizer zu bauen.
+- Die exakte Peak-Anzahl, Fensterbreite, Farbe und Zeichenreihenfolge der im Screenshot sichtbaren Waveform sind aus diesen Smali-Dateien allein nicht vollständig rekonstruierbar. Dafür bleiben Emulator-Screenshots und Touch-/Positionsmessungen die maßgebliche Referenz.
+
+### 49.6 Abgleich mit dem aktuellen FlowRep-Code
+
+Der aktuelle `RunningWaveform`-Pfad verwendet zwar nur ein sichtbares Fenster, liest aber bei jedem Canvas-Durchlauf für jeden sichtbaren Balken den zugehörigen globalen Bucket-Index neu aus und erzeugt damit eine Darstellung, die eher ein neu abgetastetes Fenster als eine verschobene vorbereitete Geometrie ist. Die nächste Korrektur sollte deshalb:
+
+1. aus den Analyse-Buckets einmal eine stabile Zeichen-Geometrie erzeugen;
+2. den sichtbaren Ausschnitt nur über Offset/Translation und Clip verschieben;
+3. den oberen Fortschrittsbereich und die helle Spiegelung als getrennte Zeichenlagen behandeln;
+4. Playback-Ticker und Scrub-Vorschau von der Geometrie entkoppeln;
+5. den Frame-Update-Pfad mit Compose-Recomposition und Emulator-Screenshot prüfen.
+
+Diese Empfehlungen übertragen beobachtbare Architekturprinzipien; sie kopieren keine proprietäre Implementierung.

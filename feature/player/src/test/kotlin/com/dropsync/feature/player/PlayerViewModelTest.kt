@@ -14,12 +14,21 @@ import com.dropsync.domain.audio.EqPreset
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformBucket
+import com.dropsync.domain.library.Album
+import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.CueVirtualTrack
 import com.dropsync.domain.library.FolderScanResult
+import com.dropsync.domain.library.Genre
+import com.dropsync.domain.library.LibraryBrowseRepository
+import com.dropsync.domain.library.LibraryFolder
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.LibraryScanResult
 import com.dropsync.domain.library.MarkerRepository
+import com.dropsync.domain.library.Playlist
+import com.dropsync.domain.library.PlaylistImportResult
 import com.dropsync.domain.library.ScannedFile
+import com.dropsync.domain.library.ShuffleCandidate
+import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
@@ -74,6 +83,7 @@ class PlayerViewModelTest {
     private fun viewModel() =
         PlayerViewModel(
             playbackRepository,
+            libraryRepository,
             libraryRepository,
             trackAnalysisRepository,
             markerRepository,
@@ -384,6 +394,15 @@ private class FakePlaybackRepository : PlaybackRepository {
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit> = AppResult.success(Unit)
+
+    /** Scrubbing-Modus: im Fake nur mitgeschrieben. */
+    var scrubbingMode: Boolean = false
+        private set
+
+    override suspend fun setScrubbingMode(enabled: Boolean): AppResult<Unit> {
+        scrubbingMode = enabled
+        return AppResult.success(Unit)
+    }
 }
 
 private class FakeTrackAnalysisRepository : TrackAnalysisRepository {
@@ -459,7 +478,9 @@ private class FakeMarkerRepository : MarkerRepository {
     ): AppResult<Unit> = AppResult.success(Unit)
 }
 
-private class FakeLibraryRepository : LibraryRepository {
+private class FakeLibraryRepository :
+    LibraryRepository,
+    LibraryBrowseRepository {
     val songById = mutableMapOf<Long, Song>()
 
     override val songs: Flow<List<Song>> = emptyFlow()
@@ -486,6 +507,81 @@ private class FakeLibraryRepository : LibraryRepository {
         AppResult.failure(AppError.Unknown("nicht Teil dieses Tests"))
 
     override val scannedFiles: Flow<List<ScannedFile>> = emptyFlow()
+
+    override val albums: Flow<List<Album>> = emptyFlow()
+    override val artists: Flow<List<Artist>> = emptyFlow()
+    override val genres: Flow<List<Genre>> = emptyFlow()
+    override val folders: Flow<List<LibraryFolder>> = emptyFlow()
+    override val playStats: Flow<List<SongPlayStat>> = emptyFlow()
+    override val favorites: Flow<List<Song>> = emptyFlow()
+    override val playlists: Flow<List<Playlist>> = emptyFlow()
+
+    override fun songsByAlbum(album: String): Flow<List<Song>> = emptyFlow()
+
+    override fun songsByArtist(artist: String): Flow<List<Song>> = emptyFlow()
+
+    override fun songsByGenre(genre: String): Flow<List<Song>> = emptyFlow()
+
+    override fun songsByFolder(relativePath: String): Flow<List<Song>> = emptyFlow()
+
+    override fun playlistsByLabel(label: com.dropsync.core.model.PlaylistLabel): Flow<List<Playlist>> = emptyFlow()
+
+    override fun songsOfPlaylist(playlistId: Long): Flow<List<Song>> = emptyFlow()
+
+    override fun recentlyAdded(limit: Int): Flow<List<Song>> = emptyFlow()
+
+    override fun recentlyPlayed(limit: Int): Flow<List<Song>> = emptyFlow()
+
+    override fun mostPlayed(limit: Int): Flow<List<Song>> = emptyFlow()
+
+    override fun isFavorite(songId: Long): Flow<Boolean> = kotlinx.coroutines.flow.flowOf(false)
+
+    override suspend fun recordPlayback(songId: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun shuffleCandidates(songIds: List<Long>): AppResult<List<ShuffleCandidate>> =
+        AppResult.success(emptyList())
+
+    override suspend fun setFavorite(
+        songId: Long,
+        favorite: Boolean,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun search(query: String): AppResult<List<Song>> = AppResult.success(emptyList())
+
+    override suspend fun setPlaylistLabel(
+        playlistId: Long,
+        label: com.dropsync.core.model.PlaylistLabel?,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun createPlaylist(name: String): AppResult<Long> = AppResult.success(0L)
+
+    override suspend fun renamePlaylist(
+        playlistId: Long,
+        name: String,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun deletePlaylist(playlistId: Long): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun addToPlaylist(
+        playlistId: Long,
+        songIds: List<Long>,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun removeFromPlaylist(
+        playlistId: Long,
+        position: Int,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun moveInPlaylist(
+        playlistId: Long,
+        fromPosition: Int,
+        toPosition: Int,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun importM3uPlaylist(
+        name: String,
+        m3uText: String,
+    ): AppResult<PlaylistImportResult> = AppResult.success(PlaylistImportResult(0L, 0, 0, 0))
 }
 
 /** Minimal-Fake des Audio-Engine-Zugangs für den Player (EQ-Schnellzugriff). */

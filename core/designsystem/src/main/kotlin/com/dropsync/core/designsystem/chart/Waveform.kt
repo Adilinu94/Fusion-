@@ -1,10 +1,10 @@
 package com.dropsync.core.designsystem.chart
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -14,12 +14,13 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -34,7 +35,10 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.floor
 import kotlin.math.roundToInt
 
 // Waveform im Poweramp-Stil (Marker/Waveform-Plan Phase 3): eigene
@@ -167,6 +171,13 @@ data class WaveformGeometry(
 /** Glaettungsdauer des Fortschritts zwischen den 200ms-Ticks (weicher Lauf). */
 private const val PROGRESS_SMOOTH_MS = 240
 
+/**
+ * Sprungweite, ab der der Fortschritt hart gesetzt statt geglaettet wird.
+ * Ein Seek oder Titelwechsel soll sofort stehen, nicht ueber den Track
+ * kriechen.
+ */
+private const val PROGRESS_SNAP_THRESHOLD = 0.05f
+
 /** Maximaler Abstand (als Anteil der Breite) zum Start des Marker-Drags. */
 private const val MARKER_DRAG_SLOP = 0.03f
 
@@ -176,6 +187,54 @@ private const val MARKER_DRAG_SLOP = 0.03f
  * (A11y-Mindestgroesse, Recherche 2026).
  */
 private val MARKER_TICK_WIDTH = 3.dp
+
+/**
+ * Geglaetteter Fortschritt als [State], **ohne** die Composition zu
+ * invalidieren (P1-Fix).
+ *
+ * Vorher stand hier `val x by animateFloatAsState(...)`. Das `by` liest den
+ * Animationswert in der COMPOSITION: der Animator schreibt pro Frame, die
+ * Composable recomposed also mit ~60 Hz — dauerhaft, weil der 200-ms-Ticker
+ * immer wieder ein neues Ziel setzt und die 240-ms-Animation nie zur Ruhe
+ * kommt. Betroffen war der komplette Screen-Body (Cover-Pager, Titelzeile,
+ * Transport), nicht nur die Wellenform.
+ *
+ * Der zurueckgegebene State wird ausschliesslich im `Canvas`-Zeichenblock
+ * gelesen. Ein Draw-Phase-Read invalidiert nur die Draw-Phase — Composition
+ * und Layout bleiben stehen (Compose-Phasen-Modell, offizielle
+ * Performance-Leitlinie "defer state reads").
+ */
+@Composable
+private fun rememberSmoothedFraction(progressFraction: () -> Float): State<Float> {
+    val animatable = remember { Animatable(progressFraction().coerceIn(0f, 1f)) }
+    LaunchedEffect(animatable) {
+        snapshotFlow { progressFraction().coerceIn(0f, 1f) }
+            .collectLatest { goal ->
+                if (abs(goal - animatable.value) > PROGRESS_SNAP_THRESHOLD) {
+                    animatable.snapTo(goal)
+                } else {
+                    animatable.animateTo(
+                        targetValue = goal,
+                        animationSpec = tween(durationMillis = PROGRESS_SMOOTH_MS, easing = LinearEasing),
+                    )
+                }
+            }
+    }
+    return animatable.asState()
+}
+
+/**
+ * Einblend-Deckkraft als [State] (gleiche Begruendung wie
+ * [rememberSmoothedFraction]: Draw-Phase statt Composition).
+ */
+@Composable
+private fun rememberAppearAlpha(durationMs: Int): State<Float> {
+    val animatable = remember { Animatable(0f) }
+    LaunchedEffect(animatable) {
+        animatable.animateTo(1f, tween(durationMillis = durationMs, easing = FastOutSlowInEasing))
+    }
+    return animatable.asState()
+}
 
 /**
  * Interaktive Waveform. [buckets] sind Min/Max-Paare in [-1..1];
@@ -192,11 +251,16 @@ private val MARKER_TICK_WIDTH = 3.dp
  * Fortschritt gleitet weich zwischen den Ticks. Die Balken werden als
  * vorbereitete [WaveformGeometry] gezeichnet und der gespielte Anteil ueber
  * einen Clip eingefaerbt (keine zweite, frische Path-Allokation).
+ *
+ * [progressFraction] ist bewusst eine **Lambda**, kein Wert (P1-Fix): der
+ * Aufrufer liest die Position damit nicht in seiner eigenen Composition,
+ * sondern erst hier im Zeichenblock. Ein 200-ms-Ticker invalidiert so nur
+ * noch die Draw-Phase dieser Komponente statt des ganzen Screens.
  */
 @Composable
 fun Waveform(
     buckets: List<Pair<Float, Float>>,
-    progressFraction: Float,
+    progressFraction: () -> Float,
     onSeek: (Float) -> Unit,
     onScrubPreview: (Float?) -> Unit,
     modifier: Modifier = Modifier,
@@ -204,42 +268,35 @@ fun Waveform(
     onLongPress: ((Float) -> Unit)? = null,
     onMoveMarker: ((Float) -> Unit)? = null,
     contentDescription: String? = null,
+    playedColor: Color? = null,
+    restColor: Color? = null,
+    markerColor: Color? = null,
     gapFraction: Float = 0.15f,
     markerDragSlopFraction: Float = MARKER_DRAG_SLOP,
 ) {
-    val playedColor = MaterialTheme.colorScheme.primary
+    val resolvedPlayedColor = playedColor ?: MaterialTheme.colorScheme.primary
     // Rest-Balken mit deutlich hoeherem Kontrast als outlineVariant:
     // im Light-Mode waere #EAEAEA auf Weiss fast unsichtbar (P0-Befund).
-    val restColor = MaterialTheme.colorScheme.onSurfaceVariant
-    val markerColor = MaterialTheme.colorScheme.tertiary
+    val resolvedRestColor = restColor ?: MaterialTheme.colorScheme.onSurfaceVariant
+    val resolvedMarkerColor = markerColor ?: MaterialTheme.colorScheme.tertiary
     // Vorbereitete Geometrie: nur bei neuen Buckets neu aufbauen, nie je
-    // Draw-Frame (Offtrack Phase 9). Die `derivedStateOf`-Boxen sind billig
-    // und verhindern, dass das Bucket-Copying bei jedem Ticker-Recompose
-    // wiederholt wird.
-    val geometry by remember(buckets) { derivedStateOf { WaveformGeometry(buckets) } }
-    var scrubFraction by remember { mutableFloatStateOf(-1f) }
+    // Draw-Frame (Offtrack Phase 9).
+    val geometry = remember(buckets) { WaveformGeometry(buckets) }
+    // Scrub-Zustand als MutableFloatState: wird ausschliesslich in der
+    // Draw-Phase gelesen, deshalb kein `by`-Delegat in der Composition.
+    val scrubState = remember { mutableFloatStateOf(-1f) }
     // Drag-Modus: true, sobald die Geste an einem Marker-Tick startet.
     // Dann wird der Marker gezogen statt gescrubbt (Phase 5 "verschiebbar").
     var draggingMarker by remember { mutableStateOf(false) }
 
-    // Sanfter Auftritt: die Wellenform blendet ein, sobald die Analyse vorliegt.
-    var appeared by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) { appeared = true }
-    val appear by animateFloatAsState(
-        targetValue = if (appeared) 1f else 0f,
-        animationSpec = tween(durationMillis = 480, easing = FastOutSlowInEasing),
-        label = "waveform_appear",
-    )
-    // Fortschritt gleitet weich zwischen den 200ms-Ticks; beim Scrubben zeigt die
-    // Geste sofort die Zielposition (kein Glaetten waehrend des Ziehens).
-    val animatedProgress by animateFloatAsState(
-        targetValue = progressFraction.coerceIn(0f, 1f),
-        animationSpec = tween(durationMillis = PROGRESS_SMOOTH_MS, easing = LinearEasing),
-        label = "waveform_progress",
-    )
+    val appear = rememberAppearAlpha(APPEAR_MS)
+    val smoothed = rememberSmoothedFraction(progressFraction)
 
-    val shownFraction =
-        if (scrubFraction >= 0f) scrubFraction else animatedProgress.coerceIn(0f, 1f)
+    // Ein Lesevorgang, den BEIDE Phasen brauchen: Semantik (Composition) und
+    // Zeichnen (Draw). Die Semantik nimmt bewusst den ungeglaetteten Wert —
+    // TalkBack braucht keine 60-Hz-Aktualisierung, und ein Composition-Read
+    // des Animators waere genau der Recomposition-Sturm, der hier vermieden
+    // werden soll.
     val desc = contentDescription
     val semanticsModifier =
         if (desc != null) {
@@ -247,13 +304,14 @@ fun Waveform(
                 this.contentDescription = desc
                 // A11y (Phase 8/9): Fortschritt als 0..100-Range + gesprochene
                 // Prozentzahl, damit TalkBack die Position ohne Slider mitbekommt.
+                val percent = (progressFraction().coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
                 this.progressBarRangeInfo =
                     ProgressBarRangeInfo(
-                        current = (shownFraction * 100f).roundToInt().coerceIn(0, 100).toFloat(),
+                        current = percent.toFloat(),
                         range = 0f..100f,
                         steps = 0,
                     )
-                this.stateDescription = "${(shownFraction * 100f).roundToInt()}%"
+                this.stateDescription = "$percent%"
             }
         } else {
             modifier
@@ -287,22 +345,23 @@ fun Waveform(
                             if (draggingMarker) {
                                 onMoveMarker?.invoke(fraction)
                             } else {
-                                scrubFraction = fraction
-                                onScrubPreview(scrubFraction)
+                                scrubState.floatValue = fraction
+                                onScrubPreview(fraction)
                             }
                         },
                         onDragEnd = {
+                            val scrub = scrubState.floatValue
                             if (draggingMarker) {
                                 draggingMarker = false
-                            } else if (scrubFraction >= 0f) {
-                                onSeek(scrubFraction)
+                            } else if (scrub >= 0f) {
+                                onSeek(scrub)
                             }
-                            scrubFraction = -1f
+                            scrubState.floatValue = -1f
                             onScrubPreview(null)
                         },
                         onDragCancel = {
                             draggingMarker = false
-                            scrubFraction = -1f
+                            scrubState.floatValue = -1f
                             onScrubPreview(null)
                         },
                     ) { change, _ ->
@@ -310,8 +369,8 @@ fun Waveform(
                         if (draggingMarker) {
                             onMoveMarker?.invoke(fraction)
                         } else {
-                            scrubFraction = fraction
-                            onScrubPreview(scrubFraction)
+                            scrubState.floatValue = fraction
+                            onScrubPreview(fraction)
                         }
                     }
                 },
@@ -321,6 +380,11 @@ fun Waveform(
         val bars = geometry.bars(size.width, size.height, gapFraction)
         if (bars.isEmpty()) return@Canvas
 
+        // Alle State-Reads liegen im Zeichenblock (Draw-Phase).
+        val scrub = scrubState.floatValue
+        val shownFraction = if (scrub >= 0f) scrub else smoothed.value.coerceIn(0f, 1f)
+        val alpha = appear.value
+
         val playedX = shownFraction * size.width
         val corner = CornerRadius(1.dp.toPx(), 1.dp.toPx())
 
@@ -329,15 +393,15 @@ fun Waveform(
         // zweiter, komplett neuer Path je Frame.
         drawWaveformBars(
             bars = bars,
-            color = restColor,
-            alpha = appear,
+            color = resolvedRestColor,
+            alpha = alpha,
             corner = corner,
         )
         clipRect(right = playedX) {
             drawWaveformBars(
                 bars = bars,
-                color = playedColor,
-                alpha = appear,
+                color = resolvedPlayedColor,
+                alpha = alpha,
                 corner = corner,
             )
         }
@@ -345,7 +409,7 @@ fun Waveform(
         markerFractions.forEach { fraction ->
             val x = fraction.coerceIn(0f, 1f) * size.width
             drawLine(
-                color = markerColor.copy(alpha = appear),
+                color = resolvedMarkerColor.copy(alpha = alpha),
                 start = Offset(x, 0f),
                 end = Offset(x, size.height),
                 strokeWidth = MARKER_TICK_WIDTH.toPx(),
@@ -353,6 +417,9 @@ fun Waveform(
         }
     }
 }
+
+/** Einblenddauer der Uebersichts-Waveform. */
+private const val APPEAR_MS = 480
 
 /** Zeichnet vorbereitete Balken mit einer gemeinsamen Farbe und Deckkraft. */
 private fun DrawScope.drawWaveformBars(
@@ -376,6 +443,413 @@ private fun DrawScope.drawWaveformBars(
         offset += 4
     }
 }
+
+/**
+ * Reine Mathematik der laufenden Waveform ("Waveseek"-Prinzip), getrennt
+ * von Compose und damit deterministisch testbar
+ * (RunningWaveformMappingTest).
+ *
+ * Grundgedanke aus der Poweramp-Analyse (`Waveseek` erbt `i5`):
+ * die Track-Geometrie liegt als **fester** Balkenraster vor
+ * (`i5.K` Peaks, Balkenbreite `H`, Luecke `P`, Gesamtbreite
+ * `w = (H + P) * K - P`). Gezeichnet wird nicht neu abgetastet, sondern
+ * der Raster wird um einen Offset verschoben und beschnitten
+ * (`i5.onDraw`: `firstIndex`/`lastIndex` aus Offset und Rasterweite,
+ * `clipRect`, Teil-Alpha an den Raendern). Der Playhead bleibt an einer
+ * festen Position (`i5.o`, Default 0.5 = Mitte).
+ */
+object RunningWaveformMapping {
+    /**
+     * Baut die stabile Track-Geometrie: Min/Max-Buckets werden **einmal**
+     * auf [targetSize] Amplituden in [0..1] umgerechnet (linear
+     * interpoliert, damit grobe 256er-Analysen einen feinen Raster
+     * ergeben). Das Ergebnis ist unabhaengig von Fortschritt und
+     * Canvas-Groesse und darf gecacht werden.
+     */
+    fun amplitudes(
+        buckets: List<Pair<Float, Float>>,
+        targetSize: Int,
+    ): FloatArray {
+        if (buckets.isEmpty() || targetSize <= 0) return FloatArray(0)
+        val source =
+            FloatArray(buckets.size) { index ->
+                val (min, max) = buckets[index]
+                maxOf(abs(min), abs(max)).coerceIn(0f, 1f)
+            }
+        if (source.size == 1) return FloatArray(targetSize) { source[0] }
+        return FloatArray(targetSize) { index ->
+            val position = index * (source.size - 1f) / (targetSize - 1f).coerceAtLeast(1f)
+            val low = position.toInt().coerceIn(0, source.size - 1)
+            val high = (low + 1).coerceAtMost(source.size - 1)
+            val t = position - low
+            source[low] + (source[high] - source[low]) * t
+        }
+    }
+
+    /**
+     * Rasterweite eines Balkens in Pixeln: der sichtbare Ausschnitt
+     * ([viewportFraction] des Tracks) fuellt genau [width]. Damit bleibt
+     * die Balkenbreite konstant, waehrend der Raster scrollt.
+     */
+    fun pitch(
+        width: Float,
+        barCount: Int,
+        viewportFraction: Float,
+    ): Float {
+        if (width <= 0f || barCount <= 0) return 0f
+        val visibleBars = (barCount * viewportFraction.coerceIn(0.02f, 1f)).coerceAtLeast(1f)
+        return width / visibleBars
+    }
+
+    /** Gesamtbreite des virtuellen Rasters (Poweramp `i5.w`). */
+    fun virtualWidth(
+        barCount: Int,
+        pitch: Float,
+    ): Float = if (barCount <= 0) 0f else barCount * pitch
+
+    /**
+     * Scroll-Offset fuer [fraction]: der Playhead sitzt fest bei
+     * `width * playheadFraction`; der Raster wandert darunter durch. Am
+     * Track-Anfang/-Ende wird nicht geklemmt, damit die Bewegung linear
+     * mit der Zeit bleibt (Poweramp zeigt dort Leerraum).
+     */
+    fun scrollX(
+        fraction: Float,
+        virtualWidth: Float,
+        width: Float,
+        playheadFraction: Float,
+    ): Float = fraction.coerceIn(0f, 1f) * virtualWidth - width * playheadFraction.coerceIn(0f, 1f)
+
+    /** Erster sichtbarer Balkenindex (kann negativ sein -> nichts zeichnen). */
+    fun firstVisibleIndex(
+        scrollX: Float,
+        pitch: Float,
+    ): Int = if (pitch <= 0f) 0 else floor(scrollX / pitch).toInt()
+
+    /** Letzter sichtbarer Balkenindex (inklusive). */
+    fun lastVisibleIndex(
+        scrollX: Float,
+        width: Float,
+        pitch: Float,
+    ): Int = if (pitch <= 0f) 0 else ceil((scrollX + width) / pitch).toInt()
+
+    /**
+     * X-Position eines Balkens im Canvas (linke Kante des Rasterslots).
+     */
+    fun barLeft(
+        index: Int,
+        pitch: Float,
+        scrollX: Float,
+    ): Float = index * pitch - scrollX
+
+    /**
+     * Track-Anteil [0..1] an der Canvas-Position [x] — Umkehrung von
+     * [scrollX]. Grundlage fuer Tap-to-Seek: der angetippte Balken wird
+     * zum neuen Playhead.
+     */
+    fun fractionAtX(
+        x: Float,
+        scrollX: Float,
+        virtualWidth: Float,
+    ): Float = if (virtualWidth <= 0f) 0f else ((scrollX + x) / virtualWidth).coerceIn(0f, 1f)
+
+    /**
+     * Anteilsverschiebung fuer eine horizontale Drag-Strecke [dx]:
+     * die Welle wird unter dem Playhead durchgezogen (Poweramp zieht den
+     * Raster, nicht den Zeiger). Nach links ziehen laeuft vorwaerts.
+     */
+    fun fractionDelta(
+        dx: Float,
+        virtualWidth: Float,
+    ): Float = if (virtualWidth <= 0f) 0f else -dx / virtualWidth
+
+    /**
+     * Randabblendung: Balken am linken/rechten Rand laufen weich aus
+     * (Poweramp berechnet in `onDraw` fuer die Teil-Balken ein Alpha
+     * 0..255 aus der Ueberdeckung). [fadeWidth] ist die Breite der
+     * Blende in Pixeln.
+     */
+    fun edgeAlpha(
+        x: Float,
+        width: Float,
+        fadeWidth: Float,
+    ): Float {
+        if (fadeWidth <= 0f || width <= 0f) return 1f
+        val fromLeft = x / fadeWidth
+        val fromRight = (width - x) / fadeWidth
+        return minOf(fromLeft, fromRight, 1f).coerceIn(0f, 1f)
+    }
+}
+
+/**
+ * Laufende Waveform im Poweramp-Stil ("Waveseek").
+ *
+ * Anders als eine Uebersichts-Seekbar zeigt sie **einen Ausschnitt** des
+ * Tracks: der Balkenraster ist fest an die Trackzeit gebunden und wandert
+ * waehrend der Wiedergabe unter einem ortsfesten Playhead
+ * ([playheadFraction], Default Mitte) hindurch. Die Form wird einmal je
+ * Bucket-Satz vorbereitet ([RunningWaveformMapping.amplitudes]) und beim
+ * Zeichnen nur verschoben — keine erneute Abtastung je Frame, deshalb
+ * bleibt die Wellenform musikalisch stabil.
+ *
+ * Bedienung wie im Original: Tap setzt den angetippte Balken auf den
+ * Playhead, Drag zieht die Welle durch (Vorschau ueber [onScrubPreview]),
+ * der Sprung wird erst beim Loslassen committet, Abbruch verwirft ihn.
+ *
+ * [progressFraction] ist eine Lambda (P1-Fix, siehe [Waveform]): die Position
+ * wird erst im Zeichenblock gelesen, damit der 200-ms-Ticker nicht die
+ * Composition des ganzen Player-Screens invalidiert.
+ */
+@Composable
+fun RunningWaveform(
+    buckets: List<Pair<Float, Float>>,
+    progressFraction: () -> Float,
+    onSeek: (Float) -> Unit,
+    onScrubPreview: (Float?) -> Unit,
+    modifier: Modifier = Modifier,
+    markerFractions: List<Float> = emptyList(),
+    onLongPress: ((Float) -> Unit)? = null,
+    onMoveMarker: ((Float) -> Unit)? = null,
+    contentDescription: String? = null,
+    playedColor: Color = Color(0xFF009FE3),
+    upcomingColor: Color = Color(0xFF65C0E4),
+    reflectionColor: Color = Color(0xFFD9F0F8),
+    markerColor: Color = Color(0xFF009FE3),
+    viewportFraction: Float = 0.22f,
+    playheadFraction: Float = 0.5f,
+    barCount: Int = RUNNING_WAVEFORM_BARS,
+) {
+    val safeViewport = viewportFraction.coerceIn(0.02f, 1f)
+
+    // Stabile Track-Geometrie: nur bei neuen Buckets neu aufbauen. Genau
+    // das ist der Poweramp-Punkt — `Waveseek.x(f0)` liest das vorbereitete
+    // Float-Array aus dem Playerzustand statt es je Frame zu erzeugen.
+    val amplitudes =
+        remember(buckets, barCount) {
+            RunningWaveformMapping.amplitudes(buckets, barCount)
+        }
+
+    // Scrub-Zustand: -1 = keine Geste. Waehrend des Ziehens gilt die
+    // Vorschau, der echte seekTo folgt erst beim Loslassen. Als
+    // MutableFloatState, damit die Gesten schreiben und nur die Draw-Phase
+    // liest (kein Composition-Read).
+    val scrubState = remember { mutableFloatStateOf(-1f) }
+    var draggingMarker by remember { mutableStateOf(false) }
+
+    // Zwischen den 200ms-Positionsticks weich gleiten, damit der Raster
+    // sichtbar laeuft statt zu springen (Poweramp interpoliert dafuer in
+    // `q1.doFrame` zeitbasiert je Frame).
+    val smoothed = rememberSmoothedFraction(progressFraction)
+    val appearance = rememberAppearAlpha(RUNNING_APPEAR_MS)
+
+    /** Aktuell gezeigter Anteil: Scrub-Vorschau hat Vorrang. */
+    fun shownFraction(): Float {
+        val scrub = scrubState.floatValue
+        return if (scrub >= 0f) scrub else smoothed.value.coerceIn(0f, 1f)
+    }
+
+    val desc = contentDescription
+    val semanticsModifier =
+        if (desc != null) {
+            modifier.semantics {
+                this.contentDescription = desc
+                val percent = (progressFraction().coerceIn(0f, 1f) * 100f).roundToInt().coerceIn(0, 100)
+                progressBarRangeInfo =
+                    ProgressBarRangeInfo(
+                        current = percent.toFloat(),
+                        range = 0f..100f,
+                        steps = 0,
+                    )
+                stateDescription = "$percent%"
+            }
+        } else {
+            modifier
+        }
+
+    // Geometrie der laufenden Gesten. P0-Fix (Stale Closure): die
+    // pointerInput-Bloecke werden nur bei Aenderung ihrer Keys neu gestartet,
+    // NICHT bei jedem Fortschritts-Tick. Ein eingefrorener Positionswert
+    // haette Tap-to-Seek mit wachsender Spielzeit immer weiter danebenlanden
+    // lassen. `shownFraction()` liest den State jetzt bei jedem Aufruf frisch.
+    fun scrollFor(
+        fraction: Float,
+        width: Float,
+    ): Float {
+        val pitch = RunningWaveformMapping.pitch(width, amplitudes.size, safeViewport)
+        val virtual = RunningWaveformMapping.virtualWidth(amplitudes.size, pitch)
+        return RunningWaveformMapping.scrollX(fraction, virtual, width, playheadFraction)
+    }
+
+    fun globalFractionAt(
+        x: Float,
+        width: Float,
+    ): Float {
+        val pitch = RunningWaveformMapping.pitch(width, amplitudes.size, safeViewport)
+        val virtual = RunningWaveformMapping.virtualWidth(amplitudes.size, pitch)
+        return RunningWaveformMapping.fractionAtX(x, scrollFor(shownFraction(), width), virtual)
+    }
+
+    Canvas(
+        modifier =
+            semanticsModifier
+                .pointerInput(amplitudes, onLongPress != null) {
+                    detectTapGestures(
+                        onTap = { offset ->
+                            onSeek(globalFractionAt(offset.x, size.width.toFloat()))
+                        },
+                        onLongPress =
+                            onLongPress?.let { callback ->
+                                { offset: Offset ->
+                                    callback(globalFractionAt(offset.x, size.width.toFloat()))
+                                }
+                            },
+                    )
+                }.pointerInput(amplitudes) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { offset ->
+                            val width = size.width.toFloat()
+                            val fraction = globalFractionAt(offset.x, width)
+                            // Geste an einem sichtbaren Marker-Tick -> Marker
+                            // ziehen statt scrubben (der Aufrufer entscheidet,
+                            // ob Verschieben erlaubt ist).
+                            draggingMarker =
+                                onMoveMarker != null &&
+                                markerFractions.any { abs(it - fraction) <= MARKER_DRAG_SLOP }
+                            if (draggingMarker) {
+                                onMoveMarker?.invoke(fraction)
+                            } else {
+                                scrubState.floatValue = fraction
+                                onScrubPreview(fraction)
+                            }
+                        },
+                        onDragEnd = {
+                            val scrub = scrubState.floatValue
+                            if (draggingMarker) {
+                                draggingMarker = false
+                            } else if (scrub >= 0f) {
+                                onSeek(scrub)
+                            }
+                            scrubState.floatValue = -1f
+                            onScrubPreview(null)
+                        },
+                        onDragCancel = {
+                            // Abbruch darf nichts committen (Poweramp trennt
+                            // UP und CANCEL, `Seek.smali`).
+                            draggingMarker = false
+                            scrubState.floatValue = -1f
+                            onScrubPreview(null)
+                        },
+                    ) { change, dragAmount ->
+                        val width = size.width.toFloat()
+                        if (draggingMarker) {
+                            onMoveMarker?.invoke(globalFractionAt(change.position.x, width))
+                        } else {
+                            // Relatives Ziehen: die Welle laeuft unter dem
+                            // ortsfesten Playhead durch.
+                            val pitch = RunningWaveformMapping.pitch(width, amplitudes.size, safeViewport)
+                            val virtual = RunningWaveformMapping.virtualWidth(amplitudes.size, pitch)
+                            val next =
+                                (scrubState.floatValue + RunningWaveformMapping.fractionDelta(dragAmount, virtual))
+                                    .coerceIn(0f, 1f)
+                            scrubState.floatValue = next
+                            onScrubPreview(next)
+                        }
+                    }
+                },
+    ) {
+        if (amplitudes.isEmpty()) return@Canvas
+        val width = size.width
+        val pitch = RunningWaveformMapping.pitch(width, amplitudes.size, safeViewport)
+        if (pitch <= 0f) return@Canvas
+        // Alle State-Reads in der Draw-Phase.
+        val currentFraction = shownFraction()
+        val appear = appearance.value
+        val virtual = RunningWaveformMapping.virtualWidth(amplitudes.size, pitch)
+        val scroll = RunningWaveformMapping.scrollX(currentFraction, virtual, width, playheadFraction)
+
+        // Vertikale Aufteilung wie in `i5.onLayout`: Hauptbereich oben,
+        // Luecke, gespiegelter blasser Bereich darunter.
+        val topHeight = size.height * TOP_SHARE
+        val gap = size.height * MIRROR_GAP_SHARE
+        val baseline = topHeight
+        val mirrorHeight = size.height * MIRROR_SHARE
+
+        val barWidth = (pitch * BAR_WIDTH_SHARE).coerceAtLeast(1.5f)
+        val corner = CornerRadius(barWidth / 2f, barWidth / 2f)
+        val fade = pitch * EDGE_FADE_BARS
+        val playheadX = width * playheadFraction.coerceIn(0f, 1f)
+
+        val first = RunningWaveformMapping.firstVisibleIndex(scroll, pitch).coerceAtLeast(0)
+        val last = RunningWaveformMapping.lastVisibleIndex(scroll, width, pitch).coerceAtMost(amplitudes.size - 1)
+        if (last < first) return@Canvas
+
+        for (index in first..last) {
+            val slotLeft = RunningWaveformMapping.barLeft(index, pitch, scroll)
+            val left = slotLeft + (pitch - barWidth) / 2f
+            val center = slotLeft + pitch / 2f
+            val alpha =
+                appear * RunningWaveformMapping.edgeAlpha(center, width, fade)
+            if (alpha <= 0.01f) continue
+            val barHeight = (amplitudes[index] * topHeight).coerceAtLeast(MIN_BAR_PX)
+            // Gespielt vs. kommend: zwei Farbstufen wie die beiden
+            // Balken-Bitmaps in `i5` (Feld I/J).
+            val color = if (center <= playheadX) playedColor else upcomingColor
+            drawRoundRect(
+                color = color.copy(alpha = alpha),
+                topLeft = Offset(left, baseline - barHeight),
+                size = Size(barWidth, barHeight),
+                cornerRadius = corner,
+            )
+            drawRoundRect(
+                color = reflectionColor.copy(alpha = alpha),
+                topLeft = Offset(left, baseline + gap),
+                size = Size(barWidth, (amplitudes[index] * mirrorHeight).coerceAtLeast(MIN_BAR_PX)),
+                cornerRadius = corner,
+            )
+        }
+
+        // Marker als Overlay, nicht als Teil der Balkenschleife.
+        markerFractions.forEach { marker ->
+            val x = marker.coerceIn(0f, 1f) * virtual - scroll
+            if (x in 0f..width) {
+                drawLine(
+                    color = markerColor.copy(alpha = appear * RunningWaveformMapping.edgeAlpha(x, width, fade)),
+                    start = Offset(x, baseline - topHeight),
+                    end = Offset(x, baseline + gap + mirrorHeight),
+                    strokeWidth = MARKER_TICK_WIDTH.toPx(),
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Feinheit des Rasters: die 256 Analyse-Buckets werden auf so viele
+ * Balken interpoliert, dass ein Ausschnitt duenne, regelmaessige Striche
+ * zeigt (Referenzoptik) und der Raster ueber den Track sichtbar wandert.
+ */
+const val RUNNING_WAVEFORM_BARS = 320
+
+/** Anteil der Hoehe fuer die kraeftigen oberen Balken. */
+private const val TOP_SHARE = 0.56f
+
+/** Luecke zwischen Hauptbereich und Spiegelung (Poweramp `i5.O`). */
+private const val MIRROR_GAP_SHARE = 0.03f
+
+/** Anteil der Hoehe fuer die blasse Spiegelung darunter. */
+private const val MIRROR_SHARE = 0.38f
+
+/** Balkenbreite als Anteil der Rasterweite -> duenne Striche mit Luft. */
+private const val BAR_WIDTH_SHARE = 0.34f
+
+/** Breite der Randblende, gemessen in Rasterweiten. */
+private const val EDGE_FADE_BARS = 3.5f
+
+/** Mindesthoehe, damit stille Stellen nicht als Luecke erscheinen. */
+private const val MIN_BAR_PX = 2f
+
+/** Einblenddauer der laufenden Waveform. */
+private const val RUNNING_APPEAR_MS = 420
 
 /**
  * Ruhiger Ladeplatzhalter, solange die Analyse laeuft (Plan Phase 3):

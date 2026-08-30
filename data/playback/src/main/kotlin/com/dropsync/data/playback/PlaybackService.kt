@@ -141,6 +141,7 @@ class PlaybackService : MediaLibraryService() {
                         labels = browseLabels(),
                         ownPackageName = packageName,
                         onPlaySongAt = ::handlePlaySongAt,
+                        onSetScrubbingMode = ::handleSetScrubbingMode,
                     ),
                 ).build()
         // MusicFX (Plan Phase 4): Systemequalizer erhaelt die Session-ID;
@@ -244,6 +245,18 @@ class PlaybackService : MediaLibraryService() {
         }
     }
 
+    /**
+     * Scrubbing-Modus (Media3 1.8+): waehrend eines Waveform-Drags optimiert
+     * der Player auf viele schnelle Seeks statt jeden Sprung als vollen
+     * Positionswechsel mit Audio-Ausgabe-Reset zu behandeln. Muss auf dem
+     * Main-Thread laufen (Player-Vertrag).
+     */
+    private fun handleSetScrubbingMode(enabled: Boolean) {
+        mainScope.launch {
+            runCatching { player?.setScrubbingModeEnabled(enabled) }
+        }
+    }
+
     /** Kategorienamen des Browse-Baums (Plan Phase 6.5). */
     private data class BrowseLabels(
         val root: String,
@@ -269,6 +282,7 @@ class PlaybackService : MediaLibraryService() {
         private val labels: BrowseLabels,
         private val ownPackageName: String,
         private val onPlaySongAt: suspend (Long, Long) -> Unit,
+        private val onSetScrubbingMode: (Boolean) -> Unit,
     ) : MediaLibrarySession.Callback {
         /**
          * Das interne Drop-Landungs-Kommando wird nur dem eigenen Package
@@ -289,6 +303,7 @@ class PlaybackService : MediaLibraryService() {
             if (isOwnPackage(controller)) {
                 sessionCommands
                     .add(SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY))
+                    .add(SessionCommand(PlaybackCommands.ACTION_SET_SCRUBBING_MODE, Bundle.EMPTY))
             }
             return MediaSession.ConnectionResult
                 .AcceptedResultBuilder(session)
@@ -318,6 +333,14 @@ class PlaybackService : MediaLibraryService() {
                         onPlaySongAt(songId, startPositionMs)
                         SessionResult(SessionResult.RESULT_SUCCESS)
                     }
+                }
+
+                PlaybackCommands.ACTION_SET_SCRUBBING_MODE -> {
+                    if (!isOwnPackage(controller)) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                    }
+                    onSetScrubbingMode(args.getBoolean(PlaybackCommands.ARG_SCRUBBING_ENABLED, false))
+                    return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
                 }
             }
             return super.onCustomCommand(session, controller, customCommand, args)

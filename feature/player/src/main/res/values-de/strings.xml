@@ -10,6 +10,15 @@
     <string name="now_playing_add_marker">Marker hier setzen</string>
     <string name="now_playing_empty">Gerade laeuft nichts.</string>
     <string name="now_playing_cover">Albumcover</string>
+    <string name="now_playing_like">Favorisieren</string>
+    <string name="now_playing_unlike">Aus Favoriten entfernen</string>
+    <string name="now_playing_favorite_on">Favorit aktiviert</string>
+    <string name="now_playing_favorite_off">Kein Favorit</string>
+    <string name="now_playing_repeat_off">Wiederholung aus</string>
+    <string name="now_playing_repeat_all">Alle wiederholen</string>
+    <string name="now_playing_repeat_one">Titel wiederholen</string>
+    <string name="now_playing_shuffle_on">Zufallswiedergabe an</string>
+    <string name="now_playing_shuffle_off">Zufallswiedergabe aus</string>
     <string name="now_playing_waveform">Wellenform: Tippen springt, Ziehen zeigt Vorschau, Langdruck setzt oder loescht einen Marker</string>
     <string name="now_playing_waveform_loading">Wellenform wird analysiert</string>
     <string name="now_playing_marker_add_title">Marker setzen</string>

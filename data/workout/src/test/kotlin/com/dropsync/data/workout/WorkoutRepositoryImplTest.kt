@@ -118,6 +118,10 @@ private class FakePlaybackRepository : PlaybackRepository {
     ): com.dropsync.core.common.AppResult<Unit> =
         com.dropsync.core.common.AppResult
             .success(Unit)
+
+    override suspend fun setScrubbingMode(enabled: Boolean): com.dropsync.core.common.AppResult<Unit> =
+        com.dropsync.core.common.AppResult
+            .success(Unit)
 }
 
 /**

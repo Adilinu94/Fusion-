@@ -38,6 +38,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -52,6 +53,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -65,12 +68,14 @@ import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
 import com.dropsync.feature.player.MiniPlayer
 import com.dropsync.feature.player.NowPlayingScreen
+import com.dropsync.feature.player.PlayerViewModel
 import com.dropsync.feature.progress.AllSetsScreen
 import com.dropsync.feature.progress.ProgressDashboardScreen
 import com.dropsync.feature.settings.SettingsScreen
 import com.dropsync.feature.workout.CalibrationWizardScreen
 import com.dropsync.feature.workout.ExerciseLibraryScreen
 import com.dropsync.feature.workout.TrainScreen
+import kotlinx.coroutines.delay
 
 /**
  * Hauptnavigation mit vier Zielen (Fusion-Design 2026-08-07):
@@ -139,38 +144,69 @@ private fun DropSyncContent(
 ) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
-    // Now-Playing ist ein chromeloser Vollbild-Moment (Poweramp-Optik):
-    // Mini-Player + Bottom-Nav werden dort ausgeblendet, damit das Cover
-    // im echten Viewport zentriert werden kann und keine doppelten
-    // Transport-Controls erscheinen.
-    val immersive = currentRoute == ROUTE_NOW_PLAYING
+    // Im Now-Playing-Screen wird nur der Mini-Player ausgeblendet (der Screen
+    // ist der Player). Die normale App-Navigation (Musik, Train, Verlauf,
+    // Einstellungen) bleibt wie in der Bibliothek sichtbar — der Player
+    // bringt keine eigene Leiste mit.
+    val hideMiniPlayer = currentRoute == ROUTE_NOW_PLAYING
+
+    // P0-Fix (EINE Player-Instanz): der Mini-Player lebt in der bottomBar,
+    // also AUSSERHALB des NavHost, der Now-Playing-Screen INNERHALB einer
+    // Route. `hiltViewModel()` loest `LocalViewModelStoreOwner` auf — dort die
+    // Activity, hier die NavBackStackEntry. Beide Screens bekamen deshalb
+    // getrennte PlayerViewModel-Objekte: doppelte init-Bloecke, doppelte
+    // DB-Abfragen pro Player-Ereignis, doppelte Waveform-Analyse, und im
+    // Player gesetzte Zustaende (Tempo, BPM-Lock, EQ) waren dem Mini-Player
+    // unbekannt. Hier EINMAL aufgeloest (Activity-Owner) und an beide
+    // uebergeben.
+    val playerViewModel: PlayerViewModel = hiltViewModel()
+
+    // Positions-Ticker in der Shell statt im Now-Playing-Screen: so laeuft
+    // auch die Fortschrittsleiste des Mini-Players (vorher stand sie still,
+    // weil `playbackRepository.state` die Position nur bei Player-Ereignissen
+    // aktualisiert und der Ticker nur im Player lief).
+    val miniPlayerState by playerViewModel.miniPlayer.collectAsStateWithLifecycle()
+    val playerVisible = miniPlayerState.isVisible
+    LaunchedEffect(playerVisible) {
+        while (playerVisible) {
+            playerViewModel.refreshPosition()
+            delay(POSITION_TICK_MS)
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            if (!immersive) {
-                Column {
+            Column {
+                if (!hideMiniPlayer) {
                     // Der aktive Mini-Player bleibt in der Shell sichtbar (12.2).
                     MiniPlayer(
                         onOpenNowPlaying = { navController.openNowPlaying() },
+                        viewModel = playerViewModel,
                     )
-                    if (showBottomBar) {
-                        FlowRepGlassNavigation(navController)
-                    }
+                }
+                if (showBottomBar) {
+                    FlowRepGlassNavigation(navController)
                 }
             }
         },
     ) { innerPadding ->
         DropSyncNavHost(
             navController,
-            if (immersive) PaddingValues() else innerPadding,
+            innerPadding,
+            playerViewModel,
         )
     }
 }
+
+/** Kadenz des Positions-Tickers; 5 Hz reichen fuer eine fluessige Anzeige. */
+private const val POSITION_TICK_MS = 200L
 
 @Composable
 private fun DropSyncNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
+    playerViewModel: PlayerViewModel,
 ) {
     NavHost(
         navController = navController,
@@ -268,6 +304,7 @@ private fun DropSyncNavHost(
             NowPlayingScreen(
                 contentPadding = contentPadding,
                 onBack = { navController.popBackStack() },
+                viewModel = playerViewModel,
             )
         }
         composable(

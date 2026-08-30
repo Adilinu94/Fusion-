@@ -15,9 +15,12 @@ import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -120,7 +123,7 @@ class PlaybackRepositoryImpl(
     override suspend fun snapshotNow(): AppResult<PlaybackState> =
         try {
             withContext(dispatchers.main) {
-                AppResult.success(connection.requirePlayer().toPlaybackState())
+                AppResult.success(connection.requirePlayer().toPlaybackState(lastQueue))
             }
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
@@ -195,6 +198,29 @@ class PlaybackRepositoryImpl(
         }
     }
 
+    /**
+     * Scrubbing-Modus (Media3 1.8+, P1-Fix): nur der Service haelt den
+     * ExoPlayer, deshalb laeuft der Schalter als Custom-Kommando. Ein
+     * fehlgeschlagenes Kommando ist unkritisch — Seeks funktionieren auch
+     * ohne den Modus, nur weniger effizient.
+     */
+    override suspend fun setScrubbingMode(enabled: Boolean): AppResult<Unit> =
+        try {
+            withContext(dispatchers.main) {
+                val controller = connection.requirePlayer() as? MediaController
+                if (controller != null) {
+                    val args = Bundle().apply { putBoolean(PlaybackCommands.ARG_SCRUBBING_ENABLED, enabled) }
+                    controller.sendCustomCommand(
+                        SessionCommand(PlaybackCommands.ACTION_SET_SCRUBBING_MODE, Bundle.EMPTY),
+                        args,
+                    )
+                }
+            }
+            AppResult.success(Unit)
+        } catch (e: Exception) {
+            AppResult.failure(AppError.Unknown(e.message))
+        }
+
     private suspend fun command(block: (Player) -> Unit): AppResult<Unit> =
         try {
             withContext(dispatchers.main) {
@@ -239,18 +265,47 @@ class PlaybackRepositoryImpl(
     }
 
     private fun publishAndPersist(player: Player) {
-        val snapshot = player.toPlaybackState()
+        val snapshot = player.toPlaybackState(lastQueue)
+        // Queue-Liste nur bei echter Aenderung neu aufbauen (P1-Fix):
+        // `toPlaybackState` erzeugte fuer JEDES Player-Ereignis so viele
+        // QueueItem-Objekte, wie Titel in der Warteschlange stehen — bei
+        // 500 Titeln also 500 Allokationen pro Positionssprung.
+        lastQueue = snapshot.queue
         mutableState.value = snapshot
+        // Persistenz entprellt: bei Scrubbing feuert
+        // EVENT_POSITION_DISCONTINUITY in dichter Folge, und jeder Schreibvorgang
+        // serialisiert die vollstaendige Queue nach DataStore. Der letzte
+        // Zustand gewinnt; conflate + Delay fasst die Serie zusammen.
+        pendingPersist.value = snapshot
+    }
+
+    /**
+     * Letzter bekannter Queue-Zustand. Dient als Vergleichsbasis, damit
+     * [toPlaybackState] die Liste nur bei tatsaechlicher Timeline-Aenderung
+     * neu aufbaut.
+     */
+    private var lastQueue: List<QueueItem> = emptyList()
+
+    /** Entprellte Persistenz-Warteschlange (nur der letzte Zustand zaehlt). */
+    private val pendingPersist = MutableStateFlow<PlaybackState?>(null)
+
+    init {
         scope.launch {
-            stateStore.write(
-                PersistedPlayerState(
-                    queueSongIds = snapshot.queueSongIds,
-                    currentSongId = snapshot.currentSongId,
-                    positionMs = snapshot.positionMs,
-                    shuffleEnabled = snapshot.shuffleEnabled,
-                    repeatMode = snapshot.repeatMode,
-                ),
-            )
+            pendingPersist
+                .filterNotNull()
+                .conflate()
+                .collect { snapshot ->
+                    stateStore.write(
+                        PersistedPlayerState(
+                            queueSongIds = snapshot.queueSongIds,
+                            currentSongId = snapshot.currentSongId,
+                            positionMs = snapshot.positionMs,
+                            shuffleEnabled = snapshot.shuffleEnabled,
+                            repeatMode = snapshot.repeatMode,
+                        ),
+                    )
+                    delay(PERSIST_DEBOUNCE_MS)
+                }
         }
     }
 
@@ -259,17 +314,35 @@ class PlaybackRepositoryImpl(
         const val MIN_PLAYBACK_SPEED = 0.5f
         const val MAX_PLAYBACK_SPEED = 2.0f
 
-        /** Reine Abbildung Player -> Domainzustand; ohne Seiteneffekte. */
-        fun Player.toPlaybackState(): PlaybackState {
+        /**
+         * Mindestabstand zweier Persistenz-Schreibvorgaenge. Der Restore-Zustand
+         * darf ein paar hundert Millisekunden hinterherlaufen; entscheidend ist,
+         * dass eine Scrub-Serie nicht in Dutzende DataStore-Writes muendet.
+         */
+        const val PERSIST_DEBOUNCE_MS = 400L
+
+        /**
+         * Reine Abbildung Player -> Domainzustand; ohne Seiteneffekte.
+         *
+         * [knownQueue] ist der zuletzt gelesene Queue-Zustand. Stimmen Laenge
+         * und Reihenfolge der mediaIds noch, wird die Liste WIEDERVERWENDET
+         * statt neu aufgebaut — bei langen Warteschlangen der Unterschied
+         * zwischen null und mehreren hundert Allokationen pro Player-Ereignis.
+         */
+        fun Player.toPlaybackState(knownQueue: List<QueueItem> = emptyList()): PlaybackState {
             val items =
-                (0 until mediaItemCount).map { index ->
-                    val item = getMediaItemAt(index)
-                    QueueItem(
-                        mediaId = item.mediaId,
-                        songId = item.mediaId.toLongOrNull(),
-                        title = item.mediaMetadata.title?.toString() ?: item.mediaId,
-                        artist = item.mediaMetadata.artist?.toString(),
-                    )
+                if (queueMatches(knownQueue)) {
+                    knownQueue
+                } else {
+                    (0 until mediaItemCount).map { index ->
+                        val item = getMediaItemAt(index)
+                        QueueItem(
+                            mediaId = item.mediaId,
+                            songId = item.mediaId.toLongOrNull(),
+                            title = item.mediaMetadata.title?.toString() ?: item.mediaId,
+                            artist = item.mediaMetadata.artist?.toString(),
+                        )
+                    }
                 }
             return PlaybackState(
                 isPlaying = isPlaying,
@@ -288,6 +361,15 @@ class PlaybackRepositoryImpl(
                 currentIndex = if (mediaItemCount == 0) -1 else currentMediaItemIndex,
                 queue = items,
             )
+        }
+
+        /** True, wenn [knownQueue] die aktuelle Timeline noch exakt abbildet. */
+        private fun Player.queueMatches(knownQueue: List<QueueItem>): Boolean {
+            if (knownQueue.size != mediaItemCount) return false
+            for (index in 0 until mediaItemCount) {
+                if (knownQueue[index].mediaId != getMediaItemAt(index).mediaId) return false
+            }
+            return true
         }
     }
 }

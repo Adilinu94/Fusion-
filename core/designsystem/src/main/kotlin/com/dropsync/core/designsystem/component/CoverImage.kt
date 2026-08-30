@@ -27,6 +27,14 @@ import kotlinx.coroutines.withContext
  * keine neue Abhaengigkeit — Plan-Architekturentscheidung) und haelt
  * dekodierte Bitmaps in einem prozessweiten LRU-Cache, damit Listen
  * beim Scrollen nicht wiederholt dekodieren.
+ *
+ * P1-Fix (ein Dekodierpfad): der Cache-Schluessel ist die DATEI, nicht
+ * "Datei@Zielgroesse". Vorher lag dasselbe Cover dreifach im Cache und
+ * wurde dreimal dekodiert — 1024 px fuer Now-Playing, 512 px fuer die
+ * Farbextraktion, 256 px fuer Listen. Jetzt wird EINMAL in der groessten
+ * angeforderten Groesse dekodiert; kleinere Anforderungen bekommen dieselbe
+ * Bitmap (Compose skaliert beim Zeichnen ohnehin, und die Farbextraktion
+ * ist von der Auflösung unabhaengig).
  */
 object CoverArtLoader {
     /** Platzhalter fuer "Datei hat kein Cover" — verhindert erneute Laeufe. */
@@ -44,6 +52,9 @@ object CoverArtLoader {
                 }
         }
 
+    /** Groesse, in der eine Datei bereits im Cache liegt. */
+    private val cachedDims = mutableMapOf<String, Int>()
+
     /** Achtel des Heaps, gedeckelt auf 32 MB (in KB). */
     private fun cacheSizeKb(): Int {
         val maxKb = (Runtime.getRuntime().maxMemory() / KILO).toInt()
@@ -55,13 +66,19 @@ object CoverArtLoader {
         contentUri: String,
         maxDimPx: Int,
     ): ImageBitmap? {
-        val key = "$contentUri@$maxDimPx"
-        when (val cached = cache.get(key)) {
-            is ImageBitmap -> return cached
-            noCover -> return null
+        // Ein Treffer zaehlt, wenn die gecachte Bitmap mindestens so gross
+        // ist wie angefordert. Nur bei einer GROESSEREN Anforderung wird neu
+        // dekodiert (und der kleinere Eintrag ersetzt).
+        val cachedDim = synchronized(cachedDims) { cachedDims[contentUri] }
+        if (cachedDim != null && cachedDim >= maxDimPx) {
+            when (val cached = cache.get(contentUri)) {
+                is ImageBitmap -> return cached
+                noCover -> return null
+            }
         }
         val bitmap = withContext(Dispatchers.IO) { decode(context, contentUri, maxDimPx) }
-        cache.put(key, bitmap ?: noCover)
+        cache.put(contentUri, bitmap ?: noCover)
+        synchronized(cachedDims) { cachedDims[contentUri] = maxDimPx }
         return bitmap
     }
 

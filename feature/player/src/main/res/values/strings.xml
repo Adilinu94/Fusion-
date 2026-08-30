@@ -10,6 +10,15 @@
     <string name="now_playing_add_marker">Set marker here</string>
     <string name="now_playing_empty">Nothing is playing right now.</string>
     <string name="now_playing_cover">Album cover</string>
+    <string name="now_playing_like">Like</string>
+    <string name="now_playing_unlike">Unlike</string>
+    <string name="now_playing_favorite_on">Favorite on</string>
+    <string name="now_playing_favorite_off">Favorite off</string>
+    <string name="now_playing_repeat_off">Repeat off</string>
+    <string name="now_playing_repeat_all">Repeat all</string>
+    <string name="now_playing_repeat_one">Repeat one</string>
+    <string name="now_playing_shuffle_on">Shuffle on</string>
+    <string name="now_playing_shuffle_off">Shuffle off</string>
     <string name="now_playing_waveform">Waveform: tap to jump, drag to preview, long-press to set or delete a marker</string>
     <string name="now_playing_waveform_loading">Waveform is being analyzed</string>
     <string name="now_playing_marker_add_title">Set marker</string>

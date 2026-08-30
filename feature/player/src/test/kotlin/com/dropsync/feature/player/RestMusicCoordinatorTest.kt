@@ -310,6 +310,8 @@ private class CoordinatorPlaybackRepository : PlaybackRepository {
         return AppResult.success(Unit)
     }
 
+    override suspend fun setScrubbingMode(enabled: Boolean): AppResult<Unit> = AppResult.success(Unit)
+
     override suspend fun snapshotNow(): AppResult<PlaybackState> = AppResult.success(PlaybackState(isPlaying = playing))
 
     override suspend fun play(): AppResult<Unit> = AppResult.success(Unit)
