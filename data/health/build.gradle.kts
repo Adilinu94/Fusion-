@@ -42,4 +42,6 @@ dependencies {
     testImplementation(project(":core:testing"))
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
 }
