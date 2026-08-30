@@ -6,6 +6,7 @@ import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
+import android.util.Log
 import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
@@ -44,10 +45,14 @@ class TrackAnalyzerImpl(
                 // darf nie als Cache-Eintrag enden - weiterwerfen.
                 throw cancelled
             } catch (failure: Throwable) {
+                // P4-Fix #30: printStackTrace schreibt unstrukturiert nach
+                // stderr und geht in Release-Builds leicht verloren. Log.e
+                // bewahrt Stacktrace, Tag und Android-Log-Level.
+                Log.e(LOG_TAG, "Track-Analyse fehlgeschlagen: ${song.displayName}", failure)
                 AppResult
                     .failure(
                         AppError.MediaUnavailable(mediaStoreId = song.mediaStoreId),
-                    ).also { failure.printStackTrace() }
+                    )
             }
         }
 
@@ -236,6 +241,8 @@ class TrackAnalyzerImpl(
     }
 
     companion object {
+        private const val LOG_TAG = "TrackAnalyzer"
+
         /**
          * Buckets ueber den ganzen Track (Plan Phase 2). Bewusst grober als
          * frueher (500): 256 reicht fuer die Optik voellig, halbiert die
