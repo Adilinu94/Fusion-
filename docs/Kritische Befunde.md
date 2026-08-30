@@ -1,4 +1,47 @@
 Kritische Befunde
+
+> **Ist-Stand-Nachtrag (2026-08-30).** Dieses Dokument ist das
+> Review-Protokoll vom 2026-08-12 plus der daraus abgeleitete Umbauplan. Der
+> Befundteil beschreibt einen **historischen** Zustand: die Mehrzahl der
+> P0-Punkte ist inzwischen behoben, das Dokument sagte das bisher nicht.
+> Jede Session, die hier oben einsteigt, arbeitete gegen Phantome.
+>
+> Die folgende Tabelle ist gegen den Code geprüft (Datei und Zeile genannt).
+> Sie hat Vorrang vor dem Befundtext darunter. Der Umbauplan ab
+> „Detaillierter technischer Umbauplan" bleibt gültig als Beschreibung der
+> Zielarchitektur — er ist Absicht, nicht Ist-Zustand.
+>
+> | Befund | Stand | Beleg |
+> |---|---|---|
+> | Kalibrierung und Live-Erkennung nutzen verschiedene Signale | behoben | `SensorModels.kt:44` `RepSignalKind`, `:95` im Profil; `CalibrationController.kt:556` gibt nur `ChosenSignal.GP` frei |
+> | Gespeicherte Schwellen ≠ kalibrierte Schwelle | behoben | `SensorModels.kt:97` `detectionThreshold` direkt persistiert; `ExerciseEnginePipeline.kt:122` verwendet ihn unverändert |
+> | Halbe Wiederholungen zählen als vollständige | behoben | `PhaseValidator.kt`, `RepCountPlausibility.kt`, `ZuptDetector.kt` |
+> | Disconnect/Übungswechsel bricht Set nicht ab | behoben | `ActiveSetController.kt` + `ActiveSetPhase.kt` kapseln den Lifecycle |
+> | Kalibrierung wird nach späterem Verbinden nicht geladen | behoben | Profil-Laden über kombinierte Flows im `TrainViewModel` |
+> | BLE-Verbindung kann dauerhaft hängen | behoben | `BleSensorProvider.kt:743` `GattOperationType`, `:799` `opInFlight`, Timeout je Operation, späte Callbacks verworfen |
+> | Remote-Disconnect räumt BLE-Zustand nicht auf | behoben | `BleSensorProvider.kt:608` `cleanupConnection(DisconnectReason)`, 8 Aufrufstellen inkl. `REMOTE_DISCONNECT` |
+> | Paketverluste verfälschen zeitbasierte Erkennung | behoben | `SampleRateEstimator.kt`, Timestamp-basierte Dauer |
+> | Lernpfad leert seine Daten zu früh | behoben | `SetTrace.kt` als unveränderliche Kopie |
+> | Refiner lernt aus weniger Peaks als bestätigt | behoben | `ProfileLearningPolicy.kt`, `CalibrationRefiner.kt:133` revalidiert |
+> | Playback-Service gibt interne Kommandos frei | behoben | `PlaybackService.kt:293` `controller.packageName == ownPackageName` |
+> | Analysefehler dauerhaft gecacht | behoben | `TrackAnalysisRepositoryImpl.kt:194` `isPermanentAnalysisFailure()`, `:206` `Result.retry()` |
+> | Ungültige Trainingsdaten speicherbar | behoben | `TrainViewModel.kt:260-261` gegen `MAX_REASONABLE_WEIGHT_KG` / `MAX_REASONABLE_REPS` |
+> | Playback-Transition spielt zwei Titel gleichzeitig | entfallen | `CrossfadeController`/`TransitionManager` sind entfernt; Übergänge laufen als harter Wechsel über den einen sessionführenden Player (README Schritt 18) |
+> | Timer kann abgebrochenen Timer wiederherstellen | behoben | `TimerRecoveryStarter` + `RebootGuard`, STATUS Abschnitt K |
+> | `lintDebug` scheitert in sechs Modulen | behoben | `lintDebug` ist CI-Gate (`.github/workflows/ci.yml:71`), keine Lint-Baseline im Repo |
+> | Tests erwarten `>= 1` statt exakter Counts | teilweise | Exakte Counts in den neuen Tests; **Ground-Truth-Suite fehlt weiterhin** — `domain/sensor/src/test/resources` existiert nicht |
+>
+> **Weiterhin offen** und der eigentliche Rest dieses Dokuments:
+> - Ground-Truth-Trace-Suite mit echten Sensordaten (Umbauplan Phase 8). Die
+>   Werkzeuge sind fertig (`tools/shadow_harness.py`, `tools/recofit_bootstrap.py`),
+>   es fehlen Aufnahmen mit echter Hardware.
+> - Gate 11b: die fünf Hardware-Freigabeszenarien (Anleitung in
+>   `tools/golden_shadow_corpus/README.md`).
+> - Damit auch die Release-Gates aus Phase 8 (Precision ≥ 98 %, Recall ≥ 97 %) —
+>   sie haben ohne Traces keine Datengrundlage.
+> - Feature-Flags `accelEnabled` und `orientationTrackingEnabled` bleiben
+>   `false`, bis Gate 11b grün ist (ADR-0017).
+
 P0: Kalibrierung und Live-Erkennung verwenden möglicherweise verschiedene Signale
 CalibrationController kann GP, COMBINED oder GYRO_MAG auswählen:
 - domain/sensor/.../calibration/CalibrationController.kt:234-242

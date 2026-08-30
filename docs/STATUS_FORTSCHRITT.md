@@ -217,6 +217,18 @@ Anlass: `D:\rev-tools\poweramp_offline_triage` tief durchsucht (native ELF-Strin
 - [x] **Tests:** `neue songs laufen gebatcht in genau einem anstoss` (data:library); bestehende Import-/Player-/DB-Tests grün.
 - [x] Verifiziert: `:data:audio`, `:data:playback`, `:data:library`, `:feature:player`, `:core:database`, `:app:compileDebugKotlin` — alle grün.
 
+### P1. Vertiefte Waveform-Triage (2026-08-26)
+
+Die erneute Prüfung von `D:\\rev-tools\\poweramp_offline_triage` hat die frühere Einschätzung aus Abschnitt O präzisiert. Die APK enthält mit `com/maxmpz/widget/player/Waveseek.smali` ein eigenes Waveform-Widget, mit `Seek.smali` einen getrennten Seek-Lebenszyklus und mit `q1.smali` einen `Choreographer`-basierten Frame-Controller.
+
+- `f0.r:[F` ist die vom Player-Zustand gelieferte vorbereitete Waveform-Datenstruktur.
+- `Waveseek` übernimmt dieses Array direkt; ein kleiner synthetischer Sinus-Fallback wird nur bei fehlenden Daten aufgebaut.
+- `q1.doFrame()` interpoliert die Position zwischen Playback-Events zeitbasiert und meldet den primitiven Fortschrittswert an das Widget.
+- `Seek` trennt `DOWN`/`MOVE`/`UP`/`CANCEL`, nutzt 0..10000 als Positionsauflösung und mappt Touch-X innerhalb der gepaddeten Breite.
+- Für FlowRep folgt daraus: Waveform-Geometrie stabil vorbereiten, Offset/Progress frame-synchron aktualisieren und Scrub-Vorschau/Commit/Cancel getrennt behandeln.
+
+Nicht belegt sind aus den Artefakten allein die exakte Peak-Analyse, Fensterbreite, Farben und konkrete Zeichenreihenfolge des sichtbaren Poweramp-Screens. `milk`-Shader/Blur-Assets gehören zur Visualizer-Schicht und werden nicht als Now-Playing-Grundlage übernommen. Die ausführliche Evidenz steht in `docs/design/WISSEN_POWERAMP_OFFTRACK_2026-08-07.md`, Abschnitt 49.
+
 ## Q. Instrumentierte Kern-Tests umgesetzt (2026-08-14): Teil F des Hardware-Testplans
 
 Anlass: Hardware-Testplan Teil F (Testinfra-Plan Schritt 4) — die
@@ -643,9 +655,40 @@ Implementierungsreihenfolge im Design-Dokument.
     keine Textfeldinhalte.
   - 40 neue Tests (Migration 2, TargetEvaluator 10, ProgressGoalsUiState 15,
     PrCalculator/WorkoutMath-Grenze 18 aus Schritt 5); alle Gates gruen.
-- [ ] Offen: DB v9 (`TargetEntity`) mit `TargetRepository`/`ProgressRepository`
-  — blockiert bis zum Urheber-WIP-Merge (v8). Danach ersetzen echte Ziele die
-  Platzhalterzeile des Dashboards (R7) und den DataStore-Wochenziel-Umweg.
-  Ebenfalls offen: Flowtimer selbst auf das Submodule umstellen (dessen
-  Seite von Schritt 3) sowie CONTEXT-Punkte 3 und 4 (TargetEntity-Schluessel,
-  Schema-Export nach `src/test/assets`).
+- [x] Toter Eintrag entfernt (2026-08-30): An dieser Stelle stand bis heute
+  „Offen: DB v9 (`TargetEntity`) — blockiert bis zum Urheber-WIP-Merge (v8)".
+  Das widersprach dem Eintrag oben („Schritt 4b umgesetzt (DB v9, Ziele)") und
+  dem aufgeloesten Blocker zwei Eintraege darueber. `TargetEntity`,
+  `TargetRepository`, `TargetEvaluator` und das Ziele-Tile existieren; die DB
+  steht auf v9 (`DropSyncDatabase.kt:96`), `9.json` ist exportiert, die
+  Migrationskette v1→v9 ist mit Datenerhalt getestet. CONTEXT-Punkte 3 und 4
+  sind damit ebenfalls erledigt.
+- [ ] Weiterhin offen aus der Flowtimer-Integration: **Flowtimer selbst** auf
+  das `training-core`-Submodule umstellen (die andere Haelfte von Schritt 3).
+  Das betrifft das Repo `github.com/Adilinu94/Flowtimer`, nicht dieses.
+  Ebenfalls offen: der DataStore-Wochenziel-Umweg
+  (`WorkoutGoalPreferencesStore`) koennte jetzt nach Room wandern — die
+  Vorsichtsmassnahme, die ihn begruendet hat, ist entfallen. Kein Zwang,
+  solange der DataStore funktioniert.
+
+## W. Aufräumen und Verifikation (2026-08-30, Session: OpenCode)
+
+Anlass: Bestandsaufnahme „was steht noch aus". Die Recherche hat vor allem
+Doku-Drift und ein Absicherungsrisiko gefunden, nicht fehlende Features.
+
+- [x] **`ui-test/` nicht mehr versioniert.** 42 MB Emulator-Diagnostik
+  (160 uiautomator-Dumps, 130 Screenshots) waren untracked und nicht in
+  `.gitignore` — ein Commit haette sie dauerhaft in die History gelegt. Jetzt
+  ignoriert. Kuratiert erhalten: die neun Bilder, auf die sich das
+  Now-Playing-Handoff stuetzt, unter `docs/design/reference/` (5,9 MB), und die
+  drei Auswertungsdokumente (`UI_REVIEW.md`,
+  `POWERAMP_ONBOARDING_REVIEW.md`, `POWERAMP_FOLDER_FLOW.md`) unter
+  `docs/qa/`. Alle Verweise umgeschrieben, damit
+  `tools/doku_links_check.py` gruen bleibt und in einem frischen Clone nicht
+  rot wird (dieselbe Falle wie STATUS Abschnitt U beim Mobile-Design-System).
+- [x] **`docs/Kritische Befunde.md` mit Ist-Stand-Tabelle versehen.** Von den
+  P0-Befunden des 2026-08-12-Reviews sind 16 behoben oder entfallen, das
+  Dokument sagte das nicht. Jede Session las es als aktuelle Fehlerliste.
+  Belege je Zeile mit Datei und Zeilennummer. Der Umbauplan darunter bleibt
+  als Beschreibung der Zielarchitektur stehen, jetzt aber erkennbar als
+  Absicht statt als Zustand. Echter Rest: Ground-Truth-Traces und Gate 11b.

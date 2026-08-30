@@ -28,3 +28,10 @@ captures/
 graphify-out/
 
 .kotlin/
+
+# Emulator-Diagnostik einer Abnahmesitzung: uiautomator-Dumps und
+# Screenshot-Serien. Wegwerf-Artefakte (42 MB, ~290 Dateien) - sie belegen
+# einen Geraetezustand von einem Tag, nicht den Projektstand. Die wenigen
+# dauerhaft gebrauchten Referenzbilder liegen kuratiert unter
+# docs/design/reference/, die Auswertungen als Dokument unter docs/qa/.
+ui-test/
