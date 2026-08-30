@@ -77,6 +77,15 @@ jobs:
       - name: Debug-Build (./gradlew assembleDebug)
         run: ./gradlew assembleDebug --stacktrace
 
+      # Der Debug-Build laeuft ohne R8. Ein Release-Build ist das einzige
+      # Gate, das Minification/Shrinking prueft - genau dort entstehen
+      # Fehler, die im Debug-Build unsichtbar bleiben (fehlende Keep-Regeln
+      # bei Reflection auf App-Klassen, weggeschrumpfte Ressourcen). Ohne
+      # signingConfig entsteht ein unsigniertes APK; fuer den
+      # Regressionstest genuegt das.
+      - name: Release-Build mit R8 (./gradlew assembleRelease)
+        run: ./gradlew assembleRelease --stacktrace
+
       - name: Testberichte hochladen (bei Fehlschlag)
         if: failure()
         uses: actions/upload-artifact@v4
