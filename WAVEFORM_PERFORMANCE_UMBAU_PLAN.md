@@ -1,6 +1,6 @@
 # DropSync Waveform-/Analyse-Performance — Umbauplan
 
-Stand: 21.08.2026. Basis ist eine vollstaendige Code-Analyse der
+Stand: 21.08.2026; Messnachtrag 31.08.2026. Basis ist eine vollstaendige Code-Analyse der
 Analyse-Pipeline (`TrackAnalyzerImpl`, `TrackAnalysisRepositoryImpl`,
 `TrackAnalysisWorker`, `TrackAnalysisMath`/`MixAnalysis`,
 `PlayerViewModel`, `Waveform.kt`, DI in `data/audio`) plus die Recherche
@@ -147,11 +147,49 @@ Abschnitt O in STATUS_FORTSCHRITT), das Bucket-Format (256 Bucklets,
 
 ## Phasen und Status
 
+### Phase-0-Messnachtrag (31.08.2026)
+
+Die JVM-Baseline fuer die reine Signalmathematik steht
+(`TrackAnalysisBaselineTest`, 4 min, 44,1 kHz, musikaehnliches Mono-Signal,
+aufgewaermte JIT):
+
+| Abschnitt | Zeit Desktop-JVM | Anteil/Einordnung |
+|---|---:|---|
+| Waveform + Peak | 227-288 ms | Stufe 1, UI-kritisch |
+| Energy/RMS | 37-39 ms | klein |
+| Tempo | 63-83 ms | klein |
+| Chroma/Goertzel | 397-446 ms | groesster Akkumulator |
+| Loudness | 34-48 ms | klein |
+| heutiger kombinierter Pfad | 592-745 ms | Untergrenze ohne Decode |
+| nur Waveform | 183-227 ms | Untergrenze Stufe 1 |
+
+Die Stufentrennung spart auf der JVM **410-518 ms bzw. 69-70 %** der
+Akkumulatorzeit des UI-kritischen Laufs, ohne eine einzige innere Schleife
+zu optimieren. Das ist deutlich mehr und risikoaermer als der zuerst geplante
+Block-API-Umbau.
+
+Flaschenhals-Hypothese 3 wurde dabei getrennt gemessen: 74.412 `cos()`-Aufrufe
+kosten zusammen nur **3,5 ms**. Die Vorberechnung der Goertzel-Koeffizienten
+ist korrektes Aufraeumen, aber kein relevanter Performancehebel. Die Zeit
+steckt in ca. **76,2 Mio. inneren Goertzel-Schleifendurchlaeufen**. Der Plan
+darf den `cos()`-Teil deshalb nicht mehr als Begruendung fuer Phase 1 fuehren.
+
+**Konsequenz fuer die Reihenfolge:** Phase 2 (Profile/Stufentrennung) vor
+Phase 1 (Block-API). Die Block-API wird erst gebaut, wenn die noch ausstehende
+Geraetemessung zeigt, dass Waveform + Decode das 1,5-s-Ziel verfehlen. Eine
+Optimierung der Metadaten-Akkumulatoren verbessert die sichtbare Waveform nach
+der Trennung nicht mehr.
+
+**Was weiterhin fehlt:** MediaCodec-Decode und WorkManager-Dispatch laufen
+nur auf Android. Erst drei Cold-Cache-Laeufe auf einem Mittelklasse-Geraet
+koennen Abbruchkriterium A1 (>80 % Decode) und den verbindlichen 1,5-s-Zielwert
+entscheiden. Die JVM-Zahlen sind eine Untergrenze, keine Geraeteprognose.
+
 | Phase | Inhalt | Kernentscheidung | Status |
 |---|---|---|---|
-| 0 | Messinfrastruktur + Baseline: Timing je Pipeline-Abschnitt (Logcat-Tag `TrackAnalysisTiming`), Baseline-Protokoll Referenztrack (4 min, 44,1 kHz, Cold Cache, 3 Laeufe), optional Macrobenchmark in `benchmarks/` | Zielwert (<= 1,5 s?) wird hieraus verbindlich festgelegt; Abbruchkriterium A1 geprueft | offen |
-| 1 | Block-API + Float in `:domain:audio`: `WaveformAccumulator`, `EnergyAccumulator`, `LoudnessAccumulator`, `TempoAccumulator` (Delegation), `ChromaAccumulator` (Zaehl-Decimation, vorberechnete Goertzel-Koeffizienten); `TrackAnalyzerImpl`: Bulk-Decode + blockweiser Mono-Downmix in wiederverwendeten Arrays | Ausgaben byte-/wertidentisch zur Altimplementierung (Fixtures); kein `ANALYZER_VERSION`-Bump | offen |
-| 2 | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_8_9` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | `AnalysisProfile` (bereits vorhanden) wird endlich benutzt; Interface-Doku wird wahr | offen |
+| 0 | Messinfrastruktur + Baseline: Timing je Pipeline-Abschnitt (Logcat-Tag `TrackAnalysisTiming`), Baseline-Protokoll Referenztrack (4 min, 44,1 kHz, Cold Cache, 3 Laeufe), optional Macrobenchmark in `benchmarks/` | JVM-Akkumulator-Baseline steht; MediaCodec-/Dispatch-Anteil und verbindlicher Geraetezielwert fehlen | **teilweise** |
+| 2 (vorgezogen) | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_8_9` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | Messung: 69-70 % weniger Akkumulatorarbeit im UI-kritischen Lauf; hoechster Nutzen bei kleinerem Algorithmusrisiko | offen |
+| 1 (nach Phase 2) | Block-API + Float in `:domain:audio`: `WaveformAccumulator`, `EnergyAccumulator`, `LoudnessAccumulator`, `TempoAccumulator` (Delegation), `ChromaAccumulator` (Zaehl-Decimation); `TrackAnalyzerImpl`: Bulk-Decode + blockweiser Mono-Downmix in wiederverwendeten Arrays | Nur bauen, falls Geraetemessung nach Stufentrennung das 1,5-s-Ziel verfehlt; `cos()`-Vorbereitung allein spart gemessen nur 3,5 ms | offen |
 | 3 | In-Process-Prioritaetspfad: DI-Scope + `activeJobs`/`Semaphore` im Repository; `ensureActive()` je Buffer im Drain; `requestAnalysis` laeuft sofort in-process, `requestAnalysisForNewSongs`/`requestOnsetDetection` bleiben auf WorkManager | Cancel-und-Ueberholen statt KEEP-Warteschlange; Prozess-Tod ist unkritisch (Ergebnis lebt nur im DB-Cache, Lauf idempotent wiederholbar) | offen |
 | 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | offen |
 | 5 | (optional) Decode/Analyse-Overlap: MediaCodec-Async-Mode oder Producer-Thread -> bounded Channel -> Akkumulator-Konsument | Nur bauen, falls Phase-0/2-Messung dem Decode nennenswerten Anteil jenseits der Akkumulatoren gibt (Abbruchkriterium A1) | offen |

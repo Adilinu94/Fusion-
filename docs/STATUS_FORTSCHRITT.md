@@ -745,3 +745,41 @@ Musik liegt niedriger als ein Burst-Train oder ein reiner Dreiklang, deshalb
 sind sie permissiv gesetzt. Endgueltige Kalibrierung braucht echte Titel mit
 Rekordbox-/Mixed-In-Key-Referenz — dieselbe Luecke wie bei den
 Sensor-Ground-Truth-Traces (ADR-0017): Mechanik steht, Referenzdaten fehlen.
+
+## Y. Waveform-Performance Phase 0: messen vor umbauen (2026-08-31, Session: OpenCode)
+
+Anlass: `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md` plante zuerst eine invasive
+Block-API-/Float-Umstellung und erst danach die Zwei-Stufen-Analyse. Die
+Reihenfolge beruhte auf Code-Inspection, nicht auf Messwerten.
+
+- [x] **Reproduzierbare JVM-Baseline** (`TrackAnalysisBaselineTest`):
+  4-Minuten-Referenztrack, 44,1 kHz, 10,58 Mio musikaehnliche Mono-Samples,
+  JIT-Warmup, Einzelmessung je Akkumulator und kombinierter heutiger Pfad.
+  Zwei Laeufe ergaben: Waveform 183-288 ms, Tempo 63-83 ms, Chroma
+  397-446 ms, Loudness 34-48 ms, kombiniert 592-745 ms.
+- [x] **Stufentrennung vor Block-API priorisiert.** Nur Waveform kostet
+  183-227 ms; das Weglassen der Mix-Metadaten spart im UI-kritischen Lauf
+  410-518 ms bzw. **69-70 %** der Akkumulatorzeit. Dieser Gewinn braucht
+  keine Aenderung der Signalmathematik und ist damit risikoaermer als Phase 1.
+- [x] **Plan-Hypothese zum Chroma-Flaschenhals falsifiziert.** Die 74.412
+  `cos()`-Aufrufe kosten zusammen nur 3,5 ms. Die Zeit steckt in ca. 76,2 Mio.
+  inneren Goertzel-Schleifendurchlaeufen. Koeffizienten vorzuberechnen bleibt
+  korrektes Aufraeumen, ist aber kein Performancehebel und keine
+  Rechtfertigung fuer einen vorgezogenen Umbau.
+- [x] **Android-Timing-Infrastruktur** in `TrackAnalyzerImpl`: Logcat-Tag
+  `TrackAnalysisTiming` protokolliert pro Lauf Song-ID, Trackdauer,
+  Sample-/Bufferzahl, `dequeueWaitMs`, `accumulateMs`, `finalizeMs`,
+  `overheadMs` und `totalMs`. Die Namen sind bewusst ehrlich:
+  `dequeueWaitMs` ist nur die Wartezeit auf Output-Buffer, nicht der gesamte
+  Decode-Anteil.
+- [x] **Planstatus korrigiert:** Phase 0 = teilweise; Phase 2
+  (Profile/Stufentrennung) vor Phase 1 (Block-API). Phase 1 erst bauen, wenn
+  die Geraetemessung nach Stufentrennung das 1,5-s-Ziel verfehlt.
+- [x] Verifikation: `spotlessApply`, `:domain:audio:test`,
+  `:data:audio:testDebugUnitTest`, `:app:assembleDebug` gruen.
+
+**Bewusst offen / braucht Geraet:** Drei Cold-Cache-Laeufe desselben
+4-Minuten-Tracks auf einem Mittelklasse-Android-Geraet. Erst diese Werte
+entscheiden Abbruchkriterium A1 (>80 % MediaCodec-Decode) und ob 1,5 s ein
+realistischer verbindlicher Zielwert sind. Die JVM-Zahlen sind eine
+Untergrenze, keine Geraeteprognose.

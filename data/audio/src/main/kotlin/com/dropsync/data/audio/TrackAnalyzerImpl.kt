@@ -60,6 +60,7 @@ class TrackAnalyzerImpl(
         song: Song,
         detectOnsets: Boolean,
     ): TrackAnalysis {
+        val totalStartNs = System.nanoTime()
         val extractor = MediaExtractor()
         try {
             extractor.setDataSource(context, Uri.parse(song.contentUri), null)
@@ -94,38 +95,55 @@ class TrackAnalyzerImpl(
             val loudness = LoudnessAccumulator(sampleRateHz = sampleRate)
 
             val codec = MediaCodec.createDecoderByType(mime)
+            val timing: AnalysisTiming
             try {
                 codec.configure(format, null, null, 0)
                 codec.start()
-                drainDecoder(extractor, codec, waveform, energy, tempo, chroma, loudness)
+                timing = drainDecoder(extractor, codec, waveform, energy, tempo, chroma, loudness)
             } finally {
                 codec.release()
             }
 
+            val finalizeStartNs = System.nanoTime()
             val tempoEstimate = tempo.finishEstimate()
             val keyEstimate = chroma.finishEstimate()
-            return TrackAnalysis(
-                waveformBuckets = waveform.finish(),
-                // Onset-Kandidaten nur im explizit angeforderten Fall (Phase 5);
-                // sonst leer, ohne die Energie ueberhaupt zu berechnen.
-                onsetCandidatesMs =
-                    if (detectOnsets && energy != null) {
-                        OnsetDetection.detectOnsets(
-                            energyWindows = energy.finish(),
-                            windowDurationMs = ENERGY_WINDOW_MS.toLong(),
-                        )
-                    } else {
-                        emptyList()
-                    },
-                // Track-Peak fuer die visuelle Lautheits-Normalisierung (Phase 8).
-                peakLinear = waveform.peak(),
-                bpm = tempoEstimate?.bpm,
-                camelotKey = keyEstimate?.camelotKey,
-                bpmConfidence = tempoEstimate?.confidence,
-                keyConfidence = keyEstimate?.confidence,
-                integratedLufs = loudness.integratedLufs(),
-                truePeakDb = truePeakDb(loudness.truePeakLinear()),
+            val analysis =
+                TrackAnalysis(
+                    waveformBuckets = waveform.finish(),
+                    // Onset-Kandidaten nur im explizit angeforderten Fall (Phase 5);
+                    // sonst leer, ohne die Energie ueberhaupt zu berechnen.
+                    onsetCandidatesMs =
+                        if (detectOnsets && energy != null) {
+                            OnsetDetection.detectOnsets(
+                                energyWindows = energy.finish(),
+                                windowDurationMs = ENERGY_WINDOW_MS.toLong(),
+                            )
+                        } else {
+                            emptyList()
+                        },
+                    // Track-Peak fuer die visuelle Lautheits-Normalisierung (Phase 8).
+                    peakLinear = waveform.peak(),
+                    bpm = tempoEstimate?.bpm,
+                    camelotKey = keyEstimate?.camelotKey,
+                    bpmConfidence = tempoEstimate?.confidence,
+                    keyConfidence = keyEstimate?.confidence,
+                    integratedLufs = loudness.integratedLufs(),
+                    truePeakDb = truePeakDb(loudness.truePeakLinear()),
+                )
+            val finalizeMs = (System.nanoTime() - finalizeStartNs) / NS_PER_MS
+            val totalMs = (System.nanoTime() - totalStartNs) / NS_PER_MS
+            val dequeueWaitMs = timing.dequeueWaitNs / NS_PER_MS
+            val accumulateMs = timing.accumulateNs / NS_PER_MS
+            Log.i(
+                TIMING_LOG_TAG,
+                "songId=${song.mediaStoreId} durationMs=${song.durationMs} " +
+                    "samples=${timing.sampleCount} buffers=${timing.outputBuffers} " +
+                    "dequeueWaitMs=$dequeueWaitMs accumulateMs=$accumulateMs " +
+                    "finalizeMs=$finalizeMs " +
+                    "overheadMs=${(totalMs - dequeueWaitMs - accumulateMs - finalizeMs).coerceAtLeast(0L)} " +
+                    "totalMs=$totalMs onsets=$detectOnsets",
             )
+            return analysis
         } finally {
             extractor.release()
         }
@@ -147,12 +165,16 @@ class TrackAnalyzerImpl(
         tempo: TempoAccumulator,
         chroma: ChromaAccumulator,
         loudness: LoudnessAccumulator,
-    ) {
+    ): AnalysisTiming {
         val bufferInfo = MediaCodec.BufferInfo()
         var inputDone = false
         var outputDone = false
         var outputChannels = 2
         var outputPcmFloat = false
+        var dequeueWaitNs = 0L
+        var accumulateNs = 0L
+        var sampleCount = 0L
+        var outputBuffers = 0
 
         while (!outputDone) {
             if (!inputDone) {
@@ -170,7 +192,10 @@ class TrackAnalyzerImpl(
                 }
             }
 
-            when (val outputIndex = codec.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)) {
+            val dequeueStartNs = System.nanoTime()
+            val outputIndex = codec.dequeueOutputBuffer(bufferInfo, DEQUEUE_TIMEOUT_US)
+            dequeueWaitNs += System.nanoTime() - dequeueStartNs
+            when (outputIndex) {
                 MediaCodec.INFO_OUTPUT_FORMAT_CHANGED -> {
                     val outputFormat = codec.outputFormat
                     outputChannels = outputFormat.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
@@ -180,11 +205,12 @@ class TrackAnalyzerImpl(
                 }
 
                 MediaCodec.INFO_TRY_AGAIN_LATER -> {
-                    Unit
+                    continue
                 }
 
                 else -> {
                     if (outputIndex >= 0) {
+                        outputBuffers++
                         val outputBuffer = requireNotNull(codec.getOutputBuffer(outputIndex))
                         outputBuffer.position(bufferInfo.offset)
                         outputBuffer.limit(bufferInfo.offset + bufferInfo.size)
@@ -192,6 +218,7 @@ class TrackAnalyzerImpl(
                         if (outputPcmFloat) {
                             val floats = outputBuffer.asFloatBuffer()
                             val frames = floats.remaining() / outputChannels
+                            val accumulateStartNs = System.nanoTime()
                             repeat(frames) { frame ->
                                 var sum = 0.0
                                 repeat(outputChannels) { ch ->
@@ -199,9 +226,12 @@ class TrackAnalyzerImpl(
                                 }
                                 feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
                             }
+                            accumulateNs += System.nanoTime() - accumulateStartNs
+                            sampleCount += frames
                         } else {
                             val shorts = outputBuffer.asShortBuffer()
                             val frames = shorts.remaining() / outputChannels
+                            val accumulateStartNs = System.nanoTime()
                             repeat(frames) { frame ->
                                 var sum = 0.0
                                 repeat(outputChannels) { ch ->
@@ -209,6 +239,8 @@ class TrackAnalyzerImpl(
                                 }
                                 feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
                             }
+                            accumulateNs += System.nanoTime() - accumulateStartNs
+                            sampleCount += frames
                         }
                         codec.releaseOutputBuffer(outputIndex, false)
                         if (bufferInfo.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) {
@@ -218,6 +250,12 @@ class TrackAnalyzerImpl(
                 }
             }
         }
+        return AnalysisTiming(
+            dequeueWaitNs = dequeueWaitNs,
+            accumulateNs = accumulateNs,
+            sampleCount = sampleCount,
+            outputBuffers = outputBuffers,
+        )
     }
 
     private fun feed(
@@ -242,6 +280,8 @@ class TrackAnalyzerImpl(
 
     companion object {
         private const val LOG_TAG = "TrackAnalyzer"
+        private const val TIMING_LOG_TAG = "TrackAnalysisTiming"
+        private const val NS_PER_MS = 1_000_000L
 
         /**
          * Buckets ueber den ganzen Track (Plan Phase 2). Bewusst grober als
@@ -256,3 +296,10 @@ class TrackAnalyzerImpl(
         private const val DEQUEUE_TIMEOUT_US = 10_000L
     }
 }
+
+private data class AnalysisTiming(
+    val dequeueWaitNs: Long,
+    val accumulateNs: Long,
+    val sampleCount: Long,
+    val outputBuffers: Int,
+)

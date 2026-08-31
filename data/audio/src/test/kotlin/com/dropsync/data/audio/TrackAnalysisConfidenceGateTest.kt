@@ -181,8 +181,7 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
         state.value = entity
     }
 
-    override suspend fun getBySongId(songId: Long): TrackAnalysisEntity? =
-        state.value?.takeIf { it.songId == songId }
+    override suspend fun getBySongId(songId: Long): TrackAnalysisEntity? = state.value?.takeIf { it.songId == songId }
 
     override suspend fun getBySongIds(songIds: List<Long>): List<TrackAnalysisEntity> =
         listOfNotNull(state.value).filter { it.songId in songIds }
