@@ -177,6 +177,10 @@ fun NowPlayingScreen(
     val waveformState by viewModel.waveform.collectAsStateWithLifecycle()
     val markers by viewModel.nowPlayingMarkers.collectAsStateWithLifecycle()
     val queue by viewModel.queue.collectAsStateWithLifecycle()
+    val playbackSpeed by viewModel.playbackSpeed.collectAsStateWithLifecycle()
+    val trackBpm by viewModel.trackBpm.collectAsStateWithLifecycle()
+    val bpmLockEnabled by viewModel.isBpmLockEnabled.collectAsStateWithLifecycle()
+    val lockTargetBpm by viewModel.lockTargetBpm.collectAsStateWithLifecycle()
     val fallbackPositionMs = state.positionMs
     val shownPositionMs: () -> Long = { livePositionState.value ?: fallbackPositionMs }
     val currentSongIndex = queue.currentIndex
@@ -189,6 +193,7 @@ fun NowPlayingScreen(
     var createMarkerAtMs by remember { mutableStateOf<Long?>(null) }
     var deleteMarker by remember { mutableStateOf<SongMarker?>(null) }
     var showQueue by remember { mutableStateOf(false) }
+    var showTempo by remember { mutableStateOf(false) }
 
     // Marker-Anteile EINMAL je Marker-/Dauer-Aenderung berechnen (P1-Fix).
     // Vorher entstand diese Liste zweimal pro Recomposition — also zehnmal
@@ -289,6 +294,10 @@ fun NowPlayingScreen(
                         showQueue = true
                         menuOpen = false
                     },
+                    onOpenTempo = {
+                        showTempo = true
+                        menuOpen = false
+                    },
                     onToggleFavorite = viewModel::toggleFavorite,
                     queueSize = queue.items.size,
                 )
@@ -370,6 +379,18 @@ fun NowPlayingScreen(
             onPlay = viewModel::playQueueItem,
             onMove = viewModel::moveQueueItem,
             onRemove = viewModel::removeQueueItem,
+        )
+    }
+    if (showTempo) {
+        TempoSheet(
+            speed = playbackSpeed,
+            trackBpm = trackBpm,
+            bpmLockEnabled = bpmLockEnabled,
+            lockTargetBpm = lockTargetBpm,
+            onDismiss = { showTempo = false },
+            onSpeedSelected = viewModel::setPlaybackSpeed,
+            onBpmLockChanged = viewModel::setBpmLock,
+            onTargetBpmChanged = viewModel::setLockTargetBpm,
         )
     }
 }
@@ -481,6 +502,7 @@ private fun PowerampTitleRow(
     onDismissMenu: () -> Unit,
     onAddMarker: () -> Unit,
     onOpenQueue: () -> Unit,
+    onOpenTempo: () -> Unit,
     onToggleFavorite: () -> Unit,
     queueSize: Int,
 ) {
@@ -535,6 +557,10 @@ private fun PowerampTitleRow(
                     text = { Text(stringResource(R.string.player_queue_open)) },
                     onClick = onOpenQueue,
                     enabled = queueSize > 0,
+                )
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.now_playing_tempo_title)) },
+                    onClick = onOpenTempo,
                 )
                 DropdownMenuItem(
                     text = { Text(stringResource(R.string.now_playing_like)) },

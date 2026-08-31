@@ -235,23 +235,48 @@ class ChromaAccumulator(
             coefficient * previous * previousPrevious
     }
 
+    /**
+     * Pearson-Korrelation zwischen Chromagramm und rotiertem Profil.
+     *
+     * Die Zentrierung (Abzug der Mittelwerte) ist nicht kosmetisch,
+     * sondern der Kern des Verfahrens. Ohne sie waere dies eine
+     * Kosinus-Aehnlichkeit zweier rein positiver Vektoren — und ein
+     * FLACHES Chromagramm (weisses Rauschen verteilt Energie
+     * gleichmaessig auf alle 12 Halbtoene) haette dann mit jedem Profil
+     * hohe Aehnlichkeit. Gemessen vor dem Fix: Rauschen erreichte 0,96,
+     * echte Dreiklaenge nur 0,73 — die Konfidenz war invers und als
+     * Qualitaetsmass wertlos.
+     *
+     * Zentriert wird ein flacher Vektor zum Nullvektor: `chromaVariance`
+     * ist dann 0, der Nenner 0, und das Ergebnis 0. Genau das gewuenschte
+     * Verhalten — keine Tonart ohne tonale Struktur.
+     *
+     * Krumhansl-Schmuckler ist so definiert; siehe
+     * [MixConfidenceBaselineTest] fuer die gemessene Verteilung.
+     */
     private fun correlation(
         chroma: DoubleArray,
         profile: DoubleArray,
         root: Int,
     ): Double {
-        var dot = 0.0
-        var profileSumSquares = 0.0
-        var chromaSumSquares = 0.0
+        val rotated = DoubleArray(12) { profile[(it - root + 12) % 12] }
+        val chromaMean = chroma.average()
+        val profileMean = rotated.average()
+
+        var covariance = 0.0
+        var chromaVariance = 0.0
+        var profileVariance = 0.0
         for (i in 0 until 12) {
-            val profileValue = profile[(i - root + 12) % 12]
-            dot += chroma[i] * profileValue
-            profileSumSquares += profileValue * profileValue
-            chromaSumSquares += chroma[i] * chroma[i]
+            val chromaDelta = chroma[i] - chromaMean
+            val profileDelta = rotated[i] - profileMean
+            covariance += chromaDelta * profileDelta
+            chromaVariance += chromaDelta * chromaDelta
+            profileVariance += profileDelta * profileDelta
         }
-        val denominator = sqrt(profileSumSquares * chromaSumSquares)
+
+        val denominator = sqrt(chromaVariance * profileVariance)
         if (denominator == 0.0) return 0.0
-        return dot / denominator
+        return covariance / denominator
     }
 
     private fun pitchClassFrequency(
@@ -316,3 +341,71 @@ data class KeyEstimate(
     val camelotKey: String,
     val confidence: Float,
 )
+
+/**
+ * Mindestkonfidenz, ab der eine Schaetzung dem Nutzer gezeigt oder von
+ * einem Automatismus benutzt werden darf.
+ *
+ * Warum ueberhaupt ein Gate: [TempoAccumulator] und [ChromaAccumulator]
+ * liefern IMMER einen Wert, sobald genug Signal vorhanden ist — auch fuer
+ * Material ohne Puls oder Tonalitaet. Weisses Rauschen ergibt "160 BPM",
+ * Sprache "77 BPM". Ungefiltert landet dieser Muell im BPM-Lock, der
+ * daraus einen Tempo-Faktor rechnet und die Wiedergabe hoerbar
+ * verstimmt. Ein falscher Wert ist hier schaedlicher als kein Wert:
+ * ohne BPM ist der Lock deaktiviert (`enabled = trackBpm != null`,
+ * TempoSheet.kt:123) und der Nutzer merkt, dass die Analyse nichts
+ * hergibt.
+ *
+ * Gemessene Verteilung (`MixConfidenceBaselineTest`, synthetische
+ * Signale, 44,1 kHz):
+ *
+ * | Eingang | Tempo | Key |
+ * |---|---|---|
+ * | klarer 120/160-BPM-Beat | 1,00 | — |
+ * | Beat mit 8 % Jitter | 0,39 | — |
+ * | Beat mit 20 % Jitter | 0,18 | — |
+ * | Sprache-aehnlich | 0,18 | — |
+ * | weisses Rauschen | 0,15 | 0,64 |
+ * | Dur-/Moll-Dreiklang | — | 0,83..0,89 |
+ *
+ * **Diese Schwellen sind vorlaeufig.** Sie trennen synthetische
+ * Extremfaelle, und synthetische Signale sind der einfachste denkbare
+ * Fall: ein Burst-Train ist rhythmisch praeziser als jede Live-Aufnahme,
+ * ein reiner Dreiklang tonal klarer als ein Track mit Drums und Bass.
+ * Echte Musik liegt niedriger. Die Schwellen sind daher bewusst
+ * PERMISSIV gesetzt — sie werfen nur weg, was messbar Muell ist, statt
+ * zu riskieren, dass korrekte Werte echter Tracks verschwinden.
+ *
+ * Endgueltige Kalibrierung braucht echte Titel mit bekanntem BPM/Key
+ * (z. B. ein Dutzend Tracks mit Rekordbox-/Mixed-In-Key-Referenz). Bis
+ * dahin ist das Gate eine Muellabfuhr, keine Qualitaetsgarantie.
+ */
+object MixConfidence {
+    /**
+     * Rauschen und Sprache liegen gemessen bei 0,15..0,18, ein noch
+     * brauchbarer Beat mit 8 % Jitter bei 0,39. 0,25 liegt im Tal
+     * zwischen beiden Gruppen und laesst dem Jitter-Fall Luft.
+     */
+    const val MIN_BPM_CONFIDENCE: Float = 0.25f
+
+    /**
+     * Rauschen liegt gemessen bei 0,64, Dreiklaenge bei 0,83..0,89.
+     * 0,70 trennt sie. Enger als beim Tempo, weil die Korrelation
+     * ohnehin nur einen kleinen Wertebereich ausnutzt — und weil ein
+     * falscher Key im Gegensatz zum BPM heute nichts steuert, sondern
+     * nur angezeigt wird.
+     */
+    const val MIN_KEY_CONFIDENCE: Float = 0.70f
+
+    /** Gibt [bpm] frei, wenn [confidence] die Schwelle erreicht. */
+    fun acceptBpm(
+        bpm: Float?,
+        confidence: Float?,
+    ): Float? = bpm?.takeIf { (confidence ?: 0f) >= MIN_BPM_CONFIDENCE }
+
+    /** Gibt [camelotKey] frei, wenn [confidence] die Schwelle erreicht. */
+    fun acceptKey(
+        camelotKey: String?,
+        confidence: Float?,
+    ): String? = camelotKey?.takeIf { (confidence ?: 0f) >= MIN_KEY_CONFIDENCE }
+}

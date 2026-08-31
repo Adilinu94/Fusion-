@@ -692,3 +692,56 @@ Doku-Drift und ein Absicherungsrisiko gefunden, nicht fehlende Features.
   Belege je Zeile mit Datei und Zeilennummer. Der Umbauplan darunter bleibt
   als Beschreibung der Zielarchitektur stehen, jetzt aber erkennbar als
   Absicht statt als Zustand. Echter Rest: Ground-Truth-Traces und Gate 11b.
+- [x] **Release-Build als CI-Gate** (`ad48334`). `isMinifyEnabled` war seit
+  Schritt 1 aktiv, aber die CI baute nur `assembleDebug` — der R8-Pfad war nie
+  verifiziert. Erstpruefung gruen (5m 7s, 3,4 MB unsigniertes APK, keine
+  fehlende Keep-Regel). Der vermutete Reflection-Bedarf in
+  `OutputDeviceMonitor` bestaetigte sich nicht und kann sich nicht bestaetigen:
+  R8 schrumpft `android.*` nie. `proguard-rules.pro` haelt die Abgrenzung fest.
+  Offen: `signingConfig` (Releasevorbereitung, braucht Keystore).
+  Nebenbefund: `DspRenderersFactory.kt:44` nutzt die in Media3 deprecated
+  `setEnableAudioTrackPlaybackParams` — Kandidat fuers Media3-Update.
+
+## X. Konfidenz-Gate fuer BPM und Tonart (2026-08-31, Session: OpenCode)
+
+Anlass: BPM/Camelot waren im Datenmodell und in der UI fertig verdrahtet
+(`TempoSheet` mit BPM-Lock, Marker-Beat-Snap), aber `trackBpm` blieb in der
+Praxis unbrauchbar — die Akkumulatoren liefern **immer** einen Wert, auch fuer
+Material ohne Puls.
+
+- [x] **Konfidenzwerte erstmals gemessen** (`MixConfidenceBaselineTest`,
+  `:domain:audio`). Rauschen ergibt "160 BPM" bei Konfidenz 0,15, Sprache
+  "77 BPM" bei 0,18; ein klarer Beat 1,00, mit 8 % Jitter 0,39. Der Test
+  bleibt als Beleg im Repo und druckt die Verteilung bei jedem Lauf.
+- [x] **Vorzeichenfehler in der Chroma-Korrelation gefunden und behoben.**
+  Weisses Rauschen korrelierte mit **0,96**, echte Dreiklaenge nur mit 0,73 —
+  die Konfidenz war invers und als Qualitaetsmass wertlos. `correlation()`
+  rechnete eine Kosinus-Aehnlichkeit rein positiver Vektoren statt der
+  Pearson-Korrelation, die Krumhansl-Schmuckler verlangt; ohne Zentrierung
+  aehnelt ein flaches Chromagramm **jedem** Profil. Nach dem Fix: Rauschen
+  0,64, Dreiklaenge 0,83..0,89. Ohne die Messung waere jede Schwelle auf den
+  invertierten Wert gesetzt worden.
+- [x] **`MixConfidence`-Gate** (`:domain:audio`): `MIN_BPM_CONFIDENCE = 0,25`
+  (Tal zwischen Rauschen 0,18 und Jitter-Beat 0,39), `MIN_KEY_CONFIDENCE = 0,70`
+  (trennt Rauschen 0,64 von Dreiklaengen 0,83). Angewendet in
+  `TrackAnalysisRepositoryImpl.observeAnalysis` — **Leseseite**, damit eine
+  spaetere Nachkalibrierung ohne `ANALYZER_VERSION`-Bump (und damit ohne
+  Verlust aller Waveform-Caches) greift. Fehlende Konfidenz (DB-v7-Zeilen)
+  gilt als unsicher. Beide Schwellen unabhaengig: untanzbar ≠ untonal.
+- [x] **`TempoSheet` war nicht erreichbar.** Das Sheet existierte seit
+  `6769ea0` samt BPM-Lock, Presets und Ziel-Kadenz — aber ohne jede
+  Aufrufstelle. Toter Code, der als fertiges Feature in der Doku stand. Jetzt
+  im Overflow-Menue des Now-Playing. Der Kein-BPM-Text sagt nicht mehr
+  „Analyse steht aus" (falsch, wenn die Analyse fertig ist und nur nichts
+  hergab), sondern „kein verlaesslicher BPM-Wert verfuegbar".
+- [x] ADR-0019 festgehalten (Gate, Nebenbefund, permissive Schwellen).
+- [x] Verifikation: `:domain:audio:test` (19 Klassen), `:data:audio:testDebugUnitTest`
+  (neu: `TrackAnalysisConfidenceGateTest`, 7 Faelle), `:feature:player:testDebugUnitTest`,
+  `detekt`, `:app:assembleDebug`, `lintDebug` (player + data:audio),
+  `tools/doku_links_check.py` — alle gruen.
+
+**Bewusst offen:** Die Schwellen trennen synthetische Extremfaelle. Echte
+Musik liegt niedriger als ein Burst-Train oder ein reiner Dreiklang, deshalb
+sind sie permissiv gesetzt. Endgueltige Kalibrierung braucht echte Titel mit
+Rekordbox-/Mixed-In-Key-Referenz — dieselbe Luecke wie bei den
+Sensor-Ground-Truth-Traces (ADR-0017): Mechanik steht, Referenzdaten fehlen.

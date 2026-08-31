@@ -20,6 +20,7 @@ import com.dropsync.core.database.entity.TrackAnalysisEntity
 import com.dropsync.core.model.LinkMethod
 import com.dropsync.core.model.MarkerSource
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.MixConfidence
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.TrackAnalyzer
@@ -54,12 +55,24 @@ class TrackAnalysisRepositoryImpl(
                     // bucket_count = 0 ist der persistierte Fehlerfall
                     // (Format ohne Plattformdecoder): leere Buckets melden,
                     // damit die UI auf die Zeitleiste zurueckfaellt.
+                    //
+                    // Konfidenz-Gate an der LESESEITE, nicht beim Schreiben:
+                    // die Rohwerte bleiben in der DB, damit eine spaetere
+                    // Kalibrierung der Schwellen (MixConfidence) ohne
+                    // Neuanalyse der ganzen Bibliothek greift. Ein Bump von
+                    // ANALYZER_VERSION waere sonst der einzige Weg.
                     TrackAnalysis(
                         waveformBuckets = WaveformCodec.unpack(it.waveformData),
                         onsetCandidatesMs = emptyList(),
                         peakLinear = it.peakLinear,
-                        bpm = it.bpm?.takeIf { current },
-                        camelotKey = it.camelotKey?.takeIf { current },
+                        bpm =
+                            MixConfidence
+                                .acceptBpm(it.bpm, it.bpmConfidence)
+                                ?.takeIf { current },
+                        camelotKey =
+                            MixConfidence
+                                .acceptKey(it.camelotKey, it.keyConfidence)
+                                ?.takeIf { current },
                         bpmConfidence = it.bpmConfidence?.takeIf { current },
                         keyConfidence = it.keyConfidence?.takeIf { current },
                         integratedLufs = it.integratedLufs?.takeIf { current },

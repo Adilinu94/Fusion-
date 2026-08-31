@@ -66,7 +66,7 @@
     <string name="now_playing_tempo_original">Original</string>
     <string name="now_playing_tempo_lock_title">BPM anpassen (Lock)</string>
     <string name="now_playing_tempo_lock_track_bpm">Titel: %1$d BPM</string>
-    <string name="now_playing_tempo_lock_no_bpm">BPM-Analyse für diesen Titel steht noch aus.</string>
+    <string name="now_playing_tempo_lock_no_bpm">Für diesen Titel ist noch kein verlässlicher BPM-Wert verfügbar.</string>
     <string name="now_playing_tempo_lock_target">Ziel: %1$d BPM</string>
     <string name="now_playing_tempo_lock_effective">Lock-Tempo: %1$.2fx</string>
     <string name="quick_eq_title">Equalizer</string>
