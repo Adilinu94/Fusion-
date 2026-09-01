@@ -121,6 +121,25 @@ class TrackAnalysisConfidenceGateTest {
         }
 
     @Test
+    fun `alte mix-version bleibt unsichtbar die waveform aber erhalten`() =
+        runTest {
+            dao.emit(
+                entity(
+                    bpm = 128f,
+                    bpmConfidence = 0.9f,
+                    camelotKey = "8A",
+                    keyConfidence = 0.9f,
+                ).copy(mixAnalyzerVersion = 0),
+            )
+
+            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+
+            assertNull(analysis.bpm)
+            assertNull(analysis.camelotKey)
+            assertEquals(2, analysis.waveformBuckets.size)
+        }
+
+    @Test
     fun `waveform bleibt unabhaengig vom konfidenz-gate erhalten`() =
         runTest {
             dao.emit(entity(bpm = 77f, bpmConfidence = 0.1f))
@@ -157,6 +176,7 @@ class TrackAnalysisConfidenceGateTest {
         waveformData = byteArrayOf(-10, 10, -20, 20),
         bucketCount = 2,
         analyzerVersion = WaveformCodec.ANALYZER_VERSION,
+        mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
         analyzedAtEpochMs = 1_000L,
         peakLinear = 0.8,
         bpm = bpm,
@@ -179,6 +199,32 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
 
     override suspend fun upsert(entity: TrackAnalysisEntity) {
         state.value = entity
+    }
+
+    override suspend fun updateMixMetadata(
+        songId: Long,
+        bpm: Float?,
+        bpmConfidence: Float?,
+        camelotKey: String?,
+        keyConfidence: Float?,
+        integratedLufs: Float?,
+        truePeakDb: Float?,
+        mixAnalyzerVersion: Int,
+        analyzedAtEpochMs: Long,
+    ): Int {
+        val current = state.value?.takeIf { it.songId == songId } ?: return 0
+        state.value =
+            current.copy(
+                bpm = bpm,
+                bpmConfidence = bpmConfidence,
+                camelotKey = camelotKey,
+                keyConfidence = keyConfidence,
+                integratedLufs = integratedLufs,
+                truePeakDb = truePeakDb,
+                mixAnalyzerVersion = mixAnalyzerVersion,
+                analyzedAtEpochMs = analyzedAtEpochMs,
+            )
+        return 1
     }
 
     override suspend fun getBySongId(songId: Long): TrackAnalysisEntity? = state.value?.takeIf { it.songId == songId }

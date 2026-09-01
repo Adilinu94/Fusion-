@@ -163,6 +163,21 @@ val MIGRATION_8_9 =
         }
     }
 
+/**
+ * v9 -> v10: versioniert Mix-Metadaten getrennt von der Waveform. Bestehende
+ * BPM-/Key-Werte erhalten Version 0 und werden im Hintergrund neu berechnet;
+ * ihre Waveform bleibt gueltig und sofort sichtbar.
+ */
+val MIGRATION_9_10 =
+    object : Migration(9, 10) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE `track_analysis` ADD COLUMN `mix_analyzer_version` " +
+                    "INTEGER NOT NULL DEFAULT 0",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
     arrayOf(
@@ -174,4 +189,5 @@ val DROPSYNC_MIGRATIONS: Array<Migration> =
         MIGRATION_6_7,
         MIGRATION_7_8,
         MIGRATION_8_9,
+        MIGRATION_9_10,
     )

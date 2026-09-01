@@ -14,6 +14,26 @@ interface TrackAnalysisDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(entity: TrackAnalysisEntity)
 
+    /** Reichert eine vorhandene Waveform-Zeile um unabhaengig versionierte Mix-Metadaten an. */
+    @Query(
+        "UPDATE track_analysis SET bpm = :bpm, bpm_confidence = :bpmConfidence, " +
+            "camelot_key = :camelotKey, key_confidence = :keyConfidence, " +
+            "integrated_lufs = :integratedLufs, true_peak_db = :truePeakDb, " +
+            "mix_analyzer_version = :mixAnalyzerVersion, analyzed_at_epoch_ms = :analyzedAtEpochMs " +
+            "WHERE song_id = :songId",
+    )
+    suspend fun updateMixMetadata(
+        songId: Long,
+        bpm: Float?,
+        bpmConfidence: Float?,
+        camelotKey: String?,
+        keyConfidence: Float?,
+        integratedLufs: Float?,
+        truePeakDb: Float?,
+        mixAnalyzerVersion: Int,
+        analyzedAtEpochMs: Long,
+    ): Int
+
     @Query("SELECT * FROM track_analysis WHERE song_id = :songId")
     suspend fun getBySongId(songId: Long): TrackAnalysisEntity?
 

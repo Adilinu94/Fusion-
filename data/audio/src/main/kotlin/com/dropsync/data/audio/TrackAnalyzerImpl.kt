@@ -11,6 +11,7 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.AnalysisProfile
 import com.dropsync.domain.audio.ChromaAccumulator
 import com.dropsync.domain.audio.EnergyAccumulator
 import com.dropsync.domain.audio.LoudnessAccumulator
@@ -35,11 +36,11 @@ class TrackAnalyzerImpl(
 ) : TrackAnalyzer {
     override suspend fun analyze(
         song: Song,
-        detectOnsets: Boolean,
+        profile: AnalysisProfile,
     ): AppResult<TrackAnalysis> =
         withContext(dispatchers.default) {
             try {
-                AppResult.success(decodeAndAccumulate(song, detectOnsets))
+                AppResult.success(decodeAndAccumulate(song, profile))
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 // Umbauplan Phase 10.4: Abbruch ist KEIN Analysefehler und
                 // darf nie als Cache-Eintrag enden - weiterwerfen.
@@ -58,7 +59,7 @@ class TrackAnalyzerImpl(
 
     private fun decodeAndAccumulate(
         song: Song,
-        detectOnsets: Boolean,
+        profile: AnalysisProfile,
     ): TrackAnalysis {
         val totalStartNs = System.nanoTime()
         val extractor = MediaExtractor()
@@ -78,21 +79,26 @@ class TrackAnalyzerImpl(
                 }
             val totalSamples = durationUs * sampleRate / 1_000_000L
 
-            val waveform = WaveformAccumulator(totalSamples, BUCKET_COUNT)
+            val includesWaveform = profile != AnalysisProfile.MIX_METADATA
+            val includesMix = profile == AnalysisProfile.MIX_METADATA || profile == AnalysisProfile.FULL
+            val includesOnsets =
+                profile == AnalysisProfile.WAVEFORM_AND_ONSETS || profile == AnalysisProfile.FULL
+            val waveform =
+                if (includesWaveform) WaveformAccumulator(totalSamples, BUCKET_COUNT) else null
             // Kurzzeit-Energie nur, wenn Onsets wirklich gebraucht werden:
             // der Nur-Waveform-Pfad spart so die halbe Sample-Arbeit.
             val energy =
-                if (detectOnsets) {
+                if (includesOnsets) {
                     EnergyAccumulator(samplesPerWindow = sampleRate * ENERGY_WINDOW_MS / 1_000)
                 } else {
                     null
                 }
             // Mix-Metadaten (Phase 1) laufen additiv im selben Durchgang.
-            val tempo = TempoAccumulator(sampleRateHz = sampleRate)
-            val chroma = ChromaAccumulator(sampleRateHz = sampleRate)
+            val tempo = if (includesMix) TempoAccumulator(sampleRateHz = sampleRate) else null
+            val chroma = if (includesMix) ChromaAccumulator(sampleRateHz = sampleRate) else null
             // Lautheit/True-Peak laufen additiv (Offtrack Phase 8); die
             // Werte werden persistiert, aber erst nach Opt-in angewendet.
-            val loudness = LoudnessAccumulator(sampleRateHz = sampleRate)
+            val loudness = if (includesMix) LoudnessAccumulator(sampleRateHz = sampleRate) else null
 
             val codec = MediaCodec.createDecoderByType(mime)
             val timing: AnalysisTiming
@@ -105,15 +111,15 @@ class TrackAnalyzerImpl(
             }
 
             val finalizeStartNs = System.nanoTime()
-            val tempoEstimate = tempo.finishEstimate()
-            val keyEstimate = chroma.finishEstimate()
+            val tempoEstimate = tempo?.finishEstimate()
+            val keyEstimate = chroma?.finishEstimate()
             val analysis =
                 TrackAnalysis(
-                    waveformBuckets = waveform.finish(),
+                    waveformBuckets = waveform?.finish().orEmpty(),
                     // Onset-Kandidaten nur im explizit angeforderten Fall (Phase 5);
                     // sonst leer, ohne die Energie ueberhaupt zu berechnen.
                     onsetCandidatesMs =
-                        if (detectOnsets && energy != null) {
+                        if (includesOnsets && energy != null) {
                             OnsetDetection.detectOnsets(
                                 energyWindows = energy.finish(),
                                 windowDurationMs = ENERGY_WINDOW_MS.toLong(),
@@ -122,13 +128,13 @@ class TrackAnalyzerImpl(
                             emptyList()
                         },
                     // Track-Peak fuer die visuelle Lautheits-Normalisierung (Phase 8).
-                    peakLinear = waveform.peak(),
+                    peakLinear = waveform?.peak() ?: 0.0,
                     bpm = tempoEstimate?.bpm,
                     camelotKey = keyEstimate?.camelotKey,
                     bpmConfidence = tempoEstimate?.confidence,
                     keyConfidence = keyEstimate?.confidence,
-                    integratedLufs = loudness.integratedLufs(),
-                    truePeakDb = truePeakDb(loudness.truePeakLinear()),
+                    integratedLufs = loudness?.integratedLufs(),
+                    truePeakDb = loudness?.let { truePeakDb(it.truePeakLinear()) },
                 )
             val finalizeMs = (System.nanoTime() - finalizeStartNs) / NS_PER_MS
             val totalMs = (System.nanoTime() - totalStartNs) / NS_PER_MS
@@ -141,7 +147,7 @@ class TrackAnalyzerImpl(
                     "dequeueWaitMs=$dequeueWaitMs accumulateMs=$accumulateMs " +
                     "finalizeMs=$finalizeMs " +
                     "overheadMs=${(totalMs - dequeueWaitMs - accumulateMs - finalizeMs).coerceAtLeast(0L)} " +
-                    "totalMs=$totalMs onsets=$detectOnsets",
+                    "totalMs=$totalMs profile=${profile.name}",
             )
             return analysis
         } finally {
@@ -160,11 +166,11 @@ class TrackAnalyzerImpl(
     private fun drainDecoder(
         extractor: MediaExtractor,
         codec: MediaCodec,
-        waveform: WaveformAccumulator,
+        waveform: WaveformAccumulator?,
         energy: EnergyAccumulator?,
-        tempo: TempoAccumulator,
-        chroma: ChromaAccumulator,
-        loudness: LoudnessAccumulator,
+        tempo: TempoAccumulator?,
+        chroma: ChromaAccumulator?,
+        loudness: LoudnessAccumulator?,
     ): AnalysisTiming {
         val bufferInfo = MediaCodec.BufferInfo()
         var inputDone = false
@@ -260,17 +266,17 @@ class TrackAnalyzerImpl(
 
     private fun feed(
         monoSample: Double,
-        waveform: WaveformAccumulator,
+        waveform: WaveformAccumulator?,
         energy: EnergyAccumulator?,
-        tempo: TempoAccumulator,
-        chroma: ChromaAccumulator,
-        loudness: LoudnessAccumulator,
+        tempo: TempoAccumulator?,
+        chroma: ChromaAccumulator?,
+        loudness: LoudnessAccumulator?,
     ) {
-        waveform.accept(monoSample)
+        waveform?.accept(monoSample)
         energy?.accept(monoSample)
-        tempo.accept(monoSample)
-        chroma.accept(monoSample)
-        loudness.accept(monoSample)
+        tempo?.accept(monoSample)
+        chroma?.accept(monoSample)
+        loudness?.accept(monoSample)
     }
 
     private fun truePeakDb(peakLinear: Double): Float? {

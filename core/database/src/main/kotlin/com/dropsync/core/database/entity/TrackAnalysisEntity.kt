@@ -24,6 +24,9 @@ data class TrackAnalysisEntity(
     val bucketCount: Int,
     @ColumnInfo(name = "analyzer_version")
     val analyzerVersion: Int,
+    /** Version der Mix-Metadaten; 0 bedeutet noch nicht/alt analysiert. */
+    @ColumnInfo(name = "mix_analyzer_version", defaultValue = "0")
+    val mixAnalyzerVersion: Int = 0,
     @ColumnInfo(name = "analyzed_at_epoch_ms")
     val analyzedAtEpochMs: Long,
     /** Track-Peak (0..1) fuer die visuelle Lautheits-Normalisierung (Phase 8). */
@@ -56,6 +59,7 @@ data class TrackAnalysisEntity(
             waveformData.contentEquals(other.waveformData) &&
             bucketCount == other.bucketCount &&
             analyzerVersion == other.analyzerVersion &&
+            mixAnalyzerVersion == other.mixAnalyzerVersion &&
             analyzedAtEpochMs == other.analyzedAtEpochMs &&
             peakLinear == other.peakLinear &&
             bpm == other.bpm &&
@@ -71,6 +75,7 @@ data class TrackAnalysisEntity(
         result = 31 * result + waveformData.contentHashCode()
         result = 31 * result + bucketCount
         result = 31 * result + analyzerVersion
+        result = 31 * result + mixAnalyzerVersion
         result = 31 * result + analyzedAtEpochMs.hashCode()
         result = 31 * result + peakLinear.hashCode()
         result = 31 * result + (bpm?.hashCode() ?: 0)

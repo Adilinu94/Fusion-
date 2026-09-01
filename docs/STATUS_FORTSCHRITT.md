@@ -783,3 +783,55 @@ Reihenfolge beruhte auf Code-Inspection, nicht auf Messwerten.
 entscheiden Abbruchkriterium A1 (>80 % MediaCodec-Decode) und ob 1,5 s ein
 realistischer verbindlicher Zielwert sind. Die JVM-Zahlen sind eine
 Untergrenze, keine Geraeteprognose.
+
+## Z. Waveform-Performance Phase 2: Zwei-Stufen-Analyse (2026-09-01, Session: OpenCode)
+
+Umsetzung des in Abschnitt Y neu priorisierten Plans: die sichtbare Waveform
+wartet nicht mehr auf BPM/Key/LUFS. `AnalysisProfile` war seit Monaten
+deklariert und wurde von der Implementierung ignoriert — die Interface-Doku
+versprach einen Nur-Waveform-Pfad, den es nicht gab.
+
+- [x] **`analyze(song, profile)` statt `analyze(song, detectOnsets)`.**
+  `TrackAnalyzerImpl` konstruiert nur die Akkumulatoren des Profils; bei
+  `WAVEFORM_ONLY` entstehen Tempo-, Chroma- und Loudness-Objekte gar nicht.
+  Vorher liefen sie immer mit — genau die 410-518 ms aus der Baseline.
+- [x] **DB v10, getrennte Cache-Versionierung.** Spalte
+  `mix_analyzer_version` (`MIGRATION_9_10`, additiv, DEFAULT 0) plus
+  `WaveformCodec.MIX_ANALYZER_VERSION = 1`. `observeAnalysis` prueft
+  `analyzerVersion` fuer die Waveform und `mixAnalyzerVersion` getrennt fuer
+  BPM/Key/LUFS. Kuenftige Algorithmus-Aenderungen an den Metadaten
+  invalidieren damit **nicht** die Waveform-Caches der ganzen Bibliothek.
+  Bestandszeilen bekommen Version 0: Waveform bleibt sofort sichtbar,
+  Metadaten werden im Hintergrund neu berechnet.
+- [x] **Abweichung von Plan-Entscheidung E1 (bewusst).** E1 sah vor, dass
+  Stufe 2 erneut dekodiert und die Waveform "notfalls gleich mitliefert".
+  Umgesetzt ist ein **reiner Metadatenlauf** mit echtem SQL-`UPDATE`
+  (`updateMixMetadata`). Ein Zweitlauf, der Waveform-Bytes schreibt, koennte
+  eine bereits sichtbare Waveform durch ein abweichendes Ergebnis ersetzen —
+  sichtbares Flackern, genau das, was Stufe 1 verhindern soll. Trifft das
+  UPDATE keine Zeile, liefert der Worker `Result.retry()` statt eine Zeile
+  ohne Waveform anzulegen.
+- [x] **Reihenfolge ueber WorkManager-Verkettung, nicht ueber Hoffnung.**
+  Ist die Waveform veraltet, laeuft `WAVEFORM_ONLY` (expedited) und per
+  `.then(...)` verkettet `MIX_METADATA` (non-expedited). Sind nur die
+  Metadaten veraltet, laeuft ein eigener Unique-Work `mix_analysis_<id>` —
+  eigener Name ist zwingend, weil `ExistingWorkPolicy.KEEP` unter
+  `track_analysis_<id>` den Metadatenlauf verworfen haette.
+- [x] **Fehlerpfade getrennt.** Permanenter Fehler in Stufe 2: nur
+  Null-Metadaten mit aktueller Version (kein Retry-Loop, Waveform bleibt).
+  Permanenter Fehler in Stufe 1: leerer Bucket-Eintrag wie bisher, aber die
+  vorhandenen Metadatenfelder werden uebernommen statt verworfen.
+- [x] `doWork` in `handleSuccess`/`handleFailure` zerlegt (detekt
+  CyclomaticComplexity 23 > 20 — die Grenze hat hier korrekt gegriffen).
+- [x] Verifikation: `spotlessApply`, `detekt`, `:domain:audio:test`,
+  `:core:database:testDebugUnitTest` (neu: `migration 9 auf 10 trennt mix
+  version ohne waveform zu verlieren`, prueft echte Nutzdaten),
+  `:data:audio:testDebugUnitTest` (neu: alte Mix-Version bleibt unsichtbar,
+  Waveform erhalten), `:feature:player:testDebugUnitTest`,
+  `:data:audio:lintDebug`, `:app:assembleDebug` — alle gruen.
+
+**Bewusst offen:** Die WorkManager-Dispatch-Latenz (Flaschenhals 4) steht
+unveraendert VOR der verkuerzten Stufe 1. Die Kette reduziert die Arbeit bis
+zum ersten DB-Write, nicht die Wartezeit bis zum Start. Ob der Titelwechsel
+real unter 1,5 s liegt, entscheidet erst Phase 3 (In-Process-Prioritaetspfad)
+zusammen mit der Geraetemessung aus Abschnitt Y.

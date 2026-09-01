@@ -126,6 +126,35 @@ class MigrationTest {
         helper.runMigrationsAndValidate(dbPath, 9, true, *DROPSYNC_MIGRATIONS).close()
     }
 
+    @Test
+    fun `migration 9 auf 10 trennt mix version ohne waveform zu verlieren`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V10).absolutePath
+
+        helper.createDatabase(dbPath, 9).use { db ->
+            db.execSQL(
+                "INSERT INTO track_analysis " +
+                    "(song_id, waveform_data, bucket_count, analyzer_version, analyzed_at_epoch_ms, " +
+                    "peak_linear, bpm, bpm_confidence, camelot_key, key_confidence, integrated_lufs, true_peak_db) " +
+                    "VALUES (42, X'F60AEC14', 2, 4, 1000, 0.8, 128.0, 0.9, '8A', 0.9, -12.0, -1.0)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(dbPath, 10, true, *DROPSYNC_MIGRATIONS).use { db ->
+            db
+                .query(
+                    "SELECT bucket_count, analyzer_version, mix_analyzer_version, bpm " +
+                        "FROM track_analysis WHERE song_id = 42",
+                ).use { cursor ->
+                    assertTrue(cursor.moveToFirst())
+                    assertEquals(2, cursor.getInt(0))
+                    assertEquals(4, cursor.getInt(1))
+                    assertEquals(0, cursor.getInt(2))
+                    assertEquals(128f, cursor.getFloat(3))
+                }
+        }
+    }
+
     /**
      * Die eigentliche Gefahr bei v9: Die DB enthaelt die echte
      * Musikbibliothek. Eine Migration, die vorhandene Zeilen verliert, waere
@@ -178,5 +207,6 @@ class MigrationTest {
         const val TEST_DB_V8 = "migration-test-v8.db"
         const val TEST_DB_V9 = "migration-test-v9.db"
         const val TEST_DB_V9_DATA = "migration-test-v9-data.db"
+        const val TEST_DB_V10 = "migration-test-v10.db"
     }
 }

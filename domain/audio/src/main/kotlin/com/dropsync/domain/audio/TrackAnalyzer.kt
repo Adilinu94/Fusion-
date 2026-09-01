@@ -5,9 +5,10 @@ import com.dropsync.core.model.Song
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Geteilte Analyse-Grundlage (Marker/Waveform-Plan Phase 2): ein einziger
- * Analysedurchgang liefert die Waveform-Peaks und die Onset-Kandidaten
- * fuer A2 — nicht zwei getrennte Decoder-Pfade.
+ * Profilgesteuerte Analyse-Grundlage. Der UI-kritische Lauf dekodiert nur
+ * Waveform + Peak; Mix-Metadaten folgen in einem unabhaengigen Lauf. Der
+ * zweite Decode ist bewusst guenstiger als die bisherige Wartezeit auf
+ * Chroma/Goertzel vor der ersten sichtbaren Waveform.
  *
  * Implementierung in :data:audio (PCM-Beschaffung ueber den Decoder);
  * die reine Signalverarbeitung liegt hier im JVM-Modul und ist ohne
@@ -15,14 +16,13 @@ import kotlinx.coroutines.flow.Flow
  */
 interface TrackAnalyzer {
     /**
-     * Analysiert [song]. Ohne [detectOnsets] wird nur die Waveform
-     * berechnet — der teurere Energie-/Onset-Pfad (A2) entfaellt dann,
-     * was den haeufigen Nur-Waveform-Fall (Now-Playing) spuerbar
-     * beschleunigt. Nur der explizite Nutzeranstoss setzt [detectOnsets].
+     * Analysiert [song] mit genau den Akkumulatoren aus [profile].
+     * `WAVEFORM_ONLY` darf insbesondere keine Tempo-, Chroma- oder
+     * Lautheitsarbeit ausfuehren.
      */
     suspend fun analyze(
         song: Song,
-        detectOnsets: Boolean = false,
+        profile: AnalysisProfile = AnalysisProfile.FULL,
     ): AppResult<TrackAnalysis>
 }
 
@@ -117,6 +117,9 @@ enum class AnalysisProfile {
 object WaveformCodec {
     /** Version des Analyse-Algorithmus; invalidiert den Cache bei Aenderung. */
     const val ANALYZER_VERSION: Int = 4
+
+    /** Version der unabhaengig gecachten BPM-/Key-/Lautheitsanalyse. */
+    const val MIX_ANALYZER_VERSION: Int = 1
 
     fun pack(buckets: List<WaveformBucket>): ByteArray {
         val bytes = ByteArray(buckets.size * 2)

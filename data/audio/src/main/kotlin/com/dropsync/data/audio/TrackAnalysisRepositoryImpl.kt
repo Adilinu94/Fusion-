@@ -20,6 +20,7 @@ import com.dropsync.core.database.entity.TrackAnalysisEntity
 import com.dropsync.core.model.LinkMethod
 import com.dropsync.core.model.MarkerSource
 import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.AnalysisProfile
 import com.dropsync.domain.audio.MixConfidence
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalysisRepository
@@ -51,7 +52,7 @@ class TrackAnalysisRepositoryImpl(
                 // ist; nur Mix-Metadaten (BPM/Key) bleiben bis dahin null.
                 ?.takeIf { it.analyzerVersion <= WaveformCodec.ANALYZER_VERSION }
                 ?.let {
-                    val current = it.analyzerVersion == WaveformCodec.ANALYZER_VERSION
+                    val mixCurrent = it.mixAnalyzerVersion == WaveformCodec.MIX_ANALYZER_VERSION
                     // bucket_count = 0 ist der persistierte Fehlerfall
                     // (Format ohne Plattformdecoder): leere Buckets melden,
                     // damit die UI auf die Zeitleiste zurueckfaellt.
@@ -68,58 +69,92 @@ class TrackAnalysisRepositoryImpl(
                         bpm =
                             MixConfidence
                                 .acceptBpm(it.bpm, it.bpmConfidence)
-                                ?.takeIf { current },
+                                ?.takeIf { mixCurrent },
                         camelotKey =
                             MixConfidence
                                 .acceptKey(it.camelotKey, it.keyConfidence)
-                                ?.takeIf { current },
-                        bpmConfidence = it.bpmConfidence?.takeIf { current },
-                        keyConfidence = it.keyConfidence?.takeIf { current },
-                        integratedLufs = it.integratedLufs?.takeIf { current },
-                        truePeakDb = it.truePeakDb?.takeIf { current },
+                                ?.takeIf { mixCurrent },
+                        bpmConfidence = it.bpmConfidence?.takeIf { mixCurrent },
+                        keyConfidence = it.keyConfidence?.takeIf { mixCurrent },
+                        integratedLufs = it.integratedLufs?.takeIf { mixCurrent },
+                        truePeakDb = it.truePeakDb?.takeIf { mixCurrent },
                     )
                 }
         }
 
     override suspend fun requestAnalysis(song: Song) {
         val cached = trackAnalysisDao.getBySongId(song.mediaStoreId)
-        if (cached != null && cached.analyzerVersion == WaveformCodec.ANALYZER_VERSION) return
-        enqueueAnalysis(song.mediaStoreId)
+        val waveformCurrent = cached?.analyzerVersion == WaveformCodec.ANALYZER_VERSION
+        val mixCurrent = cached?.mixAnalyzerVersion == WaveformCodec.MIX_ANALYZER_VERSION
+        if (waveformCurrent && mixCurrent) return
+        enqueueAnalysis(song.mediaStoreId, waveformCurrent, mixCurrent)
     }
 
     override suspend fun requestAnalysisForNewSongs(songs: List<Song>) {
         if (songs.isEmpty()) return
         // Eine Abfrage fuer alle Songs statt N Einzel-Queries (Import-
         // Pfad, Poweramp-Scanner-Muster: Batches bei Tausenden Titeln).
-        val cachedIds =
+        val cached =
             trackAnalysisDao
                 .getBySongIds(songs.map { it.mediaStoreId })
-                .filter { it.analyzerVersion == WaveformCodec.ANALYZER_VERSION }
-                .mapTo(mutableSetOf()) { it.songId }
+                .associateBy { it.songId }
         songs.forEach { song ->
-            if (song.mediaStoreId !in cachedIds) {
-                enqueueAnalysis(song.mediaStoreId)
+            val entry = cached[song.mediaStoreId]
+            val waveformCurrent = entry?.analyzerVersion == WaveformCodec.ANALYZER_VERSION
+            val mixCurrent = entry?.mixAnalyzerVersion == WaveformCodec.MIX_ANALYZER_VERSION
+            if (!waveformCurrent || !mixCurrent) {
+                enqueueAnalysis(song.mediaStoreId, waveformCurrent, mixCurrent)
             }
         }
     }
 
-    private fun enqueueAnalysis(mediaStoreId: Long) {
-        val request =
-            OneTimeWorkRequestBuilder<TrackAnalysisWorker>()
-                .setInputData(workDataOf(TrackAnalysisWorker.KEY_SONG_ID to mediaStoreId))
-                // Beschleunigt: die Wellenform soll moeglichst zeitnah zum
-                // Titelwechsel bereitstehen, nicht erst nach WorkManager-
-                // Standardlatenz. Faellt auf normale Ausfuehrung zurueck, wenn
-                // kein Expedited-Kontingent frei ist (kein harter Zwang).
-                .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
-                .build()
-        WorkManager
-            .getInstance(context)
-            .enqueueUniqueWork(
-                "track_analysis_$mediaStoreId",
+    private fun analysisRequest(
+        mediaStoreId: Long,
+        profile: AnalysisProfile,
+        expedited: Boolean,
+    ) = OneTimeWorkRequestBuilder<TrackAnalysisWorker>()
+        .setInputData(
+            workDataOf(
+                TrackAnalysisWorker.KEY_SONG_ID to mediaStoreId,
+                TrackAnalysisWorker.KEY_PROFILE to profile.name,
+            ),
+        ).apply {
+            if (expedited) {
+                setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            }
+        }.build()
+
+    private fun enqueueAnalysis(
+        mediaStoreId: Long,
+        waveformCurrent: Boolean,
+        mixCurrent: Boolean,
+    ) {
+        val workManager = WorkManager.getInstance(context)
+        if (!waveformCurrent) {
+            val waveform = analysisRequest(mediaStoreId, AnalysisProfile.WAVEFORM_ONLY, expedited = true)
+            val continuation =
+                workManager.beginUniqueWork(
+                    "track_analysis_$mediaStoreId",
+                    ExistingWorkPolicy.KEEP,
+                    waveform,
+                )
+            if (!mixCurrent) {
+                continuation
+                    .then(analysisRequest(mediaStoreId, AnalysisProfile.MIX_METADATA, expedited = false))
+                    .enqueue()
+            } else {
+                continuation.enqueue()
+            }
+            return
+        }
+
+        if (!mixCurrent) {
+            workManager.enqueueUniqueWork(
+                "mix_analysis_$mediaStoreId",
                 ExistingWorkPolicy.KEEP,
-                request,
+                analysisRequest(mediaStoreId, AnalysisProfile.MIX_METADATA, expedited = false),
             )
+        }
     }
 
     override suspend fun requestOnsetDetection(song: Song) {
@@ -130,7 +165,7 @@ class TrackAnalysisRepositoryImpl(
                 .setInputData(
                     workDataOf(
                         TrackAnalysisWorker.KEY_SONG_ID to song.mediaStoreId,
-                        TrackAnalysisWorker.KEY_DETECT_ONSETS to true,
+                        TrackAnalysisWorker.KEY_PROFILE to AnalysisProfile.FULL.name,
                     ),
                 ).build()
         WorkManager
@@ -169,57 +204,112 @@ class TrackAnalysisWorker(
     override suspend fun doWork(): Result {
         val songId = inputData.getLong(KEY_SONG_ID, -1L)
         if (songId <= 0L) return Result.failure()
-        val detectOnsets = inputData.getBoolean(KEY_DETECT_ONSETS, false)
+        val profile =
+            inputData
+                .getString(KEY_PROFILE)
+                ?.let { runCatching { AnalysisProfile.valueOf(it) }.getOrNull() }
+                ?: AnalysisProfile.FULL
         val deps = EntryPointAccessors.fromApplication(applicationContext, Dependencies::class.java)
         val entity = deps.songDao().getById(songId) ?: return Result.failure()
 
-        return when (val result = deps.trackAnalyzer().analyze(entity.toSong(), detectOnsets)) {
-            is AppResult.Success -> {
-                val buckets = result.value.waveformBuckets
-                deps.trackAnalysisDao().upsert(
-                    TrackAnalysisEntity(
-                        songId = songId,
-                        waveformData = WaveformCodec.pack(buckets),
-                        bucketCount = buckets.size,
-                        analyzerVersion = WaveformCodec.ANALYZER_VERSION,
-                        analyzedAtEpochMs = deps.clock().epochMillis(),
-                        peakLinear = result.value.peakLinear,
-                        bpm = result.value.bpm,
-                        camelotKey = result.value.camelotKey,
-                        bpmConfidence = result.value.bpmConfidence,
-                        keyConfidence = result.value.keyConfidence,
-                        integratedLufs = result.value.integratedLufs,
-                        truePeakDb = result.value.truePeakDb,
-                    ),
-                )
-                if (detectOnsets) {
-                    writeOnsetCandidates(deps, entity, result.value.onsetCandidatesMs)
-                }
-                Result.success()
-            }
-
-            is AppResult.Failure -> {
-                // Umbauplan Phase 10.4: temporaere Fehler (z. B. Datei
-                // gerade gesperrt, kurzzeitiger Decoder-Fehler) NICHT als
-                // aktuellen leeren Cache-Eintrag speichern - WorkManager
-                // retried dann und der naechste Durchgang kann gelingen.
-                // Permanente Decoderfehler werden getrennt abgelegt.
-                if (result.error.isPermanentAnalysisFailure()) {
-                    deps.trackAnalysisDao().upsert(
-                        TrackAnalysisEntity(
-                            songId = songId,
-                            waveformData = ByteArray(0),
-                            bucketCount = 0,
-                            analyzerVersion = WaveformCodec.ANALYZER_VERSION,
-                            analyzedAtEpochMs = deps.clock().epochMillis(),
-                        ),
-                    )
-                    Result.failure()
-                } else {
-                    Result.retry()
-                }
-            }
+        return when (val result = deps.trackAnalyzer().analyze(entity.toSong(), profile)) {
+            is AppResult.Success -> handleSuccess(deps, entity, profile, result.value)
+            is AppResult.Failure -> handleFailure(deps, songId, profile, result.error)
         }
+    }
+
+    private suspend fun handleSuccess(
+        deps: Dependencies,
+        song: SongEntity,
+        profile: AnalysisProfile,
+        analysis: TrackAnalysis,
+    ): Result {
+        val now = deps.clock().epochMillis()
+        if (profile == AnalysisProfile.MIX_METADATA) {
+            val updated =
+                deps.trackAnalysisDao().updateMixMetadata(
+                    songId = song.mediaStoreId,
+                    bpm = analysis.bpm,
+                    bpmConfidence = analysis.bpmConfidence,
+                    camelotKey = analysis.camelotKey,
+                    keyConfidence = analysis.keyConfidence,
+                    integratedLufs = analysis.integratedLufs,
+                    truePeakDb = analysis.truePeakDb,
+                    mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
+                    analyzedAtEpochMs = now,
+                )
+            return if (updated == 0) Result.retry() else Result.success()
+        }
+
+        val previous = deps.trackAnalysisDao().getBySongId(song.mediaStoreId)
+        val includesMix = profile == AnalysisProfile.FULL
+        deps.trackAnalysisDao().upsert(
+            TrackAnalysisEntity(
+                songId = song.mediaStoreId,
+                waveformData = WaveformCodec.pack(analysis.waveformBuckets),
+                bucketCount = analysis.waveformBuckets.size,
+                analyzerVersion = WaveformCodec.ANALYZER_VERSION,
+                mixAnalyzerVersion =
+                    if (includesMix) WaveformCodec.MIX_ANALYZER_VERSION else previous?.mixAnalyzerVersion ?: 0,
+                analyzedAtEpochMs = now,
+                peakLinear = analysis.peakLinear,
+                bpm = if (includesMix) analysis.bpm else previous?.bpm,
+                camelotKey = if (includesMix) analysis.camelotKey else previous?.camelotKey,
+                bpmConfidence = if (includesMix) analysis.bpmConfidence else previous?.bpmConfidence,
+                keyConfidence = if (includesMix) analysis.keyConfidence else previous?.keyConfidence,
+                integratedLufs = if (includesMix) analysis.integratedLufs else previous?.integratedLufs,
+                truePeakDb = if (includesMix) analysis.truePeakDb else previous?.truePeakDb,
+            ),
+        )
+        if (profile == AnalysisProfile.WAVEFORM_AND_ONSETS || profile == AnalysisProfile.FULL) {
+            writeOnsetCandidates(deps, song, analysis.onsetCandidatesMs)
+        }
+        return Result.success()
+    }
+
+    private suspend fun handleFailure(
+        deps: Dependencies,
+        songId: Long,
+        profile: AnalysisProfile,
+        error: com.dropsync.core.common.AppError,
+    ): Result {
+        // Temporaere Fehler werden nicht gecacht; WorkManager versucht erneut.
+        if (!error.isPermanentAnalysisFailure()) return Result.retry()
+
+        if (profile == AnalysisProfile.MIX_METADATA) {
+            // Die Hintergrundstufe darf eine sichtbare Waveform nie loeschen.
+            deps.trackAnalysisDao().updateMixMetadata(
+                songId = songId,
+                bpm = null,
+                bpmConfidence = null,
+                camelotKey = null,
+                keyConfidence = null,
+                integratedLufs = null,
+                truePeakDb = null,
+                mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
+                analyzedAtEpochMs = deps.clock().epochMillis(),
+            )
+            return Result.failure()
+        }
+
+        val previous = deps.trackAnalysisDao().getBySongId(songId)
+        deps.trackAnalysisDao().upsert(
+            TrackAnalysisEntity(
+                songId = songId,
+                waveformData = ByteArray(0),
+                bucketCount = 0,
+                analyzerVersion = WaveformCodec.ANALYZER_VERSION,
+                mixAnalyzerVersion = previous?.mixAnalyzerVersion ?: 0,
+                analyzedAtEpochMs = deps.clock().epochMillis(),
+                bpm = previous?.bpm,
+                bpmConfidence = previous?.bpmConfidence,
+                camelotKey = previous?.camelotKey,
+                keyConfidence = previous?.keyConfidence,
+                integratedLufs = previous?.integratedLufs,
+                truePeakDb = previous?.truePeakDb,
+            ),
+        )
+        return Result.failure()
     }
 
     private fun com.dropsync.core.common.AppError.isPermanentAnalysisFailure(): Boolean =
@@ -280,7 +370,7 @@ class TrackAnalysisWorker(
 
     companion object {
         const val KEY_SONG_ID = "song_id"
-        const val KEY_DETECT_ONSETS = "detect_onsets"
+        const val KEY_PROFILE = "profile"
 
         /** Trennzeichen des Bibliotheks-Fingerprints (US, 0x1F). */
         private const val FINGERPRINT_SEPARATOR = "\u001F"

@@ -103,7 +103,7 @@ Abschnitt O in STATUS_FORTSCHRITT), das Bucket-Format (256 Bucklets,
   (falls noch fehlend) gleich mit.
 - **E2 — Getrennte Cache-Versionierung.** Neue Spalte
   `mixAnalyzerVersion INTEGER NOT NULL DEFAULT 0` in `track_analysis`
-  (DB v8 -> v9, `MIGRATION_8_9`). `analyzerVersion` gilt weiter
+  (DB v9 -> v10, `MIGRATION_9_10`). `analyzerVersion` gilt weiter
   ausschliesslich fuer Waveform/Peaks; BPM/Key/LUFS-Spalten sind nur
   gueltig, wenn `mixAnalyzerVersion == WaveformCodec.MIX_ANALYZER_VERSION`.
   Das ersetzt das heutige `current`-Semantikspiel in
@@ -141,8 +141,8 @@ Abschnitt O in STATUS_FORTSCHRITT), das Bucket-Format (256 Bucklets,
 
 | Aenderung | Ort | Phase |
 |---|---|---|
-| Spalte `mixAnalyzerVersion INTEGER NOT NULL DEFAULT 0` | `TrackAnalysisEntity`, `DropSyncDatabase` v8 -> v9, `Migrations.kt` (`MIGRATION_8_9`), `MigrationTest` | 2 |
-| `WaveformCodec.MIX_ANALYZER_VERSION` (Startwert 1) neben `ANALYZER_VERSION` | `TrackAnalyzer.kt` | 2 |
+| Spalte `mixAnalyzerVersion INTEGER NOT NULL DEFAULT 0` | `TrackAnalysisEntity`, `DropSyncDatabase` v9 -> v10, `Migrations.kt` (`MIGRATION_9_10`), `MigrationTest` | 2 (umgesetzt) |
+| `WaveformCodec.MIX_ANALYZER_VERSION` (Startwert 1) neben `ANALYZER_VERSION` | `TrackAnalyzer.kt` | 2 (umgesetzt) |
 | `TrackAnalysis` um `profile`-Rueckgabe/Teilbarkeit erweitern? **Nein** — das UI-Modell bleibt wie es ist; Teilbarkeit entsteht allein durch nullable Spalten + getrennte Versionen | — | — |
 
 ## Phasen und Status
@@ -185,10 +185,50 @@ nur auf Android. Erst drei Cold-Cache-Laeufe auf einem Mittelklasse-Geraet
 koennen Abbruchkriterium A1 (>80 % Decode) und den verbindlichen 1,5-s-Zielwert
 entscheiden. Die JVM-Zahlen sind eine Untergrenze, keine Geraeteprognose.
 
+### Phase-2-Umsetzungsnachtrag (31.08.2026)
+
+Umgesetzt wie geplant, mit einer Abweichung und zwei Praezisierungen.
+
+**Abweichung von E1.** Der Plan sah "Stufe 2 dekodiert erneut und liefert die
+Waveform notfalls gleich mit" vor. Umgesetzt ist stattdessen
+`MIX_METADATA` = **reiner Metadatenlauf ohne Waveform-Akkumulator**, der die
+Zeile per `updateMixMetadata` (echtes SQL-UPDATE) anreichert. Grund: ein
+Zweitlauf, der auch Waveform-Bytes schreibt, kann eine bereits sichtbare
+Waveform mit einem anderen Ergebnis ueberschreiben — genau das Flackern, das
+Stufe 1 verhindern soll. Findet das UPDATE keine Zeile (Stufe 1 noch nicht
+fertig oder Cache geloescht), gibt der Worker `Result.retry()` zurueck statt
+eine Zeile ohne Waveform anzulegen.
+
+**Reihenfolge ueber WorkManager-Verkettung.** `requestAnalysis` prueft beide
+Versionen getrennt und stellt die passenden Auftraege:
+
+- Waveform veraltet -> `beginUniqueWork("track_analysis_<id>")` mit
+  `WAVEFORM_ONLY` (expedited), verkettet per `.then(...)` mit `MIX_METADATA`
+  (non-expedited). Die Kette garantiert, dass Stufe 2 nie vor Stufe 1 laeuft.
+- Nur Metadaten veraltet -> eigener Unique-Work `mix_analysis_<id>`. Ein
+  eigener Name ist notwendig: unter `track_analysis_<id>` haette
+  `ExistingWorkPolicy.KEEP` den Metadatenlauf verworfen, solange dort noch
+  ein Eintrag existiert.
+- Beides aktuell -> kein Auftrag.
+
+**Fehlerpfad getrennt.** Ein permanenter Fehler in Stufe 2 schreibt nur
+Null-Metadaten mit aktueller `mixAnalyzerVersion` (kein endloser Retry, aber
+Waveform bleibt). Ein permanenter Fehler in Stufe 1 schreibt weiter den leeren
+Bucket-Eintrag, uebernimmt dabei aber die vorhandenen Metadatenfelder statt
+sie zu verlieren.
+
+`requestOnsetDetection` benutzt `FULL`, weil der Nutzer dort explizit einen
+Volldurchgang anstoesst.
+
+**Nicht Teil dieser Phase:** die Zeitmessung, ob der Titelwechsel real unter
+1,5 s bleibt. Die Kette verkuerzt die Arbeit vor dem ersten DB-Write, aber die
+WorkManager-Dispatch-Latenz (Flaschenhals 4) steht unveraendert davor — das
+loest erst Phase 3.
+
 | Phase | Inhalt | Kernentscheidung | Status |
 |---|---|---|---|
 | 0 | Messinfrastruktur + Baseline: Timing je Pipeline-Abschnitt (Logcat-Tag `TrackAnalysisTiming`), Baseline-Protokoll Referenztrack (4 min, 44,1 kHz, Cold Cache, 3 Laeufe), optional Macrobenchmark in `benchmarks/` | JVM-Akkumulator-Baseline steht; MediaCodec-/Dispatch-Anteil und verbindlicher Geraetezielwert fehlen | **teilweise** |
-| 2 (vorgezogen) | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_8_9` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | Messung: 69-70 % weniger Akkumulatorarbeit im UI-kritischen Lauf; hoechster Nutzen bei kleinerem Algorithmusrisiko | offen |
+| 2 (vorgezogen) | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_9_10` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | Messung: 69-70 % weniger Akkumulatorarbeit im UI-kritischen Lauf; hoechster Nutzen bei kleinerem Algorithmusrisiko | **umgesetzt** |
 | 1 (nach Phase 2) | Block-API + Float in `:domain:audio`: `WaveformAccumulator`, `EnergyAccumulator`, `LoudnessAccumulator`, `TempoAccumulator` (Delegation), `ChromaAccumulator` (Zaehl-Decimation); `TrackAnalyzerImpl`: Bulk-Decode + blockweiser Mono-Downmix in wiederverwendeten Arrays | Nur bauen, falls Geraetemessung nach Stufentrennung das 1,5-s-Ziel verfehlt; `cos()`-Vorbereitung allein spart gemessen nur 3,5 ms | offen |
 | 3 | In-Process-Prioritaetspfad: DI-Scope + `activeJobs`/`Semaphore` im Repository; `ensureActive()` je Buffer im Drain; `requestAnalysis` laeuft sofort in-process, `requestAnalysisForNewSongs`/`requestOnsetDetection` bleiben auf WorkManager | Cancel-und-Ueberholen statt KEEP-Warteschlange; Prozess-Tod ist unkritisch (Ergebnis lebt nur im DB-Cache, Lauf idempotent wiederholbar) | offen |
 | 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | offen |
