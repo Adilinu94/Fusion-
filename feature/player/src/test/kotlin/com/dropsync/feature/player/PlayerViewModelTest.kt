@@ -409,6 +409,7 @@ private class FakeTrackAnalysisRepository : TrackAnalysisRepository {
     val analyses = MutableStateFlow<Map<Long, TrackAnalysis?>>(emptyMap())
     val requestedSongIds = mutableListOf<Long>()
     val onsetRequestedSongIds = mutableListOf<Long>()
+    val prewarmedSongIds = mutableListOf<List<Long>>()
 
     override fun observeAnalysis(songId: Long): Flow<TrackAnalysis?> = analyses.map { it[songId] }
 
@@ -418,6 +419,13 @@ private class FakeTrackAnalysisRepository : TrackAnalysisRepository {
 
     override suspend fun requestAnalysisForNewSongs(songs: List<Song>) {
         requestedSongIds += songs.map { it.mediaStoreId }
+    }
+
+    override suspend fun requestAnalysisPrewarm(
+        songs: List<Song>,
+        limit: Int,
+    ) {
+        prewarmedSongIds += songs.take(limit).map { it.mediaStoreId }
     }
 
     override suspend fun requestOnsetDetection(song: Song) {

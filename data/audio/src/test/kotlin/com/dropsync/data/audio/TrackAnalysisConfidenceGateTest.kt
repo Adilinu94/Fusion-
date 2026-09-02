@@ -225,6 +225,8 @@ private object NoopScheduler : DeferredAnalysisScheduler {
         alsoNeedsMix: Boolean,
     ) = Unit
 
+    override fun schedulePrewarmWaveform(songId: Long) = Unit
+
     override fun scheduleOnsetDetection(songId: Long) = Unit
 }
 

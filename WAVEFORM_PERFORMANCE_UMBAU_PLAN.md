@@ -273,13 +273,49 @@ zuschaut.
 ist unbekannt, ob Decode + Stufe 1 unter 1,5 s liegen. Diese Phase entfernt
 die Wartezeit *vor* dem Start, nicht die Decode-Dauer.
 
+### Phase-4-Umsetzungsnachtrag (01.09.2026)
+
+`requestAnalysisPrewarm(songs, limit = 2)` bereitet die naechsten Queue-Titel
+vor. Der Anstoss sitzt im `PlayerViewModel` und haengt an einer Bedingung, die
+den Nutzen erst entstehen laesst: **erst wenn `waveform` fuer den laufenden
+Titel `Ready` meldet.** Frueher angestossen konkurrieren die Prewarm-Decodes
+mit dem einen Lauf, auf den der Nutzer gerade wartet — Prewarming waere dann
+messbar schaedlich statt nuetzlich.
+
+**Nur Waveform, keine Mix-Metadaten.** Eigene Scheduler-Methode
+(`schedulePrewarmWaveform`) statt `scheduleWaveformThenMix`: Prewarming
+bereitet die Anzeige vor, nicht die Bibliothek. Ein Metadatenlauf je
+vorbereitetem Titel waere ein voller zweiter Decode fuer Werte, die noch
+niemand sehen will; sie folgen beim echten Titelwechsel ueber
+`requestAnalysis`.
+
+**Warum `limit = 2`.** Bei sequenzieller Wiedergabe ist der naechste Titel
+immer dabei, auch wenn der Nutzer einmal ueberspringt. Jeder weitere Titel
+kostet einen vollen Decode fuer etwas, das moeglicherweise nie erreicht wird.
+
+**Dedup ueber denselben Work-Namen.** `schedulePrewarmWaveform` benutzt
+`track_analysis_<id>` mit `ExistingWorkPolicy.KEEP` — laeuft fuer den Titel
+schon eine Analyse, wird der Prewarm verworfen. Genau richtig: ein Prewarm hat
+nie Vorrang.
+
+**Virtuelle CUE-Tracks werden uebersprungen** (`QueueItem.songId == null`):
+ohne MediaStore-ID gibt es keinen Analyse-Cache.
+
+`distinctUntilChanged` auf der Liste der naechsten IDs verhindert eine
+Neuplanung bei jedem Queue-Update — Position, Shuffle-Flag und Repeat-Modus
+aendern die Nachfolgerliste nicht.
+
+**Was Prewarming nicht kann:** die erste Waveform einer Session. Beim ersten
+Titel gibt es keinen Vorgaenger, der ihn vorbereitet haette — dort zaehlt
+weiterhin allein die Geschwindigkeit von Decode + Stufe 1.
+
 | Phase | Inhalt | Kernentscheidung | Status |
 |---|---|---|---|
 | 0 | Messinfrastruktur + Baseline: Timing je Pipeline-Abschnitt (Logcat-Tag `TrackAnalysisTiming`), Baseline-Protokoll Referenztrack (4 min, 44,1 kHz, Cold Cache, 3 Laeufe), optional Macrobenchmark in `benchmarks/` | JVM-Akkumulator-Baseline steht; MediaCodec-/Dispatch-Anteil und verbindlicher Geraetezielwert fehlen | **teilweise** |
 | 2 (vorgezogen) | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_9_10` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | Messung: 69-70 % weniger Akkumulatorarbeit im UI-kritischen Lauf; hoechster Nutzen bei kleinerem Algorithmusrisiko | **umgesetzt** |
 | 1 (nach Phase 2) | Block-API + Float in `:domain:audio`: `WaveformAccumulator`, `EnergyAccumulator`, `LoudnessAccumulator`, `TempoAccumulator` (Delegation), `ChromaAccumulator` (Zaehl-Decimation); `TrackAnalyzerImpl`: Bulk-Decode + blockweiser Mono-Downmix in wiederverwendeten Arrays | Nur bauen, falls Geraetemessung nach Stufentrennung das 1,5-s-Ziel verfehlt; `cos()`-Vorbereitung allein spart gemessen nur 3,5 ms | offen |
 | 3 | In-Process-Prioritaetspfad: application-weiter Scope + `activeJobs`/`Semaphore` im Repository; `requestAnalysis` laeuft sofort in-process, `requestAnalysisForNewSongs`/`requestOnsetDetection` bleiben aufschiebbar | Cancel-und-Ueberholen statt KEEP-Warteschlange; Prozess-Tod ist unkritisch (Ergebnis lebt nur im DB-Cache, Lauf idempotent wiederholbar) | **umgesetzt** |
-| 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | offen |
+| 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | **umgesetzt** |
 | 5 | (optional) Decode/Analyse-Overlap: MediaCodec-Async-Mode oder Producer-Thread -> bounded Channel -> Akkumulator-Konsument | Nur bauen, falls Phase-0/2-Messung dem Decode nennenswerten Anteil jenseits der Akkumulatoren gibt (Abbruchkriterium A1) | offen |
 | 6 | (optional, spaeter) Native Peak-Extraktion ueber FFmpeg-JNI (Anschluss an `AUDIO_ENGINE_AUSBAU_PLAN.md` und `docs/ffmpeg-build*.md`): Decode + Min/Max-Bucketing in C, Kotlin-Pfad als Fallback | Loest nebenbei "Formate ohne Plattformdecoder schlagen fehl" (`TrackAnalyzerImpl.kt:27-29`); eigener ADR noetig | offen |
 | 7 | Doku-Abschluss: README-Statustabelle, STATUS_FORTSCHRITT, ADR-0015 (Zwei-Stufen-Analyse + getrennte Cache-Versionierung) | — | offen |

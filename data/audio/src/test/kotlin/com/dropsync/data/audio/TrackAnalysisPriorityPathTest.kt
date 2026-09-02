@@ -206,6 +206,49 @@ class TrackAnalysisPriorityPathTest {
             assertEquals(WaveformCodec.MIX_ANALYZER_VERSION, stored.mixAnalyzerVersion)
         }
 
+    @Test
+    fun `prewarm plant nur fehlende waveforms und nie mix-metadaten`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+            // Song 2 ist bereits vorbereitet, Song 3 nicht.
+            dao.put(currentEntity(songId = 2L))
+
+            repo.requestAnalysisPrewarm(listOf(song(2L), song(3L)))
+            advanceUntilIdle()
+
+            assertEquals(listOf(3L), scheduler.prewarmScheduled)
+            // Prewarming bereitet die Anzeige vor, nicht die Bibliothek:
+            // kein Metadatenlauf fuer Werte, die noch niemand sehen will.
+            assertTrue(scheduler.mixScheduled.isEmpty())
+            // Und nichts davon laeuft in-process.
+            assertTrue(analyzer.calls.isEmpty())
+        }
+
+    @Test
+    fun `prewarm respektiert das limit`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+
+            repo.requestAnalysisPrewarm(listOf(song(5L), song(6L), song(7L)), limit = 2)
+            advanceUntilIdle()
+
+            assertEquals(listOf(5L, 6L), scheduler.prewarmScheduled)
+        }
+
+    @Test
+    fun `prewarm mit limit null plant nichts`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+
+            repo.requestAnalysisPrewarm(listOf(song(5L)), limit = 0)
+            advanceUntilIdle()
+
+            assertTrue(scheduler.prewarmScheduled.isEmpty())
+        }
+
     private fun song(id: Long) =
         Song(
             mediaStoreId = id,
@@ -338,6 +381,7 @@ private object FixedPriorityClock : Clock {
 private class RecordingScheduler : DeferredAnalysisScheduler {
     val mixScheduled = mutableListOf<Long>()
     val chainScheduled = mutableListOf<Pair<Long, Boolean>>()
+    val prewarmScheduled = mutableListOf<Long>()
     val onsetScheduled = mutableListOf<Long>()
 
     override fun scheduleMixMetadata(songId: Long) {
@@ -349,6 +393,10 @@ private class RecordingScheduler : DeferredAnalysisScheduler {
         alsoNeedsMix: Boolean,
     ) {
         chainScheduled += songId to alsoNeedsMix
+    }
+
+    override fun schedulePrewarmWaveform(songId: Long) {
+        prewarmScheduled += songId
     }
 
     override fun scheduleOnsetDetection(songId: Long) {

@@ -231,6 +231,26 @@ class TrackAnalysisRepositoryImpl(
         scheduler.scheduleOnsetDetection(song.mediaStoreId)
     }
 
+    override suspend fun requestAnalysisPrewarm(
+        songs: List<Song>,
+        limit: Int,
+    ) {
+        if (limit <= 0 || songs.isEmpty()) return
+        val candidates = songs.take(limit)
+        // Ein Batch-Query statt N Einzelabfragen; der Aufrufpfad ist der
+        // Titelwechsel, dort zaehlt jede vermiedene DB-Runde.
+        val cached =
+            trackAnalysisDao
+                .getBySongIds(candidates.map { it.mediaStoreId })
+                .associateBy { it.songId }
+        candidates.forEach { song ->
+            val current = cached[song.mediaStoreId]?.analyzerVersion == WaveformCodec.ANALYZER_VERSION
+            // Nur die Waveform: Prewarming bereitet die Anzeige vor, nicht
+            // die Mix-Metadaten. Die folgen beim echten Titelwechsel.
+            if (!current) scheduler.schedulePrewarmWaveform(song.mediaStoreId)
+        }
+    }
+
     private companion object {
         const val LOG_TAG = "TrackAnalysisRepo"
 

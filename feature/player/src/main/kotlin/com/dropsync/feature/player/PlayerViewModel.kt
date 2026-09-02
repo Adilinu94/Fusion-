@@ -459,8 +459,8 @@ class PlayerViewModel
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), WaveformUiState.Hidden)
 
         /**
-         * Stoesst die aufschiebbare Analyse fuer den Song an (Cache-Miss
-         * beim Oeffnen des Now-Playing-Screens, Plan Phase 2/3).
+         * Stoesst die Analyse fuer den sichtbaren Song an (Cache-Miss beim
+         * Titelwechsel oder beim Oeffnen des Now-Playing-Screens).
          */
         fun requestAnalysis(songId: Long?) {
             if (songId == null) return
@@ -547,6 +547,43 @@ class PlayerViewModel
 
         fun removeQueueItem(index: Int) {
             viewModelScope.launch { playbackRepository.removeFromQueue(index) }
+        }
+
+        // Queue-Prewarming (Umbauplan Phase 4): sobald die Waveform des
+        // LAUFENDEN Titels im Cache liegt, die naechsten Titel vorbereiten.
+        //
+        // Die Bedingung ist der Kern der Sache: frueher angestossen
+        // konkurrieren die Prewarm-Decodes mit dem einen Lauf, auf den der
+        // Nutzer gerade wartet, und machen die sichtbare Waveform langsamer
+        // statt schneller.
+        //
+        // Der init-Block steht bewusst NACH den Deklarationen von `waveform`
+        // und `queue`: viewModelScope laeuft auf Dispatchers.Main.immediate,
+        // die Coroutine startet also synchron im Konstruktor. Weiter oben
+        // waeren beide Felder noch null (dieselbe Falle wie beim BPM-Lock).
+        init {
+            viewModelScope.launch {
+                combine(
+                    waveform.map { it is WaveformUiState.Ready },
+                    queue,
+                ) { ready, queueState -> ready to queueState }
+                    .filter { (ready, queueState) -> ready && queueState.currentIndex >= 0 }
+                    .map { (_, queueState) ->
+                        // Nur regulaere Songs: virtuelle CUE-Tracks haben keine
+                        // MediaStore-ID und damit keinen Analyse-Cache.
+                        queueState.items
+                            .drop(queueState.currentIndex + 1)
+                            .mapNotNull { it.songId }
+                            .take(TrackAnalysisRepository.DEFAULT_PREWARM_LIMIT)
+                    }.distinctUntilChanged()
+                    .collect(::prewarmUpcoming)
+            }
+        }
+
+        private suspend fun prewarmUpcoming(songIds: List<Long>) {
+            if (songIds.isEmpty()) return
+            val songs = songIds.mapNotNull { libraryRepository.getSong(it).getOrNull() }
+            if (songs.isNotEmpty()) trackAnalysisRepository.requestAnalysisPrewarm(songs)
         }
 
         companion object {

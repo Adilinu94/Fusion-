@@ -27,18 +27,25 @@ interface TrackAnalyzer {
 }
 
 /**
- * Feature-Zugang zum Analyse-Cache (`track_analysis`). Die Analyse ist
- * aufschiebbar und laeuft als deduplizierter OneTimeWorkRequest
- * (`track_analysis_<songId>`); Features beobachten nur das Ergebnis.
+ * Feature-Zugang zum Analyse-Cache (`track_analysis`).
+ *
+ * Zwei Lanes mit unterschiedlicher Dringlichkeit (Umbauplan Phase 3):
+ * [requestAnalysis] betrifft den Titel, den der Nutzer gerade sieht, und
+ * laeuft sofort; alles andere ist aufschiebbar. Features beobachten
+ * ausschliesslich das Ergebnis ueber [observeAnalysis].
  */
 interface TrackAnalysisRepository {
     /** Gecachte Analyse des Songs; null bis zum ersten fertigen Durchgang. */
     fun observeAnalysis(songId: Long): Flow<TrackAnalysis?>
 
     /**
-     * Stoesst die Analyse an, falls kein gueltiger Cache-Eintrag existiert
-     * (Cache-Miss beim Oeffnen des Now-Playing-Screens oder expliziter
-     * A2-Anstoss). Mehrfachaufrufe fuer denselben Song sind dedupliziert.
+     * Stoesst die Analyse fuer den GERADE SICHTBAREN Song an, falls kein
+     * gueltiger Cache-Eintrag existiert. Die Waveform-Stufe laeuft sofort
+     * (kein Scheduler-Vorlauf); die Mix-Metadaten folgen aufschiebbar.
+     *
+     * Mehrfachaufrufe fuer denselben Song sind dedupliziert; ein Aufruf
+     * mit einem ANDEREN Song bricht den vorigen Lauf ab — beim schnellen
+     * Durchwischen gewinnt immer der zuletzt geoeffnete Titel.
      */
     suspend fun requestAnalysis(song: Song)
 
@@ -47,19 +54,45 @@ interface TrackAnalysisRepository {
      * Implementierungen muessen den Cache-Miss fuer alle Songs in
      * EINER Abfrage bestimmen (Import-Pfad, Poweramp-Scanner-Muster:
      * Batches statt N Einzel-Queries bei Tausenden von Titeln).
-     * Songs ohne Cache-Eintrag werden einzeln enqueued und sind
-     * untereinander dedupliziert.
+     * Vollstaendig aufschiebbar: hunderte Titel duerfen dem laufenden
+     * Song nie die CPU nehmen.
      */
     suspend fun requestAnalysisForNewSongs(songs: List<Song>)
+
+    /**
+     * Bereitet die Waveform der naechsten [limit] Queue-Titel vor, damit
+     * sie beim Titelwechsel schon im Cache liegt (Umbauplan Phase 4).
+     *
+     * Bewusst NUR die Waveform: Prewarming soll die Anzeige vorbereiten,
+     * nicht die Mix-Metadaten. Die folgen beim echten Titelwechsel ueber
+     * [requestAnalysis].
+     *
+     * Aufrufer muessen warten, bis die Waveform des LAUFENDEN Titels
+     * fertig ist. Frueher angestossen, konkurrieren die Prewarm-Decodes
+     * mit dem einzigen Lauf, auf den der Nutzer tatsaechlich wartet.
+     */
+    suspend fun requestAnalysisPrewarm(
+        songs: List<Song>,
+        limit: Int = DEFAULT_PREWARM_LIMIT,
+    )
 
     /**
      * Stoesst die Onset-Erkennung (A2) fuer genau diesen Song an, vom
      * Nutzer ausgeloest ("Drops automatisch erkennen"). Kandidaten landen
      * als SongMarker(source = AUTO_DETECTED, isEnabled = false) und
-     * brauchen eine bestaetigende Aktion — nie Automatik. Dedupliziert
-     * ueber den Work-Namen `onset_detection_<songId>`.
+     * brauchen eine bestaetigende Aktion — nie Automatik.
      */
     suspend fun requestOnsetDetection(song: Song)
+
+    companion object {
+        /**
+         * Wie viele Queue-Titel vorbereitet werden. Zwei reichen: bei
+         * sequenzieller Wiedergabe ist der naechste Titel immer dabei, und
+         * jeder weitere kostet einen vollen Decode fuer einen Titel, den
+         * der Nutzer moeglicherweise nie erreicht.
+         */
+        const val DEFAULT_PREWARM_LIMIT: Int = 2
+    }
 }
 
 /**

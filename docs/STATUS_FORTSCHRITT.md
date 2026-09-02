@@ -883,3 +883,45 @@ noetig — Phase 2 hatte nur die Arbeit verkuerzt, nicht die Wartezeit davor.
 dem Start, nicht die Decode-Dauer. Ob Decode plus Stufe 1 unter 1,5 s liegen,
 entscheidet die Geraetemessung aus Abschnitt Y (drei Cold-Cache-Laeufe,
 Logcat-Tag `TrackAnalysisTiming`) — sie steht weiterhin aus.
+
+## AB. Waveform-Performance Phase 4: Queue-Prewarming (2026-09-01, Session: OpenCode)
+
+`requestAnalysisPrewarm(songs, limit = 2)` bereitet die Waveform der naechsten
+Queue-Titel vor. Ab dem zweiten Titel einer Session ist sie beim Wechsel
+praktisch immer schon da — unabhaengig davon, wie schnell Decode und Stufe 1
+tatsaechlich sind.
+
+- [x] **Anstoss an eine Bedingung gekoppelt, nicht an den Titelwechsel.**
+  Der `init`-Block im `PlayerViewModel` wartet, bis `waveform` fuer den
+  LAUFENDEN Titel `Ready` meldet. Frueher angestossen konkurrieren die
+  Prewarm-Decodes mit dem einen Lauf, auf den der Nutzer gerade wartet —
+  Prewarming waere dann messbar schaedlich statt nuetzlich.
+- [x] **Nur Waveform, keine Mix-Metadaten.** Eigene Scheduler-Methode
+  `schedulePrewarmWaveform` statt `scheduleWaveformThenMix`: ein Metadatenlauf
+  je vorbereitetem Titel waere ein voller zweiter Decode fuer Werte, die noch
+  niemand sehen will. Sie folgen beim echten Titelwechsel.
+- [x] **`limit = 2` mit Begruendung im Interface.** Bei sequenzieller
+  Wiedergabe ist der naechste Titel immer dabei, auch bei einem Skip. Jeder
+  weitere kostet einen vollen Decode fuer etwas, das nie erreicht wird.
+- [x] **Dedup ueber denselben Work-Namen** (`track_analysis_<id>` +
+  `ExistingWorkPolicy.KEEP`): laeuft fuer den Titel schon eine Analyse, wird
+  der Prewarm verworfen. Ein Prewarm hat nie Vorrang.
+- [x] **Virtuelle CUE-Tracks uebersprungen** (`QueueItem.songId == null`) —
+  ohne MediaStore-ID existiert kein Analyse-Cache. `distinctUntilChanged`
+  verhindert Neuplanung bei jedem Queue-Update; Position, Shuffle und Repeat
+  aendern die Nachfolgerliste nicht.
+- [x] **`init`-Block bewusst NACH `waveform` und `queue` deklariert.**
+  `viewModelScope` laeuft auf `Dispatchers.Main.immediate`, die Coroutine
+  startet synchron im Konstruktor — weiter oben waeren beide Felder null.
+  Dieselbe Falle wie beim BPM-Lock (STATUS Abschnitt T).
+- [x] Verifikation: `spotlessApply`, `detekt`, `:data:audio:testDebugUnitTest`
+  (10 Faelle, neu: Prewarm plant nur fehlende Waveforms und nie Metadaten,
+  Limit greift, `limit = 0` plant nichts),
+  `:feature:player:testDebugUnitTest`, `:data:library:testDebugUnitTest`,
+  `:data:audio:lintDebug`, `:feature:player:lintDebug`, `:app:assembleDebug` —
+  alle gruen.
+
+**Was Prewarming nicht kann:** die erste Waveform einer Session. Beim ersten
+Titel gibt es keinen Vorgaenger, der ihn vorbereitet haette. Dort zaehlt
+weiterhin allein die Geschwindigkeit von Decode + Stufe 1 — und damit die noch
+ausstehende Geraetemessung aus Abschnitt Y.

@@ -34,6 +34,16 @@ interface DeferredAnalysisScheduler {
         alsoNeedsMix: Boolean,
     )
 
+    /**
+     * Nur die Waveform, ohne Mix-Metadaten: Prewarming der naechsten
+     * Queue-Titel (Umbauplan Phase 4). Getrennt von
+     * [scheduleWaveformThenMix], weil Prewarming die Anzeige vorbereitet
+     * und nicht die Bibliothek vervollstaendigt — ein zusaetzlicher
+     * Metadatenlauf je vorbereitetem Titel waere Arbeit fuer Werte, die
+     * noch niemand sehen will.
+     */
+    fun schedulePrewarmWaveform(songId: Long)
+
     /** Vom Nutzer angestossene Onset-Erkennung (Volldurchgang). */
     fun scheduleOnsetDetection(songId: Long)
 }
@@ -85,6 +95,22 @@ class WorkManagerAnalysisScheduler(
                 "onset_detection_$songId",
                 ExistingWorkPolicy.KEEP,
                 request(songId, AnalysisProfile.FULL),
+            )
+    }
+
+    /**
+     * Derselbe Work-Name wie [scheduleWaveformThenMix] plus
+     * [ExistingWorkPolicy.KEEP]: laeuft fuer den Titel schon eine Analyse,
+     * wird der Prewarm verworfen statt zu duplizieren. Genau das ist hier
+     * richtig — ein Prewarm hat nie Vorrang.
+     */
+    override fun schedulePrewarmWaveform(songId: Long) {
+        WorkManager
+            .getInstance(context)
+            .enqueueUniqueWork(
+                "track_analysis_$songId",
+                ExistingWorkPolicy.KEEP,
+                request(songId, AnalysisProfile.WAVEFORM_ONLY),
             )
     }
 
