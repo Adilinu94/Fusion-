@@ -1,13 +1,22 @@
 package com.dropsync.data.audio
 
 import androidx.test.core.app.ApplicationProvider
+import com.dropsync.core.common.AppResult
+import com.dropsync.core.common.Clock
 import com.dropsync.core.database.dao.TrackAnalysisDao
 import com.dropsync.core.database.entity.TrackAnalysisEntity
+import com.dropsync.core.model.Song
+import com.dropsync.domain.audio.AnalysisProfile
 import com.dropsync.domain.audio.MixConfidence
+import com.dropsync.domain.audio.TrackAnalysis
+import com.dropsync.domain.audio.TrackAnalyzer
 import com.dropsync.domain.audio.WaveformCodec
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -25,8 +34,11 @@ class TrackAnalysisConfidenceGateTest {
     private val dao = FakeTrackAnalysisDao()
     private val repository =
         TrackAnalysisRepositoryImpl(
-            context = ApplicationProvider.getApplicationContext(),
             trackAnalysisDao = dao,
+            analyzer = NoopTrackAnalyzer,
+            persister = TrackAnalysisPersister(dao = dao, clock = FixedClock),
+            scheduler = NoopScheduler,
+            scope = CoroutineScope(SupervisorJob() + UnconfinedTestDispatcher()),
         )
 
     @Test
@@ -188,6 +200,32 @@ class TrackAnalysisConfidenceGateTest {
     private companion object {
         const val SONG_ID = 42L
     }
+}
+
+/** Wird in diesem Test nie aufgerufen: geprueft wird nur die Leseseite. */
+private object NoopTrackAnalyzer : TrackAnalyzer {
+    override suspend fun analyze(
+        song: Song,
+        profile: AnalysisProfile,
+    ): AppResult<TrackAnalysis> = error("analyze() darf hier nicht laufen")
+}
+
+private object FixedClock : Clock {
+    override fun elapsedRealtimeMs(): Long = 1_000L
+
+    override fun epochMillis(): Long = 1_000L
+}
+
+/** Dieser Test prueft nur die Leseseite; nichts wird eingeplant. */
+private object NoopScheduler : DeferredAnalysisScheduler {
+    override fun scheduleMixMetadata(songId: Long) = Unit
+
+    override fun scheduleWaveformThenMix(
+        songId: Long,
+        alsoNeedsMix: Boolean,
+    ) = Unit
+
+    override fun scheduleOnsetDetection(songId: Long) = Unit
 }
 
 private class FakeTrackAnalysisDao : TrackAnalysisDao {

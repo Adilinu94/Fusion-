@@ -225,12 +225,60 @@ Volldurchgang anstoesst.
 WorkManager-Dispatch-Latenz (Flaschenhals 4) steht unveraendert davor — das
 loest erst Phase 3.
 
+### Phase-3-Umsetzungsnachtrag (01.09.2026)
+
+Der UI-kritische Waveform-Lauf hat WorkManager verlassen. `requestAnalysis`
+startet Stufe 1 sofort in einem anwendungsweiten Scope
+(`SupervisorJob + dispatchers.default`); nur Mix-Metadaten, Import-Bulk und
+Onset-Erkennung bleiben aufschiebbar. Damit ist Flaschenhals 4 (Dispatch- und
+Expedited-Quota-Latenz vor jedem Analysestart) fuer den sichtbaren Titel
+beseitigt — `setExpedited` entfaellt komplett, weil nichts mehr beschleunigt
+werden muss, was ohnehin sofort laeuft.
+
+**Cancel-und-Ueberholen statt Warteschlange.** `activeJobs` haelt einen Job
+pro Song. Jeder `requestAnalysis`-Aufruf bricht Laeufe zu *anderen* Songs ab
+(auch im Cache-Hit-Fall — der Nutzer sieht ja diesen Titel). Ein zweiter
+Aufruf zum selben Song startet nichts Neues. `Semaphore(2)` begrenzt
+gleichzeitige Decoder: MediaCodec-Instanzen sind knapp, und mehr
+Parallelitaet macht den sichtbaren Titel langsamer, nicht schneller.
+
+**Kein Mutex fuer `activeJobs`.** Aufgeraeumt wird in
+`Job.invokeOnCompletion`, das nicht suspendieren darf. Ein `Mutex.withLock`
+dort wuerde nach einem Abbruch sofort erneut abbrechen und den Eintrag fuer
+immer stehen lassen — ein schleichendes Leck, das den Dedup-Check dauerhaft
+verfaelscht. Stattdessen `synchronized`; die Kritischen Abschnitte sind reine
+Map-Operationen ohne I/O.
+
+**Zwei Extraktionen, beide notwendig geworden:**
+
+- `TrackAnalysisPersister` — die Versions- und Feld-Uebernahmeregeln werden
+  jetzt von zwei Aufrufern gebraucht (In-Process-Lauf und Worker). Doppelt
+  gepflegt waeren sie die naechste Quelle fuer Zeilen, die `observeAnalysis`
+  nie als aktuell akzeptiert.
+- `DeferredAnalysisScheduler` — ohne diesen Schnitt ist der
+  Prioritaetspfad nicht testbar: jeder Testfall scheiterte an
+  `WorkManager.getInstance()` in Robolectric. Die Alternative (WorkManager je
+  Test hochziehen) haette Latenz und Nebenlaeufigkeit ins Testbild geholt,
+  die fuer die geprueften Regeln irrelevant sind. Sieben Faelle in
+  `TrackAnalysisPriorityPathTest` decken Dedup, Abbruch, Profilwahl und beide
+  Fehlerarten ab.
+
+**Fehlerbehandlung weicht bewusst vom Worker ab.** Ein voruebergehender
+Fehler im In-Process-Pfad schreibt *nichts* und plant *keinen* Retry. Anlass
+ist immer eine Nutzeraktion; der naechste Aufruf versucht es erneut. Ein
+Backoff-Retry waere hier Ballast — im Worker bleibt er, weil dort niemand
+zuschaut.
+
+**Nicht geloest:** der Zielwert selbst. Ohne die Geraetemessung aus Phase 0
+ist unbekannt, ob Decode + Stufe 1 unter 1,5 s liegen. Diese Phase entfernt
+die Wartezeit *vor* dem Start, nicht die Decode-Dauer.
+
 | Phase | Inhalt | Kernentscheidung | Status |
 |---|---|---|---|
 | 0 | Messinfrastruktur + Baseline: Timing je Pipeline-Abschnitt (Logcat-Tag `TrackAnalysisTiming`), Baseline-Protokoll Referenztrack (4 min, 44,1 kHz, Cold Cache, 3 Laeufe), optional Macrobenchmark in `benchmarks/` | JVM-Akkumulator-Baseline steht; MediaCodec-/Dispatch-Anteil und verbindlicher Geraetezielwert fehlen | **teilweise** |
 | 2 (vorgezogen) | Profile aktivieren + zwei Stufen: `analyze(song, profile: AnalysisProfile)`; Worker mit `KEY_PROFILE`; Stufe-1-Upsert (waveformData, bucketCount, peakLinear, analyzerVersion) sofort, Stufe-2-UPDATE (bpm, camelotKey, Konfidenzen, LUFS, True-Peak, mixAnalyzerVersion) danach; `MIGRATION_9_10` + MigrationTest; `requestAnalysis` prueft Waveform- und Metadaten-Cache getrennt; `observeAnalysis` mappt `mixAnalyzerVersion` | Messung: 69-70 % weniger Akkumulatorarbeit im UI-kritischen Lauf; hoechster Nutzen bei kleinerem Algorithmusrisiko | **umgesetzt** |
 | 1 (nach Phase 2) | Block-API + Float in `:domain:audio`: `WaveformAccumulator`, `EnergyAccumulator`, `LoudnessAccumulator`, `TempoAccumulator` (Delegation), `ChromaAccumulator` (Zaehl-Decimation); `TrackAnalyzerImpl`: Bulk-Decode + blockweiser Mono-Downmix in wiederverwendeten Arrays | Nur bauen, falls Geraetemessung nach Stufentrennung das 1,5-s-Ziel verfehlt; `cos()`-Vorbereitung allein spart gemessen nur 3,5 ms | offen |
-| 3 | In-Process-Prioritaetspfad: DI-Scope + `activeJobs`/`Semaphore` im Repository; `ensureActive()` je Buffer im Drain; `requestAnalysis` laeuft sofort in-process, `requestAnalysisForNewSongs`/`requestOnsetDetection` bleiben auf WorkManager | Cancel-und-Ueberholen statt KEEP-Warteschlange; Prozess-Tod ist unkritisch (Ergebnis lebt nur im DB-Cache, Lauf idempotent wiederholbar) | offen |
+| 3 | In-Process-Prioritaetspfad: application-weiter Scope + `activeJobs`/`Semaphore` im Repository; `requestAnalysis` laeuft sofort in-process, `requestAnalysisForNewSongs`/`requestOnsetDetection` bleiben aufschiebbar | Cancel-und-Ueberholen statt KEEP-Warteschlange; Prozess-Tod ist unkritisch (Ergebnis lebt nur im DB-Cache, Lauf idempotent wiederholbar) | **umgesetzt** |
 | 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | offen |
 | 5 | (optional) Decode/Analyse-Overlap: MediaCodec-Async-Mode oder Producer-Thread -> bounded Channel -> Akkumulator-Konsument | Nur bauen, falls Phase-0/2-Messung dem Decode nennenswerten Anteil jenseits der Akkumulatoren gibt (Abbruchkriterium A1) | offen |
 | 6 | (optional, spaeter) Native Peak-Extraktion ueber FFmpeg-JNI (Anschluss an `AUDIO_ENGINE_AUSBAU_PLAN.md` und `docs/ffmpeg-build*.md`): Decode + Min/Max-Bucketing in C, Kotlin-Pfad als Fallback | Loest nebenbei "Formate ohne Plattformdecoder schlagen fehl" (`TrackAnalyzerImpl.kt:27-29`); eigener ADR noetig | offen |

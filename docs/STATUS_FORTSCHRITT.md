@@ -835,3 +835,51 @@ unveraendert VOR der verkuerzten Stufe 1. Die Kette reduziert die Arbeit bis
 zum ersten DB-Write, nicht die Wartezeit bis zum Start. Ob der Titelwechsel
 real unter 1,5 s liegt, entscheidet erst Phase 3 (In-Process-Prioritaetspfad)
 zusammen mit der Geraetemessung aus Abschnitt Y.
+
+## AA. Waveform-Performance Phase 3: In-Process-Prioritaetspfad (2026-09-01, Session: OpenCode)
+
+Der UI-kritische Waveform-Lauf hat WorkManager verlassen. Flaschenhals 4 des
+Umbauplans (Dispatch- plus Expedited-Quota-Latenz vor JEDEM Analysestart) war
+der letzte Grund, warum die Waveform beim Titelwechsel spaeter erscheint als
+noetig — Phase 2 hatte nur die Arbeit verkuerzt, nicht die Wartezeit davor.
+
+- [x] **Zwei getrennte Lanes.** `requestAnalysis` startet Stufe 1 sofort in
+  einem anwendungsweiten Scope (`SupervisorJob + dispatchers.default`).
+  Mix-Metadaten, Import-Bulk und Onset-Erkennung bleiben aufschiebbar.
+  `setExpedited` ist entfallen: was ohnehin sofort laeuft, braucht keine
+  Beschleunigung und kein Kontingent.
+- [x] **Cancel-und-Ueberholen.** `activeJobs` haelt einen Job je Song; jeder
+  Aufruf bricht Laeufe zu ANDEREN Songs ab — auch im Cache-Hit-Fall, denn der
+  Nutzer sieht diesen Titel. Ein zweiter Aufruf zum selben Song startet
+  nichts. `Semaphore(2)` begrenzt gleichzeitige Decoder (MediaCodec-Instanzen
+  sind knapp; mehr Parallelitaet macht den sichtbaren Titel langsamer).
+- [x] **Kein Mutex fuer `activeJobs`, mit Grund.** Aufgeraeumt wird in
+  `Job.invokeOnCompletion`, das nicht suspendieren darf. Ein `Mutex.withLock`
+  dort bricht nach einem Cancel sofort erneut ab und laesst den Eintrag fuer
+  immer stehen — ein schleichendes Leck, das den Dedup-Check dauerhaft
+  verfaelscht. Stattdessen `synchronized` um reine Map-Operationen.
+- [x] **`TrackAnalysisPersister` extrahiert.** Die Versions- und
+  Feld-Uebernahmeregeln haben jetzt zwei Aufrufer (In-Process-Lauf und
+  Worker). Doppelt gepflegt waeren sie die naechste Quelle fuer Zeilen, die
+  `observeAnalysis` nie als aktuell akzeptiert.
+- [x] **`DeferredAnalysisScheduler` extrahiert — aus Testnot, nicht aus
+  Aesthetik.** Ohne diesen Schnitt ist der Prioritaetspfad nicht testbar:
+  jeder Fall scheiterte an `WorkManager.getInstance()` unter Robolectric. Die
+  Alternative (WorkManager je Test hochziehen) haette Latenz und
+  Nebenlaeufigkeit ins Testbild geholt, die fuer die geprueften Regeln
+  irrelevant sind.
+- [x] **Fehlerpfad weicht bewusst vom Worker ab.** Ein voruebergehender
+  Fehler in-process schreibt nichts und plant keinen Retry — Anlass ist immer
+  eine Nutzeraktion, der naechste Aufruf versucht es erneut. Im Worker bleibt
+  der Backoff-Retry, weil dort niemand zuschaut.
+- [x] Verifikation: `spotlessApply`, `detekt`, `:data:audio:testDebugUnitTest`
+  (neu: `TrackAnalysisPriorityPathTest`, 7 Faelle — Dedup, Abbruch ohne
+  Cache-Eintrag, Profilwahl, Stufe-2-Anstoss erst nach dem Waveform-Write,
+  beide Fehlerarten), `:core:database:testDebugUnitTest`, `:domain:audio:test`,
+  `:feature:player:testDebugUnitTest`, `:data:audio:lintDebug`,
+  `:app:assembleDebug` — alle gruen.
+
+**Bewusst offen:** der Zielwert selbst. Diese Phase entfernt die Wartezeit VOR
+dem Start, nicht die Decode-Dauer. Ob Decode plus Stufe 1 unter 1,5 s liegen,
+entscheidet die Geraetemessung aus Abschnitt Y (drei Cold-Cache-Laeufe,
+Logcat-Tag `TrackAnalysisTiming`) — sie steht weiterhin aus.

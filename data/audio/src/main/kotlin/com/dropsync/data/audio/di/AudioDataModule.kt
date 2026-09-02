@@ -1,5 +1,6 @@
 package com.dropsync.data.audio.di
 
+import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.EqPresetDao
@@ -7,12 +8,15 @@ import com.dropsync.core.database.dao.TrackAnalysisDao
 import com.dropsync.data.audio.AudioEngineRepositoryImpl
 import com.dropsync.data.audio.AudioPipeline
 import com.dropsync.data.audio.BitPerfectGateway
+import com.dropsync.data.audio.DeferredAnalysisScheduler
 import com.dropsync.data.audio.DeviceProfileStore
 import com.dropsync.data.audio.DspSettingsStore
 import com.dropsync.data.audio.OutputDeviceMonitor
 import com.dropsync.data.audio.OutputProfileController
+import com.dropsync.data.audio.TrackAnalysisPersister
 import com.dropsync.data.audio.TrackAnalysisRepositoryImpl
 import com.dropsync.data.audio.TrackAnalyzerImpl
+import com.dropsync.data.audio.WorkManagerAnalysisScheduler
 import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.TrackAnalyzer
@@ -74,12 +78,38 @@ object AudioDataModule {
 
     @Provides
     @Singleton
-    fun provideTrackAnalysisRepository(
-        @ApplicationContext context: android.content.Context,
+    fun provideTrackAnalysisPersister(
         trackAnalysisDao: TrackAnalysisDao,
+        clock: Clock,
+    ): TrackAnalysisPersister =
+        TrackAnalysisPersister(
+            dao = trackAnalysisDao,
+            clock = clock,
+        )
+
+    @Provides
+    @Singleton
+    fun provideDeferredAnalysisScheduler(
+        @ApplicationContext context: android.content.Context,
+    ): DeferredAnalysisScheduler = WorkManagerAnalysisScheduler(context = context)
+
+    @Provides
+    @Singleton
+    fun provideTrackAnalysisRepository(
+        trackAnalysisDao: TrackAnalysisDao,
+        analyzer: TrackAnalyzer,
+        persister: TrackAnalysisPersister,
+        scheduler: DeferredAnalysisScheduler,
+        dispatchers: DispatcherProvider,
     ): TrackAnalysisRepository =
         TrackAnalysisRepositoryImpl(
-            context = context,
             trackAnalysisDao = trackAnalysisDao,
+            analyzer = analyzer,
+            persister = persister,
+            scheduler = scheduler,
+            // Anwendungsweit und ueberlebt jedes ViewModel: der Lauf haengt am
+            // laufenden Titel, nicht an einem Screen. SupervisorJob, damit ein
+            // gescheiterter Lauf die Lane nicht dauerhaft schliesst.
+            scope = CoroutineScope(SupervisorJob() + dispatchers.default),
         )
 }
