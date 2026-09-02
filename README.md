@@ -84,6 +84,21 @@ Bauplan sind nur ueber ADRs in [`docs/adr/`](docs/adr/) erlaubt.
 | 5 | Optional: zweite DSP-Kette fuer echte EQ-/Filter-Uebergaenge (ADR-0013-pflichtig) | Nicht geplant, nur beschrieben |
 | 6 | Optional: Drop-Landung mit waehlbarem Preset | Nicht geplant, nur beschrieben (Landung laeuft heute als harter Wechsel via `playSongAt`) |
 
+### Waveform-/Analyse-Performance (Plan `WAVEFORM_PERFORMANCE_UMBAU_PLAN.md`, ADR-0015)
+
+| Phase | Inhalt | Status |
+| ----- | ------ | ------ |
+| 0 | Messinfrastruktur (Logcat-Tag `TrackAnalysisTiming`) + Baseline. JVM-Akkumulator-Baseline steht (`TrackAnalysisBaselineTest`): kombinierter Pfad 592-745 ms, nur Waveform 183-227 ms — die Stufentrennung spart 69-70 % der Akkumulatorzeit des UI-kritischen Laufs. Nebenbefund: die 74.412 `cos()`-Aufrufe der Goertzel-Koeffizienten kosten zusammen nur 3,5 ms, sie waren nie der Flaschenhals | Teilweise (MediaCodec-/Dispatch-Anteil und verbindlicher Geraetezielwert brauchen drei Cold-Cache-Laeufe auf Mittelklasse-Hardware) |
+| 2 (vorgezogen) | Zwei Stufen: `analyze(song, profile)` mit `WAVEFORM_ONLY` (sofortiger Upsert: Buckets, Peak, `analyzerVersion`) und `MIX_METADATA` (reiner Metadatenlauf per SQL-`UPDATE`: BPM, Key, Konfidenzen, LUFS, True-Peak, `mixAnalyzerVersion`); getrennte Cache-Versionierung (DB v9 -> v10, `MIGRATION_9_10`); Reihenfolge per WorkManager-Verkettung, eigener Unique-Work `mix_analysis_<id>` wenn nur Metadaten veralten | Abgeschlossen |
+| 1 (nach Phase 2) | Block-API + Float in `:domain:audio` (Bulk-Decode, blockweiser Mono-Downmix, Zaehl-Decimation statt Modulo) | Zurueckgestellt — wird nur gebaut, falls die Geraetemessung zeigt, dass Decode + Stufe 1 das 1,5-s-Ziel verfehlen |
+| 3 | In-Process-Prioritaetspfad: Stufe 1 laeuft sofort im anwendungsweiten Scope statt ueber WorkManager (`setExpedited` entfaellt); `activeJobs` + Cancel-und-Ueberholen, `Semaphore(2)` gegen Decoder-Konkurrenz; `TrackAnalysisPersister` und `DeferredAnalysisScheduler` extrahiert | Abgeschlossen |
+| 4 | Queue-Prewarming: `requestAnalysisPrewarm(songs, limit = 2)`, nur Waveform, angestossen erst wenn die Waveform des laufenden Titels bereit ist (frueher schadet es), Dedup ueber `track_analysis_<id>` + `KEEP` | Abgeschlossen |
+| 5 | Optional: Decode/Analyse-Overlap (MediaCodec-Async oder Producer -> bounded Channel) | Offen — haengt an Abbruchkriterium A1 der Geraetemessung |
+| 6 | Optional: native Peak-Extraktion via FFmpeg-JNI (loest nebenbei "Formate ohne Plattformdecoder schlagen fehl") | Offen — eigener ADR noetig |
+| 7 | Doku-Abschluss: ADR-0015 (Zwei-Stufen-Analyse + getrennte Cache-Versionierung), Statustabelle, STATUS_FORTSCHRITT | Abgeschlossen |
+
+Grundsatz: Ausgabewerte bleiben unveraendert (`ANALYZER_VERSION` weiterhin 4, keine Re-Analyse der Bibliothek nach dem Update); Signalmathematik bleibt in `:domain:audio` (ADR-0005). Der 1,5-s-Zielwert ist bis zur Geraetemessung eine Absicht, kein belegtes Ergebnis.
+
 ### Herzfrequenz ueber Health Connect (Plan `HERZFREQUENZ_HEALTH_CONNECT_PLAN.md`)
 
 | Phase | Inhalt | Status |

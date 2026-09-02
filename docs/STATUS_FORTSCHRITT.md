@@ -923,5 +923,44 @@ tatsaechlich sind.
 
 **Was Prewarming nicht kann:** die erste Waveform einer Session. Beim ersten
 Titel gibt es keinen Vorgaenger, der ihn vorbereitet haette. Dort zaehlt
-weiterhin allein die Geschwindigkeit von Decode + Stufe 1 — und damit die noch
+weiterhin allein die Geschwindigkeit von Decode + Stufe 1 - und damit die noch
 ausstehende Geraetemessung aus Abschnitt Y.
+
+## AC. Waveform-Performance Phase 7: Doku-Abschluss und ADR-0015 (2026-09-01, Session: OpenCode)
+
+Der Umbau ist codeseitig durch (Phasen 2, 3, 4). Diese Phase haelt die
+Begruendungen an einem Ort fest, an dem sie ein spaeterer Leser findet, ohne
+vier Umsetzungsnachtraege in einem Planungsdokument zu rekonstruieren.
+
+- [x] **ADR-0015 geschrieben**
+  (`docs/adr/0015-track-analyse-in-zwei-stufen-mit-getrennter-cache-versionierung.md`).
+  Enthaelt die Messtabelle als Entscheidungsgrundlage, nicht als Anhang: die
+  Zahlen 592-745 ms (kombiniert) gegen 183-227 ms (nur Waveform) sind der
+  Grund, warum die Stufentrennung vor der Block-API kam.
+- [x] **Die widerlegte Annahme steht im ADR, nicht nur im Plan.** Der
+  urspruengliche Plan nannte die 74.412 `cos()`-Aufrufe der
+  Goertzel-Koeffizienten als Flaschenhals. Gemessen kosten sie zusammen
+  3,5 ms. Ein ADR, das nur die richtige Entscheidung dokumentiert und die
+  verworfene Hypothese weglaesst, laedt dazu ein, denselben Irrtum
+  nochmal zu haben.
+- [x] **Fuenf Alternativen mit ihrem konkreten Nachteil** festgehalten -
+  darunter zwei, die im Plan noch als Absicht standen: Stufe 2 schreibt die
+  Waveform mit (verursacht Flackern) und Stufe 1 bleibt mit `setExpedited` in
+  WorkManager (Kontingent nicht garantiert, Rueckfall auf genau die Latenz,
+  die beseitigt werden sollte).
+- [x] **README-Statustabelle** um den Abschnitt "Waveform-/Analyse-Performance"
+  erweitert: Phase 0 teilweise, 2/3/4/7 abgeschlossen, 1 zurueckgestellt,
+  5/6 offen. Phase 1 steht bewusst als "zurueckgestellt" und nicht als
+  "offen" - die Bedingung fuer den Bau ist benannt.
+- [x] Verifikation: `python tools/doku_links_check.py`, `spotlessCheck`,
+  `:app:assembleDebug` - gruen.
+
+**Der Zielwert bleibt unbelegt, und das steht jetzt so in der Doku.** Die
+1,5 s sind eine Absicht, kein Ergebnis: `TrackAnalysisTiming` liefert
+Stopuhren, aber MediaCodec-Decode und WorkManager-Dispatch laufen nur auf
+Android. Drei Cold-Cache-Laeufe auf Mittelklasse-Hardware entscheiden sowohl
+den verbindlichen Zielwert als auch Abbruchkriterium A1 (>80 % Decode), das
+ueber Phase 1 gegen Phase 5/6 entscheidet. Das ist dieselbe Luecke wie bei den
+Sensor-Ground-Truth-Traces (ADR-0017) und dem Konfidenz-Gate (ADR-0019): die
+Mechanik steht, die Referenzmessung fehlt. Solange sie fehlt, ist jede weitere
+Optimierung Raten.

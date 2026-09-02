@@ -318,18 +318,42 @@ weiterhin allein die Geschwindigkeit von Decode + Stufe 1.
 | 4 | Queue-Prewarming: Repository-Funktion `requestAnalysisPrewarm(songs: List<Song>, limit = 2)`; Anstoss aus `PlayerViewModel`, sobald Stufe 1 des aktuellen Titels bereit ist; non-expedited, dedupliziert | Versteckt die Restlatenz ab dem zweiten Titel komplett | **umgesetzt** |
 | 5 | (optional) Decode/Analyse-Overlap: MediaCodec-Async-Mode oder Producer-Thread -> bounded Channel -> Akkumulator-Konsument | Nur bauen, falls Phase-0/2-Messung dem Decode nennenswerten Anteil jenseits der Akkumulatoren gibt (Abbruchkriterium A1) | offen |
 | 6 | (optional, spaeter) Native Peak-Extraktion ueber FFmpeg-JNI (Anschluss an `AUDIO_ENGINE_AUSBAU_PLAN.md` und `docs/ffmpeg-build*.md`): Decode + Min/Max-Bucketing in C, Kotlin-Pfad als Fallback | Loest nebenbei "Formate ohne Plattformdecoder schlagen fehl" (`TrackAnalyzerImpl.kt:27-29`); eigener ADR noetig | offen |
-| 7 | Doku-Abschluss: README-Statustabelle, STATUS_FORTSCHRITT, ADR-0015 (Zwei-Stufen-Analyse + getrennte Cache-Versionierung) | — | offen |
+| 7 | Doku-Abschluss: README-Statustabelle, STATUS_FORTSCHRITT, ADR-0015 (Zwei-Stufen-Analyse + getrennte Cache-Versionierung) | — | **umgesetzt** |
 
-## ADR-0015 (in Phase 7 zu schreiben; vorlaeufiger Titel)
+## ADR-0015 (geschrieben, Phase 7)
 
-"Track-Analyse in zwei Stufen mit getrennter Cache-Versionierung":
+`docs/adr/0015-track-analyse-in-zwei-stufen-mit-getrennter-cache-versionierung.md`
+— "Track-Analyse in zwei Stufen mit getrennter Cache-Versionierung":
 Stufe 1 (Waveform) ist UI-kritisch und laeuft in-process priorisiert;
 Stufe 2 (Mix-Metadaten) ist aufschiebbar (WorkManager) und versioniert
 die Metadaten-Spalten eigenstaendig (`mixAnalyzerVersion`), damit
 Algorithmus-Aenderungen an BPM/Key/LUFS nie die Waveform-Caches der
-ganzen Bibliothek invalidieren. Alternativen (ein gemeinsamer Lauf wie
-heute; zwei Entitaeten statt Spaltenversionen) und ihre Nachteile werden
-im ADR festgehalten.
+ganzen Bibliothek invalidieren.
+
+Das ADR haelt zusaetzlich fest, was dieser Plan zunaechst falsch annahm:
+die `cos()`-Vorberechnung als Flaschenhals (gemessen 3,5 ms) und Stufe 2
+als Waveform-Mitschreiber (verursacht Flackern). Fuenf Alternativen sind
+mit ihrem jeweiligen Nachteil dokumentiert.
+
+## Offener Kernpunkt: die Geraetemessung
+
+Alle Pflichtphasen sind umgesetzt (2, 3, 4, 7); Phase 1 ist konditional
+zurueckgestellt, 5 und 6 sind optional. **Der verbindliche Zielwert ist
+dennoch unbelegt.** Er blockiert drei Entscheidungen gleichzeitig:
+
+| Offene Frage | Entscheidet ueber |
+|---|---|
+| Liegen Decode + Stufe 1 unter 1,5 s? | ob der Zielwert erreicht ist oder Phase 1 gebaut wird |
+| Liegen > 80 % der Zeit im MediaCodec-Decode (Abbruchkriterium A1)? | Phase 1 gegen Phase 5/6 |
+| Wie gross ist der WorkManager-Rest fuer Stufe 2? | ob die Metadaten spuerbar nachlaufen |
+
+Vorgehen: `TrackAnalysisTiming` in Logcat filtern, ein Titel von ~4 min /
+44,1 kHz, Cache vorher leeren, drei Laeufe, Median je Abschnitt. Die
+JVM-Zahlen aus dem Phase-0-Nachtrag sind eine **Untergrenze**, keine
+Geraeteprognose: MediaCodec-Decode und Dispatch fehlen darin vollstaendig.
+
+Solange diese Messung fehlt, ist jede weitere Optimierung Raten — deshalb
+sind Phase 1, 5 und 6 bewusst nicht angefangen.
 
 ## Verifikation
 
