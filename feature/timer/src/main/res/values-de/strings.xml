@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="timer_rest_title">Resttimer</string>
+    <!-- Start-Schaltflaeche (B-UI-3): stand hartcodiert in TimerSection.kt. -->
+    <string name="timer_start">TIMER STARTEN</string>
     <string name="timer_preset_seconds">%1$d s</string>
     <string name="timer_pause">Pausieren</string>
     <string name="timer_resume">Weiter</string>
@@ -8,7 +10,7 @@
     <string name="timer_ok">OK</string>
     <string name="timer_state_idle">Timer bereit</string>
     <string name="timer_state_preparing">Timer startet</string>
-    <string name="timer_state_running">Timer laeuft</string>
+    <string name="timer_state_running">Timer läuft</string>
     <string name="timer_state_paused">Timer pausiert</string>
     <string name="timer_state_completed">Zeit ist um</string>
     <string name="timer_state_cancelled">Timer gestoppt</string>

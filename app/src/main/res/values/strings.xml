@@ -6,6 +6,12 @@
     <string name="nav_history">Progress</string>
     <string name="nav_settings">Settings</string>
 
+    <!-- TalkBack state announcement for the main navigation tabs (B-UI-3).
+         Was hardcoded German in DropSyncApp.kt and therefore spoke German
+         on English devices. -->
+    <string name="nav_state_selected">Selected</string>
+    <string name="nav_state_not_selected">Not selected</string>
+
     <!-- Health Connect rationale page (heart rate plan section 7). Health
          Connect launches this screen itself before granting permission. -->
     <string name="health_rationale_title">Why FlowRep asks for your heart rate</string>

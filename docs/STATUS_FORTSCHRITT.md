@@ -1081,3 +1081,61 @@ dieses Pakets rot (`Unresolved reference 'asState'` in
 hat den Import um 18:53 selbst entfernt, danach war der Build gruen. Das
 Vorgehen aus Abschnitt AD hat sich damit bestaetigt: warten statt in eine
 fremde offene Datei schreiben.
+
+## AF. B-UI-3 und B-UI-4: Nutzertexte in Ressourcen und echte Umlaute (2026-09-03, Session: OpenCode)
+
+Zwei Befunde in einem Paket, weil sie dieselbe Dateiklasse anfassen.
+
+**B-UI-3 — drei hartcodierte deutsche Strings.** Der ernste davon war
+`DropSyncApp.kt:405`: die TalkBack-Zustandsansage der Hauptnavigation
+("Ausgewaehlt" / "Nicht ausgewaehlt") stand im Code und sprach damit auch
+auf englischen Geraeten deutsch — eine Barrierefreiheits-Regression, die
+sehende Nutzer nie bemerken.
+
+- [x] `nav_state_selected` / `nav_state_not_selected` in `:app`,
+  `settings_screen_title` in `:feature:settings`, `timer_start` in
+  `:feature:timer` — jeweils in `values` und `values-de`.
+- [x] Ressourcenpaare gegengezaehlt: alle zehn Module haben identische
+  Schluesselzahlen (73/73, 129/129, 179/179, ...). `:app` steht bei 12/11,
+  weil `app_name` als `translatable="false"` korrekt nur im Default liegt.
+
+**B-UI-4 — der Befund hat den Umfang unterschaetzt.** Lint meldete 7
+`Typos` in `values-de`. Nachgezaehlt waren es **117 Zeilen** in acht
+Modulen: Lint kennt nur "fuer", "Schliessen", "Groesse", "abschliessen",
+"in Folge" — nicht `Uebung`, `Zurueck`, `Saetze`, `laeuft`, `Lautstaerke`
+und rund 80 weitere Woerter derselben Klasse.
+
+Entscheidend fuer die Bewertung: **fuenf Dateien mischten beide
+Schreibweisen in sich selbst.** `feature/workout/values-de` hatte `Uebung`
+in Zeile 9 und `Übung` in Zeile 106, `Saetze` in Zeile 29 und `Sätze` in
+Zeile 120. Nur die 7 gemeldeten Stellen zu reparieren haette die
+Inkonsistenz festgeschrieben.
+
+- [x] **Wortliste statt Regex.** Eine naive Ersetzung `ae`→`ä` waere
+  falsch: "neue", "Dauer", "zuerst", "Quelle", "Bluetooth",
+  "Herzfrequenz" tragen den Digraph ohne Umlaut, und "dass", "bewusst",
+  "passt", "Session", "Bass", "Gapless", "abgeschlossen" tragen `ss`
+  korrekt. Ich habe die Kandidaten per Skript aus dem **Elementinhalt**
+  extrahiert (nicht aus Kommentaren oder Attributen), die 112 Woerter
+  einzeln entschieden und nur die Liste angewandt. Danach gegengeprueft:
+  32 Woerter bleiben stehen, alle korrekt. Beide Skripte waren Wegwerfware
+  und sind geloescht — ein Konvertierungsskript im Repo waere ein
+  Werkzeug ohne zweiten Anwendungsfall.
+- [x] **Zwei Stellen bewusst behalten:** `progress_streak_days` und
+  `progress_streak_line` mit "in Folge". Lint schlaegt "infolge" vor, das
+  "wegen" bedeutet und den Satz umdreht ("Tage wegen"). Mit
+  `tools:ignore="Typos"` plus Begruendungskommentar stillgelegt, nicht
+  durch eine falsche Korrektur ersetzt.
+- [x] **Ergebnis:** `Typos` in allen Modulen auf 0 (per SARIF gezaehlt);
+  Lint-Gesamtstand 50 → 43 Warnungen. Der Rest ist bekannt und im Plan
+  gefuehrt: 25 `PluralsCandidate`, 5 `UseKtx`, 4 `TypographyFractions`,
+  2 `TypographyDashes`, dazu vier Einzelfaelle (davon 2 Fehlalarme und
+  2 bewusste Entscheidungen).
+- [x] Verifikation: `spotlessCheck`, `lintDebug` (alle Module),
+  `:app:assembleDebug`, `doku_links_check.py` — gruen.
+
+**Nicht gemacht und warum:** die 25 `PluralsCandidate` ("1
+Wiederholungen") sind echte Sprachfehler, aber jede Umstellung auf
+`<plurals>` aendert die Aufrufstelle im Kotlin-Code mit. Das ist ein
+eigenes Paket je Modul, nicht ein Nebenschritt in einem
+Ressourcen-Commit.

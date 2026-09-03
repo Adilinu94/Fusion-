@@ -349,7 +349,7 @@ private fun WeeklyGoalSection(
 @Composable
 private fun SettingsScreenTitle() {
     Text(
-        text = "Einstellungen",
+        text = stringResource(R.string.settings_screen_title),
         style = MaterialTheme.typography.headlineMedium,
         modifier = Modifier.padding(start = 20.dp, top = 12.dp, end = 20.dp),
     )

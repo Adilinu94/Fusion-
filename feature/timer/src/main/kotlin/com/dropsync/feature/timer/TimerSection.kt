@@ -113,7 +113,7 @@ fun TimerSection(
                         }
                     }
                     FlowRepPrimaryButton(
-                        text = "TIMER STARTEN",
+                        text = stringResource(R.string.timer_start),
                         onClick = { viewModel.startRest(selectedSeconds * 1_000L) },
                         modifier = Modifier.padding(top = 24.dp),
                     )

@@ -1,18 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Screen-Titel (B-UI-3): stand hartcodiert in SettingsScreen.kt. -->
+    <string name="settings_screen_title">Einstellungen</string>
     <string name="settings_markers_section">Songmarker</string>
     <string name="settings_import_button">Markerdatei importieren</string>
-    <string name="settings_import_running">Import laeuft …</string>
-    <string name="settings_import_report">Import abgeschlossen: %1$d hinzugefuegt, %2$d aktualisiert, %3$d nicht zugeordnet.</string>
-    <string name="settings_import_rejected">Import abgelehnt: %1$d ungueltige Eintraege. Es wurde nichts geaendert.</string>
-    <string name="settings_import_too_large">Die Datei ist groesser als 5 MB und wurde nicht importiert.</string>
+    <string name="settings_import_running">Import läuft …</string>
+    <string name="settings_import_report">Import abgeschlossen: %1$d hinzugefügt, %2$d aktualisiert, %3$d nicht zugeordnet.</string>
+    <string name="settings_import_rejected">Import abgelehnt: %1$d ungültige Einträge. Es wurde nichts geändert.</string>
+    <string name="settings_import_too_large">Die Datei ist größer als 5 MB und wurde nicht importiert.</string>
     <string name="settings_import_unreadable">Die Datei konnte nicht gelesen werden.</string>
-    <string name="settings_import_malformed">Die Datei ist kein gueltiges Markerdokument.</string>
-    <string name="settings_import_store_failed">Der Import konnte nicht gespeichert werden. Es wurde nichts geaendert.</string>
+    <string name="settings_import_malformed">Die Datei ist kein gültiges Markerdokument.</string>
+    <string name="settings_import_store_failed">Der Import konnte nicht gespeichert werden. Es wurde nichts geändert.</string>
     <string name="settings_link_marker">Zuordnen</string>
     <string name="settings_link_dialog_title">\"%1$s\" einem Song zuordnen</string>
     <string name="settings_link_no_songs">Keine Songs vorhanden. Aktualisiere zuerst die Bibliothek.</string>
-    <string name="settings_link_confirm">Waehlen</string>
+    <string name="settings_link_confirm">Wählen</string>
     <string name="settings_link_cancel">Abbrechen</string>
     <plurals name="settings_unmatched_markers">
         <item quantity="one">%1$d importierter Marker ist noch keinem Song zugeordnet.</item>
@@ -20,10 +22,10 @@
     </plurals>
     <string name="settings_marker_position">Position: %1$d s</string>
     <plurals name="settings_pending_candidates">
-        <item quantity="one">%1$d erkannter Drop-Kandidat wartet auf Pruefung.</item>
-        <item quantity="other">%1$d erkannte Drop-Kandidaten warten auf Pruefung.</item>
+        <item quantity="one">%1$d erkannter Drop-Kandidat wartet auf Prüfung.</item>
+        <item quantity="other">%1$d erkannte Drop-Kandidaten warten auf Prüfung.</item>
     </plurals>
-    <string name="settings_candidate_confirm">Bestaetigen</string>
+    <string name="settings_candidate_confirm">Bestätigen</string>
     <string name="settings_candidate_discard">Verwerfen</string>
     <string name="settings_candidate_unknown_song">Unbekannter Song</string>
     <string name="settings_audio_section">Audio</string>
@@ -48,18 +50,18 @@
     <string name="settings_audio_entry">Audio &amp; DSP</string>
     <string name="settings_audio_entry_desc">Equalizer, Effekte, Resampler, Bit-Perfect und Ausgabeprofile</string>
     <string name="settings_privacy_section">Datenschutz</string>
-    <string name="settings_privacy_body">DropSync arbeitet vollstaendig offline. Es gibt keine Analytics, keine Werbung und keine Netzwerkuebertragung. Song-Hashes stammen nur aus Markerdateien, die du selbst importierst.</string>
+    <string name="settings_privacy_body">DropSync arbeitet vollständig offline. Es gibt keine Analytics, keine Werbung und keine Netzwerkübertragung. Song-Hashes stammen nur aus Markerdateien, die du selbst importierst.</string>
     <string name="settings_rest_music_section">Musik in Pausen</string>
-    <string name="settings_rest_music_desc">Waehle, wie sich die Musik in Trainingspausen verhaelt. Aus laesst deine normale Wiedergabe (z. B. Shuffle) unveraendert weiterlaufen.</string>
+    <string name="settings_rest_music_desc">Wähle, wie sich die Musik in Trainingspausen verhält. Aus lässt deine normale Wiedergabe (z. B. Shuffle) unverändert weiterlaufen.</string>
     <string name="settings_rest_music_normal">Aus</string>
     <string name="settings_rest_music_normal_desc">Nicht eingreifen. Warteschlange und Shuffle laufen wie gewohnt weiter.</string>
     <string name="settings_rest_music_rest_playlist">Pausen-Playlist</string>
-    <string name="settings_rest_music_rest_playlist_desc">In der Pause laeuft eine Playlist mit dem Label \"Pause\"; am Pausenende startet ein Titel aus einer \"Training\"-Playlist.</string>
+    <string name="settings_rest_music_rest_playlist_desc">In der Pause läuft eine Playlist mit dem Label \"Pause\"; am Pausenende startet ein Titel aus einer \"Training\"-Playlist.</string>
     <string name="settings_rest_music_drop_landing">Drop-Landung</string>
-    <string name="settings_rest_music_drop_landing_desc">Wie die Pausen-Playlist, zusaetzlich wird ein \"Training\"-Titel so getimt, dass sein Drop genau das Pausenende trifft.</string>
-    <string name="settings_rest_duck_title">Pausenmusik-Lautstaerke: %1$d dB</string>
-    <string name="settings_rest_duck_desc">Senkt die Musik waehrend der Pause ab. Der Countdown-Hinweis duckt nie doppelt, der staerkere Wert gewinnt.</string>
-    <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geraete bringen eigene Verzoegerung mit; die Drop-Landung rechnet sie ein.</string>
+    <string name="settings_rest_music_drop_landing_desc">Wie die Pausen-Playlist, zusätzlich wird ein \"Training\"-Titel so getimt, dass sein Drop genau das Pausenende trifft.</string>
+    <string name="settings_rest_duck_title">Pausenmusik-Lautstärke: %1$d dB</string>
+    <string name="settings_rest_duck_desc">Senkt die Musik während der Pause ab. Der Countdown-Hinweis duckt nie doppelt, der stärkere Wert gewinnt.</string>
+    <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geräte bringen eigene Verzögerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
     <string name="settings_data_section">Daten</string>
     <string name="settings_data_desc">Exportiere dein Trainingstagebuch als Datei. Die App speichert alles nur auf diesem Gerät.</string>
@@ -73,7 +75,7 @@
     <string name="settings_get_ready_desc">Spielt vor dem Start eines Pausen-Timers einen kurzen 3-2-1-Vorlauf (Haptik + Ton).</string>
     <string name="settings_get_ready_seconds">Vorlauf: %1$d s</string>
     <string name="settings_presets_title">Pausen-Schnellwahl</string>
-    <string name="settings_presets_desc">Waehle, welche Dauern als Chips im Pausen-Dialog erscheinen.</string>
+    <string name="settings_presets_desc">Wähle, welche Dauern als Chips im Pausen-Dialog erscheinen.</string>
     <string name="settings_seconds_format">%1$d s</string>
     <string name="settings_smart_shuffle_title">Intelligentes Shuffle</string>
     <string name="settings_smart_shuffle_desc">Gewichtet das Shuffle nach Wiedergaben und Favoriten und meidet zuletzt Gespielte.</string>
@@ -90,7 +92,7 @@
     <string name="settings_theme_dark">Dunkel</string>
     <string name="settings_theme_dark_desc">Immer das dunkle Design verwenden.</string>
     <string name="settings_accent_title">Akzentfarbe</string>
-    <string name="settings_accent_desc">Faerbt Buttons, aktive Zustaende und den Titel im Now-Playing. Funktioniert in Hell und Dunkel.</string>
+    <string name="settings_accent_desc">Färbt Buttons, aktive Zustände und den Titel im Now-Playing. Funktioniert in Hell und Dunkel.</string>
     <string name="settings_accent_lime">Limette</string>
     <string name="settings_accent_blue">Blau</string>
 </resources>

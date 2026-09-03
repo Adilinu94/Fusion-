@@ -384,6 +384,12 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
             destinations.forEachIndexed { index, destination ->
                 val label = stringResource(destination.labelRes)
                 val selected = index == selectedIndex
+                // TalkBack-Ansage aus den Ressourcen (B-UI-3): hartcodiert
+                // sprach die Navigation auch auf englischen Geraeten deutsch.
+                val stateLabel =
+                    stringResource(
+                        if (selected) R.string.nav_state_selected else R.string.nav_state_not_selected,
+                    )
                 // Leichter Pop auf dem aktiven Icon, passend zur gleitenden
                 // Pille; inaktive Icons bleiben ruhig.
                 val iconScale by animateFloatAsState(
@@ -402,7 +408,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
                             .fillMaxHeight()
                             .padding(vertical = 6.dp)
                             .semantics {
-                                stateDescription = if (selected) "Ausgewählt" else "Nicht ausgewählt"
+                                stateDescription = stateLabel
                             }.clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,

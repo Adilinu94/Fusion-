@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="audio_title">Audio &amp; DSP</string>
-    <string name="audio_back">Zurueck</string>
+    <string name="audio_back">Zurück</string>
     <string name="audio_yes">Ja</string>
     <string name="audio_no">Nein</string>
     <string name="audio_auto">Automatisch</string>
 
     <!-- Audioinformationen (Phase 1) -->
     <string name="audio_info_title">Audioinformationen</string>
-    <string name="audio_info_idle">Es laeuft gerade nichts.</string>
+    <string name="audio_info_idle">Es läuft gerade nichts.</string>
     <string name="audio_info_codec">Codec</string>
     <string name="audio_info_source">Quelle</string>
     <string name="audio_info_bitrate">Bitrate</string>
@@ -17,28 +17,28 @@
     <string name="audio_info_dsp">DSP-Kette</string>
     <string name="audio_info_dsp_active">Aktiv</string>
     <string name="audio_info_dsp_bypass">Umgangen</string>
-    <string name="audio_info_device">Ausgabegeraet</string>
+    <string name="audio_info_device">Ausgabegerät</string>
 
     <!-- Master / Vorverstaerker -->
     <string name="audio_master_title">Master</string>
     <string name="audio_master_enable">DSP-Kette aktiv</string>
-    <string name="audio_master_enable_desc">Aus umgeht jede Stufe (auch fuer Bit-Perfect).</string>
-    <string name="audio_preamp">Vorverstaerker</string>
+    <string name="audio_master_enable_desc">Aus umgeht jede Stufe (auch für Bit-Perfect).</string>
+    <string name="audio_preamp">Vorverstärker</string>
     <string name="audio_limiter">Soft-Limiter (Clipping-Schutz)</string>
 
     <!-- Klangregler -->
-    <string name="audio_tone_title">Bass &amp; Hoehen</string>
+    <string name="audio_tone_title">Bass &amp; Höhen</string>
     <string name="audio_bass">Bass (100-Hz-Shelf)</string>
-    <string name="audio_treble">Hoehen (8-kHz-Shelf)</string>
+    <string name="audio_treble">Höhen (8-kHz-Shelf)</string>
 
     <!-- Equalizer -->
     <string name="audio_eq_title">Equalizer</string>
     <string name="audio_eq_enable">Equalizer aktiv</string>
     <string name="audio_eq_mode_graphic">Grafisch</string>
     <string name="audio_eq_mode_parametric">Parametrisch</string>
-    <string name="audio_eq_bands_count">%1$d Baender</string>
+    <string name="audio_eq_bands_count">%1$d Bänder</string>
     <string name="audio_eq_presets">Presets</string>
-    <string name="audio_eq_preset_delete">Preset loeschen</string>
+    <string name="audio_eq_preset_delete">Preset löschen</string>
     <string name="audio_eq_preset_name">Preset-Name</string>
     <string name="audio_eq_preset_save">Speichern</string>
 
@@ -49,17 +49,17 @@
     <!-- Reverb -->
     <string name="audio_reverb_title">Nachhall</string>
     <string name="audio_reverb_enable">Nachhall aktiv</string>
-    <string name="audio_reverb_room">Raumgroesse</string>
-    <string name="audio_reverb_damping">Daempfung</string>
+    <string name="audio_reverb_room">Raumgröße</string>
+    <string name="audio_reverb_damping">Dämpfung</string>
     <string name="audio_reverb_wet">Anteil</string>
 
     <!-- Resampler -->
     <string name="audio_resampler_title">Resampler</string>
-    <string name="audio_resampler_quality">Qualitaet</string>
+    <string name="audio_resampler_quality">Qualität</string>
     <string name="audio_resampler_rate">Ziel-Abtastrate</string>
     <string name="audio_resampler_linear">Linear</string>
     <string name="audio_resampler_sinc">Hoch (Sinc)</string>
-    <string name="audio_resampler_battery_hint">Hohe Abtastraten mit dem Sinc-Resampler erhoehen CPU-Last und Akkuverbrauch spuerbar.</string>
+    <string name="audio_resampler_battery_hint">Hohe Abtastraten mit dem Sinc-Resampler erhöhen CPU-Last und Akkuverbrauch spürbar.</string>
 
     <!-- Dither -->
     <string name="audio_dither_title">Dithering</string>
@@ -69,10 +69,10 @@
     <string name="audio_dither_shaped">Geformt</string>
 
     <!-- DVC -->
-    <string name="audio_dvc_title">Digitale Lautstaerke (DVC)</string>
-    <string name="audio_dvc_enable">Verlustfreie digitale Lautstaerke</string>
-    <string name="audio_dvc_desc">Wirkt als 64-Bit-Gain vor dem Dither; Systemlautstaerke bleibt Standard.</string>
-    <string name="audio_dvc_volume">Lautstaerke</string>
+    <string name="audio_dvc_title">Digitale Lautstärke (DVC)</string>
+    <string name="audio_dvc_enable">Verlustfreie digitale Lautstärke</string>
+    <string name="audio_dvc_desc">Wirkt als 64-Bit-Gain vor dem Dither; Systemlautstärke bleibt Standard.</string>
+    <string name="audio_dvc_volume">Lautstärke</string>
 
     <!-- Crossfade -->
     <string name="audio_crossfade_title">Crossfade</string>
@@ -87,16 +87,16 @@
     <!-- Bit-Perfect -->
     <string name="audio_bitperfect_title">Bit-Perfect</string>
     <string name="audio_bitperfect_enable">Bit-Perfect-Ausgabe</string>
-    <string name="audio_bitperfect_desc">Nur USB-DAC ab Android 14. Umgeht DSP-Kette und Float-Ausgabe; ueber Bluetooth unmoeglich.</string>
-    <string name="audio_bitperfect_device">Geraet: %1$s</string>
+    <string name="audio_bitperfect_desc">Nur USB-DAC ab Android 14. Umgeht DSP-Kette und Float-Ausgabe; über Bluetooth unmöglich.</string>
+    <string name="audio_bitperfect_device">Gerät: %1$s</string>
     <string name="audio_bitperfect_rates">Abtastraten: %1$s</string>
     <string name="audio_bitperfect_encodings">Kodierungen: %1$s</string>
-    <string name="audio_bitperfect_unavailable">Kein Bit-Perfect-faehiger USB-DAC verbunden (benoetigt Android 14+).</string>
+    <string name="audio_bitperfect_unavailable">Kein Bit-Perfect-fähiger USB-DAC verbunden (benötigt Android 14+).</string>
 
     <!-- Ausgabeprofil -->
     <string name="audio_profile_title">Ausgabeprofil</string>
     <string name="audio_profile_active">Aktives Profil: %1$s</string>
-    <string name="audio_profile_none">Noch kein Geraeteprofil aktiv.</string>
-    <string name="audio_profile_bt_hint">DropSync liefert stets PCM in voller Aufloesung. Den Bluetooth-Codec (LDAC/aptX-HD) waehlt das System.</string>
-    <string name="audio_profile_open_settings">System-Toneinstellungen oeffnen</string>
+    <string name="audio_profile_none">Noch kein Geräteprofil aktiv.</string>
+    <string name="audio_profile_bt_hint">DropSync liefert stets PCM in voller Auflösung. Den Bluetooth-Codec (LDAC/aptX-HD) wählt das System.</string>
+    <string name="audio_profile_open_settings">System-Toneinstellungen öffnen</string>
 </resources>

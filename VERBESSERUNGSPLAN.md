@@ -839,7 +839,10 @@ Baseline-Eintrag entfernen. Der Baseline-Zaehler ist damit die Metrik.
 <a name="b-ui-3"></a>
 #### B-UI-3 — MITTEL — Drei hartcodierte deutsche Strings
 
-**Status:** `[ ]` offen (verifiziert gegen `a69c535`)
+**Status:** `[x]` umgesetzt (03.09.2026, Session: OpenCode) — alle drei in
+Ressourcen ueberfuehrt: `nav_state_selected`/`nav_state_not_selected`
+(`:app`), `settings_screen_title` (`:feature:settings`), `timer_start`
+(`:feature:timer`), jeweils zweisprachig.
 
 | Datei:Zeile | String | Wirkung |
 |---|---|---|
@@ -855,7 +858,14 @@ Paar geprueft und identisch: 73/73, 128/128, 69/69, 49/49, 81/81, 179/179,
 <a name="b-ui-4"></a>
 #### B-UI-4 — NIEDRIG — 50 Lint-Warnungen, davon 7 in Nutzertexten
 
-**Status:** `[ ]` offen (per SARIF ueber alle 18 Module ausgewertet)
+**Status:** `[~]` teilweise (03.09.2026, Session: OpenCode) — die 7 `Typos`
+sind weg, 43 von 50 Warnungen bleiben. Ausgefuehrt: 117 Zeilen in acht
+`values-de`-Dateien auf echte Umlaute umgestellt (nicht nur die 7 gemeldeten
+Stellen — der Rest derselben Klasse war nur nicht als Tippfehler erkennbar);
+2 x `in Folge` mit `tools:ignore="Typos"` und Begruendung behalten, weil
+Lints Vorschlag `infolge` ("wegen") den Satz umdrehen wuerde. Offen:
+25 `PluralsCandidate`, 5 `UseKtx`, 4 `TypographyFractions`,
+2 `TypographyDashes`, Rest Fehlalarme bzw. bewusst.
 
 | Regel | Anzahl | Bewertung |
 |---|---:|---|
@@ -875,6 +885,15 @@ Die 7 `Typos` sind der wichtigste Teil: das ist die ASCII-Konvention des
 Projekts, die in **nutzersichtbaren Strings** gelandet ist. Kommentare und
 Doku duerfen ASCII bleiben; `values-de/strings.xml` nicht — dort steht es auf
 dem Bildschirm.
+
+**Nachtrag 03.09.2026:** Der Befund hat den Umfang unterschaetzt. Lint
+meldet nur Woerter aus seinem Wortschatz; die Konvention war aber in
+**117 Zeilen** angewandt, quer durch acht Module — `Uebung`, `Zurueck`,
+`Saetze`, `laeuft`, `Groesse`, `Lautstaerke` und rund 80 weitere. Fuenf
+Dateien mischten dabei innerhalb derselben Datei beide Schreibweisen
+(`feature/workout/values-de` hatte `Uebung` in Zeile 9 und `Übung` in Zeile
+106). Nur die 7 gemeldeten Stellen zu reparieren haette die Inkonsistenz
+festgeschrieben, statt sie zu beheben.
 
 Alle 50 werden gemeldet und die CI ist gruen — Lint bricht also nur bei
 Fehlern ab, nicht bei Warnungen. Vertretbar, heisst aber: niemand repariert
@@ -1083,12 +1102,15 @@ Ziel: kein Laufzeitdefekt, keine falsche Zusage im aktuellen Stand.
 | 2 | ADR-0015 committen, 14 ausstehende Commits pushen | Abschnitt 0/1 | **halb erledigt** (`27aa314` committet; Push-Entscheidung beim Nutzer) |
 | 3 | Health-Connect-Manifest + Rationale, oder Badge deaktivieren | [B-SEC-1](#b-sec-1) | **erledigt** (Stufe 1: Manifest gebaut, nicht Badge abgeschaltet; Geraeteabnahme offen) |
 | 4 | README-Statustabellen korrigieren (5 Zeilen) | [B-DOC-4](#b-doc-4) | 1 Stunde (1 von 5 Zeilen erledigt: Herzfrequenz Phase 2) |
-| 5 | 7 Lint-Typos in `values-de` + 3 hartcodierte Strings | [B-UI-4](#b-ui-4), [B-UI-3](#b-ui-3) | 1 Stunde |
+| 5 | 7 Lint-Typos in `values-de` + 3 hartcodierte Strings | [B-UI-4](#b-ui-4), [B-UI-3](#b-ui-3) | **erledigt** (117 Zeilen Umlaute, 3 Strings extrahiert; 43 Lint-Warnungen bleiben) |
 | 6 | `feature/progress/src` + `benchmarks/src` in die Detekt-Liste, Findings sichten | [B-ARCH-4](#b-arch-4) | **erledigt** (2 Findings behoben, nicht baselined) |
 
-Punkt 1, 3, 6 und der Commit-Teil von Punkt 2 sind erledigt. Offen aus
+Punkt 1, 3, 5, 6 und der Commit-Teil von Punkt 2 sind erledigt. Offen aus
 Punkt 2: der Push der ausstehenden Commits — Entscheidung beim Nutzer,
-siehe Abschnitt 0. Naechstes Paket: Punkt 5, dann der Rest von Punkt 4.
+siehe Abschnitt 0. Naechstes Paket: der Rest von Punkt 4 (vier
+README-Zeilen, die an [B-AUD-4](#b-aud-4), [B-AUD-5](#b-aud-5),
+[B-DOC-3](#b-doc-3) und [B-UI-5](#b-ui-5) haengen — jede braucht erst die
+Entscheidung "implementieren oder Status ehrlich machen").
 
 ### P1 — Kurzfristig: Performance im Zielszenario
 
