@@ -964,3 +964,48 @@ ueber Phase 1 gegen Phase 5/6 entscheidet. Das ist dieselbe Luecke wie bei den
 Sensor-Ground-Truth-Traces (ADR-0017) und dem Konfidenz-Gate (ADR-0019): die
 Mechanik steht, die Referenzmessung fehlt. Solange sie fehlt, ist jede weitere
 Optimierung Raten.
+
+## AD. B-AUD-6: Abbruchkooperation im Decoder-Loop (2026-09-03, Session: OpenCode)
+
+Befund aus dem neuen `VERBESSERUNGSPLAN.md` (Parallelsession, mit diesem
+Commit eingecheckt, damit die Befund-ID referenzierbar bleibt):
+`TrackAnalyzerImpl.drainDecoder()` war eine `while (!outputDone)`-Schleife
+ohne einen einzigen Suspension-Punkt. Ein abgebrochener Lauf waere bis zum
+Trackende weitergelaufen und haette CPU plus eine MediaCodec-Instanz
+gehalten - zwei solche Zombie-Laeufe blockieren die `Semaphore(2)`-Lane aus
+Phase 3 fuer genau den Titel, den der Nutzer ansieht. Die Kernzusage von
+`6646da5` war damit nicht eingeloest. Verifiziert: kein `ensureActive` in
+`data/audio`.
+
+- [x] **Fix (1 Zeile + 2 Signaturen):** `coroutineContext.ensureActive()` am
+  Schleifenkopf, nicht nach `releaseOutputBuffer` wie im Befund
+  vorgeschlagen - der `INFO_TRY_AGAIN_LATER`-Zweig springt per `continue`
+  zurueck und wuerde eine Pruefung am Schleifenende ueberspringen; ein
+  wartender Decoder bliebe sonst unabbrechbar. Dafuer `decodeAndAccumulate`
+  und `drainDecoder` auf `suspend` umgestellt (Aufrufer laeuft bereits in
+  `withContext(dispatchers.default)`). Der Fehlerpfad war schon korrekt:
+  `analyze` faengt `CancellationException` separat und wirft weiter - ein
+  Abbruch endet nie als Cache-Eintrag.
+- [x] **Test:** `TrackAnalyzerCancellationTest` (2 Faelle) mit
+  Robolectric-Shadows (`ShadowMediaExtractor.addTrack` + Fake-Decoder via
+  `ShadowMediaCodec.addDecoder`); der Abbruch wird deterministisch aus dem
+  Decoder-Callback ausgeloest (kein Timing, kein zweiter Thread). Herkunft:
+  die eingecheckte Testversion stammt aus der Parallelsession und wurde nach
+  gruener Verifikation uebernommen. Die eigene Erstversion mit exakter
+  Puffergesamtzahl (`== 40`) scheiterte am Referenzwert - der Shadow liefert
+  nicht exakt `bytes/buffer`; die uebernommene Version behauptet robust
+  `> 20` im Referenzlauf und exakt `5` nach Abbruch.
+- [x] Verifikation: `spotlessCheck`, `:data:audio:testDebugUnitTest`
+  (37 Faelle, alle gruen) - gruen.
+- [ ] **`:app:assembleDebug` ist rot, aber nicht durch diesen Commit:**
+  `:feature:progress/.../ProgressDashboardScreen.kt`
+  (`Unresolved reference 'asState'`, +96/-64 uncommitted) und Root-
+  `build.gradle.kts` sind aktive Baustellen der Parallelsession. Bewusst
+  nicht angefasst - fremde laufende Edits zu reparieren erzeugt genau die
+  Ueberschreibzyklen aus Abschnitt 0 des Verbesserungsplans. Assemble-Gate
+  nach deren Fix nachholen.
+
+**Koordination:** Zwei Sessions arbeiten gleichzeitig im selben Baum (Belege
+in Abschnitt 0 des Verbesserungsplans). Dieser Commit stagt bewusst nur die
+vier B-AUD-6-Dateien; fremde Dateien (`feature/progress`,
+Root-`build.gradle.kts`, `UI/*.jpeg`) bleiben unberuehrt.

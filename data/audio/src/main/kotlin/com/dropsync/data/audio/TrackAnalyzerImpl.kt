@@ -20,8 +20,10 @@ import com.dropsync.domain.audio.TempoAccumulator
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalyzer
 import com.dropsync.domain.audio.WaveformAccumulator
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.nio.ByteOrder
+import kotlin.coroutines.coroutineContext
 
 /**
  * Dekodiert den ganzen Track einmal zu PCM (Mono-Downmix) und leitet in
@@ -57,7 +59,7 @@ class TrackAnalyzerImpl(
             }
         }
 
-    private fun decodeAndAccumulate(
+    private suspend fun decodeAndAccumulate(
         song: Song,
         profile: AnalysisProfile,
     ): TrackAnalysis {
@@ -163,7 +165,7 @@ class TrackAnalyzerImpl(
         return -1
     }
 
-    private fun drainDecoder(
+    private suspend fun drainDecoder(
         extractor: MediaExtractor,
         codec: MediaCodec,
         waveform: WaveformAccumulator?,
@@ -183,6 +185,22 @@ class TrackAnalyzerImpl(
         var outputBuffers = 0
 
         while (!outputDone) {
+            // Abbruchkooperation je Schleifendurchlauf (Umbauplan
+            // Grundregeln): Kotlin-Coroutinen brechen kooperativ ab, und
+            // diese Schleife hat sonst KEINEN Suspension-Punkt - ein
+            // abgebrochener Lauf wuerde bis zum Trackende weiterlaufen und
+            // dabei CPU und eine MediaCodec-Instanz halten. Genau darauf
+            // baut aber das Cancel-und-Ueberholen des Prioritaetspfads
+            // (ADR-0015): ohne diese Zeile blockieren zwei Zombie-Laeufe
+            // die Semaphore(2)-Lane fuer den Titel, den der Nutzer ansieht.
+            //
+            // Die Pruefung sitzt am Schleifenkopf, nicht nach
+            // releaseOutputBuffer: der INFO_TRY_AGAIN_LATER-Zweig unten
+            // springt per continue zurueck und wuerde eine Pruefung am
+            // Schleifenende ueberspringen - ein wartender Decoder waere
+            // dann weiterhin nicht abbrechbar.
+            coroutineContext.ensureActive()
+
             if (!inputDone) {
                 val inputIndex = codec.dequeueInputBuffer(DEQUEUE_TIMEOUT_US)
                 if (inputIndex >= 0) {
