@@ -381,7 +381,12 @@ Media3-Update.
 <a name="b-sec-1"></a>
 #### B-SEC-1 — KRITISCH — Health-Connect-Permission fehlt im Manifest, Feature ist aktiv
 
-**Status:** `[ ]` offen (verifiziert gegen `a69c535`)
+**Status:** `[x]` umgesetzt (03.09.2026, Session: OpenCode) — Stufe 1
+gewaehlt (Manifest bauen, nicht Badge abschalten):
+`data/health/src/main/AndroidManifest.xml` mit `READ_HEART_RATE`,
+`HealthRationaleActivity` + `activity-alias` in `:app` mit beiden
+Intent-Filtern, Rationale-Texte in `values{,-de}`. Im Merger-Report
+nachgewiesen. Geraeteabnahme des Dialogs bleibt offen.
 
 `:data:health` hat **kein** `AndroidManifest.xml`. Verifiziert: das Projekt
 hat genau sieben Manifeste (`app`, `benchmarks`, `data/audio`,
@@ -695,7 +700,7 @@ adressiert). Falls nicht: in `settings.gradle.kts` verschieben, hinter
 <a name="b-arch-4"></a>
 #### B-ARCH-4 — MITTEL — 29x dasselbe Build-Boilerplate, kein Convention-Plugin
 
-**Status:** `[ ]` offen
+**Status:** `[~]` Sofort-Teilfix erledigt (Detekt-Abdeckung), Convention-Plugin offen
 
 Jedes der 11 Android-Library-Module wiederholt identisch: die
 `compileSdk`-`.get().toInt()`-Kette, die `minSdk`-Kette, `compileOptions`
@@ -705,19 +710,34 @@ true }`. Jedes JVM-Modul wiederholt `java {}` plus
 
 Die Folgekosten sind konkret, nicht aesthetisch:
 
-- **`feature/progress/src` fehlt in der Detekt-Quellenliste**
-  (`build.gradle.kts:47-77`). Verifiziert: es ist das einzige fehlende Modul
-  von 29. Ein Feature mit 1.668 Produktivzeilen und einem 1.026-Zeilen-Screen
-  laeuft ohne statische Analyse. Bei einem Convention-Plugin waere das
-  strukturell unmoeglich.
+- **`feature/progress/src` fehlte in der Detekt-Quellenliste**
+  (`build.gradle.kts:47-77`). Ein Feature mit 1.668 Produktivzeilen und einem
+  1.026-Zeilen-Screen lief ohne statische Analyse. Bei einem
+  Convention-Plugin waere das strukturell unmoeglich.
+  Korrektur zur Erstfassung: es war **nicht** das einzige fehlende Modul.
+  Der Abgleich `settings.gradle.kts` gegen die Detekt-Liste (32 Includes vs
+  29 Quellen) zeigt drei Luecken — `feature/progress`, `benchmarks` und
+  `training-core`. Die Erstfassung hat nur die erste gefunden, weil sie die
+  Liste gegen die `feature/`-Module geprueft hat statt gegen alle Includes.
 - Die Detekt-Liste muss bei jedem neuen Modul manuell gepflegt werden — ein
   Fehler, der still bleibt.
 
 **Fix:** `build-logic`-Verzeichnis mit `dropsync.android.library`,
 `dropsync.android.feature`, `dropsync.jvm`. Detekt-Quellen daraus ableiten
-statt aufzulisten. **Sofort-Teilfix vorab:** `"feature/progress/src"` in die
-Liste eintragen (eine Zeile) und die Findings sichten, bevor der grosse
-Umbau kommt.
+statt aufzulisten.
+
+**Sofort-Teilfix (erledigt):** `"feature/progress/src"` und
+`"benchmarks/src"` eingetragen, Findings gesichtet und behoben statt in die
+Baseline geschoben. `feature/progress` brachte zwei echte Treffer, beide in
+`StatementTile` (`CyclomaticComplexMethod` 24 > 20, `LongMethod` 135 > 120):
+aufgeteilt in `statementRingState()`, `statementDistanceText()` und
+`rememberCelebrationFlash()` — reine Extraktion, kein Verhalten geaendert,
+42/42 Tests gruen. `training-core` bleibt bewusst **draussen**: es ist ein
+Git-Submodul auf `v1.0.0` gepinnt, seine zwei `VariableNaming`-Findings
+(`private val DAY`) sind nur im eigenen Repo behebbar. Der Grund steht als
+Kommentar in `build.gradle.kts`, damit die Auslassung nicht wieder als
+Versehen gelesen wird. Detekt laeuft jetzt ueber 386 statt 384 Dateien, 0
+Findings, Baseline unveraendert bei 23.
 
 <a name="b-arch-5"></a>
 #### B-ARCH-5 — MITTEL — `:app` enthaelt UI-Fachlogik
@@ -987,7 +1007,7 @@ ist.
 |---|---|---|
 | Schritt 19 Bit-Perfect "Abgeschlossen" | kein `setPreferredMixerAttributes`, `floatOutput` hart `false` | [B-AUD-4](#b-aud-4) |
 | Mix-Uebergaenge Phase 2/3 "Abgeschlossen" | `MixPreset.fadeInGain` ohne Produktivkonsument | [B-AUD-5](#b-aud-5) |
-| Herzfrequenz Phase 2 "Abgeschlossen (Train-Tab)" | Manifest-Permission fehlt vollstaendig | [B-SEC-1](#b-sec-1) |
+| Herzfrequenz Phase 2 "Abgeschlossen (Train-Tab)" | ~~Manifest-Permission fehlt vollstaendig~~ — behoben 03.09.2026, README-Zeile nennt jetzt den Manifest-Nachtrag und die offene Geraeteabnahme | [B-SEC-1](#b-sec-1) |
 | Mix Phase 1 "Entwurf" | umgesetzt (DB v7) | [B-DOC-3](#b-doc-3) |
 | Schritt 21: Baseline-Profile-Infrastruktur "vorhanden" | Task ohne Generator | [B-UI-5](#b-ui-5) |
 
@@ -1061,15 +1081,14 @@ Ziel: kein Laufzeitdefekt, keine falsche Zusage im aktuellen Stand.
 |---|---|---|---|
 | 1 | `ensureActive()` am Schleifenkopf in `drainDecoder` + Abbruchtest | [B-AUD-6](#b-aud-6) | **erledigt** (Fix im Baum, Test 45-vs-5, 37/37 gruen) |
 | 2 | ADR-0015 committen, 14 ausstehende Commits pushen | Abschnitt 0/1 | **halb erledigt** (`27aa314` committet; Push-Entscheidung beim Nutzer) |
-| 3 | Health-Connect-Manifest + Rationale, oder Badge deaktivieren | [B-SEC-1](#b-sec-1) | halber Tag |
-| 4 | README-Statustabellen korrigieren (5 Zeilen) | [B-DOC-4](#b-doc-4) | 1 Stunde |
+| 3 | Health-Connect-Manifest + Rationale, oder Badge deaktivieren | [B-SEC-1](#b-sec-1) | **erledigt** (Stufe 1: Manifest gebaut, nicht Badge abgeschaltet; Geraeteabnahme offen) |
+| 4 | README-Statustabellen korrigieren (5 Zeilen) | [B-DOC-4](#b-doc-4) | 1 Stunde (1 von 5 Zeilen erledigt: Herzfrequenz Phase 2) |
 | 5 | 7 Lint-Typos in `values-de` + 3 hartcodierte Strings | [B-UI-4](#b-ui-4), [B-UI-3](#b-ui-3) | 1 Stunde |
-| 6 | `feature/progress/src` in die Detekt-Liste, Findings sichten | [B-ARCH-4](#b-arch-4) | 1 Zeile + Sichtung |
+| 6 | `feature/progress/src` + `benchmarks/src` in die Detekt-Liste, Findings sichten | [B-ARCH-4](#b-arch-4) | **erledigt** (2 Findings behoben, nicht baselined) |
 
-Punkt 1 und der Commit-Teil von Punkt 2 sind erledigt (Fix + Test mit
-Gegenbeweis; `27aa314` committet). Offen aus Punkt 2: der Push der 14
-ausstehenden Commits — Entscheidung beim Nutzer, siehe Abschnitt 0.
-Naechstes Paket: Punkt 6 (Detekt-Liste, 1 Zeile), dann 5, 4, 3.
+Punkt 1, 3, 6 und der Commit-Teil von Punkt 2 sind erledigt. Offen aus
+Punkt 2: der Push der ausstehenden Commits — Entscheidung beim Nutzer,
+siehe Abschnitt 0. Naechstes Paket: Punkt 5, dann der Rest von Punkt 4.
 
 ### P1 — Kurzfristig: Performance im Zielszenario
 
@@ -1176,7 +1195,7 @@ Damit der Fortschritt messbar ist und nicht behauptet:
 | Lint-Warnungen (SARIF, 18 Module) | 50 | < 10 |
 | Detekt-Baseline-Eintraege | 23 | < 15 |
 | Module ohne Tests | 4 | 0 |
-| Module ohne Detekt-Abdeckung | 1 | 0 |
+| Module ohne Detekt-Abdeckung | 0 (war 3) | 0 |
 | Indizes auf `songs` | 0 | 6 |
 | Allokationen im Audio-Callback | ja | nein |
 | README-Statuszeilen mit Codewiderspruch | 5 | 0 |

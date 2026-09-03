@@ -5,4 +5,12 @@
     <string name="nav_music">Music</string>
     <string name="nav_history">Progress</string>
     <string name="nav_settings">Settings</string>
+
+    <!-- Health Connect rationale page (heart rate plan section 7). Health
+         Connect launches this screen itself before granting permission. -->
+    <string name="health_rationale_title">Why FlowRep asks for your heart rate</string>
+    <string name="health_rationale_purpose">FlowRep shows your current heart rate next to your sets so you can see how hard a set actually was — during the workout, not afterwards.</string>
+    <string name="health_rationale_scope">Read access only, and only heart rate. FlowRep never writes to Health Connect and reads no other health data.</string>
+    <string name="health_rationale_offline">Reading happens only while the app is open. The value stays on your device: FlowRep has no network permission at all, so nothing can be sent anywhere.</string>
+    <string name="health_rationale_revoke">You can withdraw this permission at any time in Health Connect. FlowRep keeps working without it — the heart rate display simply stays empty.</string>
 </resources>

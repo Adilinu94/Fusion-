@@ -231,7 +231,7 @@ Erweiterung mit eigener Migration.
 | Phase | Inhalt | Status |
 |---|---|---|
 | 1 | `:domain:health` + `:data:health` Grundgeruest: Vertrag (3.2), `HealthConnectHeartRateSource` (3.3), `HealthSettingsStore` (Token), `HealthConnectGateway`-Kapselung; Tests: Sample-Mapping, Verfuegbarkeits-Zustandsautomat inkl. `UPDATE_REQUIRED`, Token-Ablauf-Fallback — alles reine JVM-Tests gegen Fakes | Umgesetzt |
-| 2 | `:feature:settings`: Statusanzeige (Zustaende aus 3.2), Berechtigungs-Launcher ueber den qualifizierten Contract, Play-Store-Link bei `UPDATE_REQUIRED`; Manifest: Permission + Rationale-Intent-Filter (Abschnitt 7); Rationale-/Datenschutzseite (baut auf dem bestehenden `settings_privacy_body`-Text auf) | Offen |
+| 2 | `:feature:settings`: Statusanzeige (Zustaende aus 3.2), Berechtigungs-Launcher ueber den qualifizierten Contract, Play-Store-Link bei `UPDATE_REQUIRED`; Manifest: Permission + Rationale-Intent-Filter (Abschnitt 7); Rationale-/Datenschutzseite (baut auf dem bestehenden `settings_privacy_body`-Text auf) | Manifest + Rationale-Seite umgesetzt (B-SEC-1, 2026-09-03); Berechtigungs-UI liegt im Train-Tab statt in `:feature:settings`, Statusanzeige/Play-Store-Link dort offen |
 | 3 | `HeartRateBadge` in `:core:designsystem` (bpm + "zuletzt aktualisiert vor X min" — bewusst nicht als Echtzeit dargestellt); Einbindung in Now-Playing (`:feature:player`) und Session-Screen (`:feature:workout`), FlowRep-Design-Tokens; Geraetetest inkl. Latenz-Messung (Abschnitt 6) | Offen |
 
 ## 6. Offener Beobachtungspunkt
@@ -242,6 +242,13 @@ Trainingsnutzung messen (bewusste Belastungsspitze vs. Erscheinen in
 der App) und das Ergebnis hier dokumentieren.
 
 ## 7. Berechtigungen und Manifest (vollstaendig)
+
+**Stand 2026-09-03: umgesetzt** (Befund B-SEC-1). Die Permission liegt in
+`data/health/src/main/AndroidManifest.xml` (Modul, das die Faehigkeit
+bereitstellt — Muster wie `READ_MEDIA_AUDIO` in `:data:library`), die
+Rationale-Deklaration in `app/src/main/AndroidManifest.xml`, weil sie eine
+Activity braucht. Im Merger-Report nachgewiesen: Permission plus beide
+Intent-Filter sind im zusammengefuehrten Manifest.
 
 Das aktuelle App-Manifest enthaelt keinerlei Permissions (auch kein
 INTERNET) und nur `MainActivity` — alle folgenden Eintraege sind neu:
@@ -254,12 +261,30 @@ INTERNET) und nur `MainActivity` — alle folgenden Eintraege sind neu:
   `android.intent.category.HEALTH_PERMISSIONS` (Android 14+). Beide
   zeigen dieselbe Datenschutz-/Rationale-Seite (nur Herzfrequenz, nur
   lokal, nichts verlaesst das Geraet).
+
+  Umgesetzt als `HealthRationaleActivity` (eigene Activity mit dem
+  `ACTION_SHOW_PERMISSIONS_RATIONALE`-Filter) plus `activity-alias`
+  `HealthRationaleAliasActivity` fuer `VIEW_PERMISSION_USAGE`, geschuetzt
+  mit `android:permission="android.permission.START_VIEW_PERMISSION_USAGE"`
+  — nur das System darf den Alias starten. Bewusst eine eigene Activity und
+  kein Alias auf `MainActivity`: ein Alias auf die App wuerde die normale
+  Oberflaeche oeffnen, statt die Begruendung zu zeigen. Der Text steht in
+  `app/src/main/res/values{,-de}/strings.xml` (`health_rationale_*`) und
+  nennt Zweck, Umfang (nur Lesen, nur Herzfrequenz), Offline-Zusage und den
+  Weg zum Widerruf.
 - Kein `BLUETOOTH_SCAN`/`BLUETOOTH_CONNECT`, kein `INTERNET`, kein
   `READ_HEALTH_DATA_IN_BACKGROUND`.
 - **Netzwerk-Regel:** Der Play-Store-Link bei `UPDATE_REQUIRED`
   oeffnet nur die Play-Store-App per Intent (wie der bestehende Link
   zu den System-Toneinstellungen im Bit-Perfect-Panel); die App selbst
   bleibt ohne Netzwerkzugriff. Bewusste, dokumentierte Ausnahme.
+
+**Noch nicht verifiziert:** dass Health Connect den Dialog auf einem echten
+Geraet tatsaechlich anzeigt und die Begruendungsseite oeffnet. Der
+Merger-Report belegt die Deklaration, nicht das Verhalten. Am Geraet zu
+pruefen: Dialog erscheint nach Tap auf "Puls erlauben", der
+Datenschutz-Link darin fuehrt zur Begruendungsseite, und nach Freigabe
+wechselt der Badge auf einen Wert.
 
 ## 8. Quellen
 

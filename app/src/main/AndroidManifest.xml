@@ -3,8 +3,8 @@
   Manifest gemaess Berechtigungstabelle in Bauplan Abschnitt 4:
   READ_MEDIA_AUDIO/READ_EXTERNAL_STORAGE liegen im Manifest von
   :data:library, die Media-Playback-FGS-Deklarationen samt Service in
-  :data:playback; der Merger fuehrt sie hier zusammen. POST_NOTIFICATIONS
-  folgt mit Schritt 8/12.
+  :data:playback, READ_HEART_RATE in :data:health; der Merger fuehrt sie
+  hier zusammen. POST_NOTIFICATIONS folgt mit Schritt 8/12.
 
   Auto Backup ist deaktiviert (Bauplan 2.3), damit Trainings- und
   Bibliotheksmetadaten nicht unbemerkt in einen Cloud-Backupdienst gelangen.
@@ -36,5 +36,39 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!--
+          Begruendungsseite fuer die Health-Connect-Berechtigung
+          (Herzfrequenz-Plan Abschnitt 7). Health Connect verlangt sie als
+          Voraussetzung fuer den Berechtigungsdialog und startet sie selbst,
+          deshalb exported="true"; die Seite zeigt nur Text und liest keine
+          Daten. Die Permission selbst liegt im Manifest von :data:health.
+
+          Zwei Intent-Filter, weil Android die Deklaration je Version
+          unterschiedlich erwartet: ACTION_SHOW_PERMISSIONS_RATIONALE bis
+          Android 13, VIEW_PERMISSION_USAGE mit Kategorie
+          HEALTH_PERMISSIONS ab Android 14. Beide zeigen dieselbe Seite.
+        -->
+        <activity
+            android:name=".HealthRationaleActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/health_rationale_title"
+            android:launchMode="singleTask">
+            <intent-filter>
+                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".HealthRationaleAliasActivity"
+            android:exported="true"
+            android:targetActivity=".HealthRationaleActivity"
+            android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
     </application>
 </manifest>

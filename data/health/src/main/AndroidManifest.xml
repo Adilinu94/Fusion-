@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Health-Connect-Leseberechtigung fuer die Herzfrequenz
+  (Herzfrequenz-Plan Abschnitt 7). Sie liegt hier und nicht in :app, weil
+  das Modul die Faehigkeit bereitstellt und der Merger sie zusammenfuehrt -
+  dasselbe Muster wie READ_MEDIA_AUDIO in :data:library und
+  POST_NOTIFICATIONS in :data:timer.
+
+  Der Permission-String ist deckungsgleich mit
+  HealthConnectHeartRateSource.READ_HEART_RATE_PERMISSION; ohne diese
+  Deklaration verweigert Health Connect die Anfrage, und der Knopf
+  "Puls erlauben" im Train-Tab bleibt wirkungslos.
+
+  Bewusst NICHT hier: READ_HEALTH_DATA_IN_BACKGROUND (Lesen nur im
+  Foreground, Plan 3.4) und jede Schreibberechtigung.
+
+  Die vorgeschriebene Rationale-Deklaration kann ein Bibliotheksmodul nicht
+  leisten, weil sie eine Activity braucht - sie steht im Manifest von :app.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+</manifest>

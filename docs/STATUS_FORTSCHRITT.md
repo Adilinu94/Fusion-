@@ -1009,3 +1009,75 @@ Phase 3 fuer genau den Titel, den der Nutzer ansieht. Die Kernzusage von
 in Abschnitt 0 des Verbesserungsplans). Dieser Commit stagt bewusst nur die
 vier B-AUD-6-Dateien; fremde Dateien (`feature/progress`,
 Root-`build.gradle.kts`, `UI/*.jpeg`) bleiben unberuehrt.
+
+## AE. B-SEC-1: Health-Connect-Manifest und Begruendungsseite (2026-09-03, Session: OpenCode)
+
+Der Befund war der schwerste im Plan, weil er den Nutzer direkt trifft:
+`TrainViewModel` injiziert die Health-Connect-Quelle, `TrainScreen`
+registriert den Launcher und ruft ihn bei Tap auf "Puls erlauben" — aber
+`:data:health` hatte kein Manifest, die Permission existierte nur als
+Kotlin-Konstante. Health Connect verweigert ohne Deklaration die Anfrage:
+ein sichtbarer Knopf, der nichts tut.
+
+Von den zwei zulaessigen Wegen im Befund (Manifest bauen oder Badge
+abschalten) habe ich Stufe 1 genommen — das Feature ist fertig, es fehlte
+nur die Deklaration.
+
+- [x] **`data/health/src/main/AndroidManifest.xml`** mit
+  `android.permission.health.READ_HEART_RATE`. Im Modul, nicht in `:app`:
+  dasselbe Muster wie `READ_MEDIA_AUDIO` in `:data:library` und
+  `POST_NOTIFICATIONS` in `:data:timer` — das Modul, das die Faehigkeit
+  bereitstellt, deklariert sie, der Merger fuehrt zusammen. Bewusst nicht
+  dabei: `READ_HEALTH_DATA_IN_BACKGROUND` (Lesen nur im Foreground, Plan
+  3.4) und jede Schreibberechtigung.
+- [x] **`HealthRationaleActivity` in `:app`** mit
+  `ACTION_SHOW_PERMISSIONS_RATIONALE` (Android <= 13), plus
+  `activity-alias` `HealthRationaleAliasActivity` fuer
+  `VIEW_PERMISSION_USAGE` + Kategorie `HEALTH_PERMISSIONS` (Android 14+).
+  Beide zeigen dieselbe Seite. Der Alias ist mit
+  `android:permission="android.permission.START_VIEW_PERMISSION_USAGE"`
+  geschuetzt, damit nur das System ihn startet — die offizielle Anleitung
+  macht das genauso.
+- [x] **Eigene Activity statt Alias auf `MainActivity`.** Die
+  Beispielimplementierungen zeigen beide Varianten; ein Alias auf
+  `MainActivity` wuerde beim Tap auf den Datenschutz-Link im
+  Berechtigungsdialog die normale App oeffnen. Der Nutzer bekaeme die
+  Antwort auf "warum will diese App meinen Puls?" nie zu sehen. Die Seite
+  ist reiner Text ohne Eingaben, deshalb ist `exported="true"` hier
+  unbedenklich.
+- [x] **Rationale-Text zweisprachig** (`health_rationale_*` in
+  `app/src/main/res/values{,-de}`): Zweck (Puls neben den Saetzen,
+  waehrend des Trainings), Umfang (nur Lesen, nur Herzfrequenz, kein
+  Schreiben), Offline-Zusage (keine `INTERNET`-Permission, es *kann* nichts
+  uebertragen werden) und der Weg zum Widerruf. Die Umlaut-Konvention der
+  `values-de`-Dateien uebernommen (`ae/oe/ue`).
+- [x] **Verifikation am Merger-Report**
+  (`app/build/intermediates/merged_manifest/debug/`): `READ_HEART_RATE`
+  steht in der Permission-Liste, beide Intent-Filter und der
+  Alias-Permission-Schutz sind im zusammengefuehrten Manifest.
+  `:app:assembleDebug`, `:app:lintDebug` (0 Fehler, 2 bestehende
+  Warnungen), `spotlessCheck`, `doku_links_check.py` (47 Dateien) — gruen.
+- [x] **Doku entwidersprucht** (B-DOC-4, 1 von 5 Zeilen): README-Zeile
+  Herzfrequenz Phase 2 nennt jetzt den Manifest-Nachtrag und die offene
+  Geraeteabnahme; `HERZFREQUENZ_HEALTH_CONNECT_PLAN.md` Abschnitt 7 ist
+  von Absicht auf Umsetzung umgeschrieben, Phase 2 in der Phasentabelle
+  von "Offen" auf den tatsaechlichen Teilstand. Dabei aufgefallen und
+  festgehalten: die Berechtigungs-UI sitzt im Train-Tab, nicht in
+  `:feature:settings` wie der Plan sie vorsah.
+
+**Was der Merger-Report nicht belegt: dass es funktioniert.** Er zeigt die
+Deklaration, nicht das Verhalten. Am Geraet zu pruefen bleibt: erscheint der
+Health-Connect-Dialog nach Tap auf "Puls erlauben", fuehrt der
+Datenschutz-Link darin zur Begruendungsseite, und wechselt der Badge nach
+der Freigabe auf einen Wert. Ohne Health Connect und Mi Fitness auf einem
+echten Geraet ist das nicht pruefbar — dieselbe Klasse offener Punkte wie
+die Waveform-Messung (Abschnitt Y/AC), die Sensor-Traces (ADR-0017) und die
+BPM-Kalibrierung (ADR-0019).
+
+**Nebenbefund zur Parallelsession:** `:app:assembleDebug` war zu Beginn
+dieses Pakets rot (`Unresolved reference 'asState'` in
+`ProgressDashboardScreen.kt`, ein Import auf eine Member-Funktion von
+`Animatable`). Ich habe die fremde Datei nicht angefasst; die andere Session
+hat den Import um 18:53 selbst entfernt, danach war der Build gruen. Das
+Vorgehen aus Abschnitt AD hat sich damit bestaetigt: warten statt in eine
+fremde offene Datei schreiben.

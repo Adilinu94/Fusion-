@@ -4,4 +4,12 @@
     <string name="nav_music">Musik</string>
     <string name="nav_history">Verlauf</string>
     <string name="nav_settings">Optionen</string>
+
+    <!-- Health-Connect-Begruendungsseite (Herzfrequenz-Plan Abschnitt 7).
+         Health Connect oeffnet diesen Screen selbst vor der Freigabe. -->
+    <string name="health_rationale_title">Warum FlowRep nach deinem Puls fragt</string>
+    <string name="health_rationale_purpose">FlowRep zeigt deinen aktuellen Puls neben deinen Saetzen, damit du waehrend des Trainings siehst, wie anstrengend ein Satz wirklich war — nicht erst hinterher.</string>
+    <string name="health_rationale_scope">Nur Lesezugriff, und nur auf die Herzfrequenz. FlowRep schreibt nichts nach Health Connect und liest keine anderen Gesundheitsdaten.</string>
+    <string name="health_rationale_offline">Gelesen wird nur, solange die App offen ist. Der Wert bleibt auf deinem Geraet: FlowRep hat gar keine Netzwerkberechtigung, es kann also nichts uebertragen werden.</string>
+    <string name="health_rationale_revoke">Du kannst die Freigabe jederzeit in Health Connect zuruecknehmen. FlowRep funktioniert auch ohne sie weiter — die Pulsanzeige bleibt dann einfach leer.</string>
 </resources>
