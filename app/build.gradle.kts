@@ -118,6 +118,11 @@ dependencies {
     // Baseline Profiles (Phase 4): installiert das generierte Profil zur
     // Laufzeit; noetig fuer die Auslieferung ueber den Play Store und lokal.
     implementation(libs.androidx.profileinstaller)
+    // Producer-Verdrahtung (Befund B-UI-5): ohne diese Zeile kennt
+    // :app:generateBaselineProfile das erzeugende Modul nicht und der Task
+    // fuehrt nur merge/copy auf einer leeren Eingabe aus - er lief bisher
+    // gruen durch und produzierte nichts.
+    baselineProfile(project(":benchmarks"))
 
     testImplementation(libs.junit4)
     androidTestImplementation(libs.junit4)

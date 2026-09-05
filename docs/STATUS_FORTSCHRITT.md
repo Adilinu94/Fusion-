@@ -1139,3 +1139,72 @@ Wiederholungen") sind echte Sprachfehler, aber jede Umstellung auf
 `<plurals>` aendert die Aufrufstelle im Kotlin-Code mit. Das ist ein
 eigenes Paket je Modul, nicht ein Nebenschritt in einem
 Ressourcen-Commit.
+
+## AG. B-UI-5: Baseline Profiles - zwei gemeldete Ursachen, fuenf echte (2026-09-05, Session: OpenCode)
+
+Der Befund sagte: Plugin da, Generator fehlt, `packageName` falsch. Beim
+Umsetzen kam heraus, dass `:benchmarks` seit `cb7efda` **gar nicht
+kompilierte**. Jede Ursache verdeckte die naechste, deshalb der Reihe nach:
+
+- [x] **1. Producer nie verdrahtet.** `baselineProfile(project(":benchmarks"))`
+  fehlte in `app/build.gradle.kts`. Das war der eigentliche Grund fuer die
+  zwei `SKIPPED`-Tasks, die der Befund als Beleg zitierte - nicht der
+  fehlende Generator. Ohne diese Zeile kennt `:app:generateBaselineProfile`
+  das erzeugende Modul nicht; `merge` und `copy` liefen auf leerer Eingabe
+  und meldeten Erfolg.
+- [x] **2. Generator angelegt** (`BaselineProfileGenerator.kt`) mit
+  `BaselineProfileRule` und `includeInStartupProfile = true`.
+- [x] **3. `junit4` und `androidx.test.ext.junit` fehlten** in
+  `benchmarks/build.gradle.kts`. Beide wurden in `cb7efda` beim Modulumbau
+  entfernt; seither schlug jeder Kompilierversuch mit `Unresolved reference
+  'AndroidJUnit4'` fehl.
+- [x] **4. `CompilationMode.BaselineProfile()` existiert nicht mehr.** Die
+  API gab es in benchmark 1.0; mit `1.5.0-alpha01` ist der Ersatz
+  `CompilationMode.Partial(baselineProfileMode = ...)`. `StartupBenchmark.kt`
+  hat mit der eingetragenen Version also nie kompiliert. Bewusst
+  `BaselineProfileMode.Require` statt `UseIfAvailable`: fehlt das Profil,
+  soll der Benchmark abbrechen statt ein Ergebnis zu liefern, das wie "kein
+  Gewinn" aussieht. Genau diese Art stiller Fehlmessung war der Befund.
+- [x] **5. `kotlin.compose` lag auf `:benchmarks`**, obwohl das Modul keine
+  Composables enthaelt. Der Compose-Compiler verlangt die Compose-Runtime
+  auf dem Classpath, die dort nicht ankommt (`implementation(project(":app"))`
+  reicht sie nicht weiter) - Abbruch mit "requires the Compose Runtime to be
+  on the class path".
+- [x] **`packageName` korrigiert** (Punkt aus dem Befund): `com.dropsync.app`
+  ohne `.debug`. Macrobenchmark verlangt `debuggable=false`, die
+  `benchmark`-Variante faellt per `matchingFallbacks` auf `release`, und
+  `release` hat keinen `applicationIdSuffix`.
+
+**Der eigentliche Befund ist nicht das Modul, sondern die Luecke, die es
+verrotten liess:** die CI baut `com.android.test`-Module nicht. `test`,
+`assembleDebug` und `assembleRelease` fassen `:benchmarks` nicht an. Ein
+Modul ohne Compiler-Abdeckung verfaellt still - hier ueber mindestens zwei
+Commits, ohne dass ein Gate rot wurde. Gegenmittel ist ein
+`:benchmarks:assembleBenchmarkRelease`-Schritt in der CI (baut nur, laeuft
+nicht, braucht kein Geraet). Als Punkt 20b in P2 eingetragen; die CI-Datei
+selbst habe ich nicht angefasst, weil sie ausserhalb dieses Pakets liegt.
+
+- [x] Verifikation: alle drei Varianten kompilieren
+  (`compileNonMinifiedBenchmarkKotlin`, `compileBenchmarkBenchmarkKotlin`,
+  `compileBenchmarkReleaseKotlin`). Die Taskkette enthaelt jetzt
+  `:benchmarks:connectedNonMinifiedReleaseAndroidTest` und
+  `:benchmarks:collectNonMinifiedReleaseBaselineProfile` vor
+  `:app:mergeReleaseBaselineProfile` - vorher standen dort nur merge und
+  copy. `doku_links_check.py` gruen (49 Dateien).
+- [ ] **Der Generatorlauf selbst ist nicht verifiziert.** Er braucht ein
+  Geraet mit Root oder API 33+ (das Sammeln liest `/data/misc/profiles`),
+  auf einem Emulator ein `aosp`-Systemabbild. Bis dahin ist belegt, dass die
+  Kette vollstaendig ist - nicht, dass sie ein brauchbares Profil liefert.
+  Fuenfter offener Geraetepunkt neben Waveform-Messung (Y/AC),
+  Health-Connect-Dialog (AE), Sensor-Traces (ADR-0017) und
+  BPM-Kalibrierung (ADR-0019).
+
+**Koordination:** `README.md` und `VERBESSERUNGSPLAN.md` sind in diesem
+Commit **nicht** enthalten. Beide hat die Parallelsession im Arbeitsbaum
+umgeschrieben (Plan: 277 geaenderte Zeilen), und meine Statuszeilen zu
+B-UI-5 sitzen mitten in deren Hunks - sie zu stagen haette fremde,
+unfertige Doku-Arbeit mitcommittet. Die Aenderungen liegen im Arbeitsbaum
+und gehen mit dem Doku-Commit der anderen Session. `spotlessCheck` ist aus
+demselben Grund rot: `data/audio/.../MasterDspProcessor.kt` ist eine offene
+fremde Baustelle (B-AUD-1). Meine Kotlin-Dateien sind sauber - der Check
+nennt genau diese eine Datei.

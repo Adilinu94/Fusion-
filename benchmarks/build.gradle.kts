@@ -3,7 +3,11 @@
 // AGP 9: com.android.test mit eingebautem Kotlin.
 plugins {
     alias(libs.plugins.android.test)
-    alias(libs.plugins.kotlin.compose)
+    // Bewusst KEIN kotlin.compose (Befund B-UI-5): das Modul enthaelt keine
+    // Composables, nur Macrobenchmark-Tests. Der Compose-Compiler verlangt
+    // aber die Compose-Runtime auf dem Compile-Classpath, und die kommt hier
+    // nicht an — `implementation(project(":app"))` reicht sie nicht weiter.
+    // Das Plugin brach den Build, ohne je etwas zu leisten.
     alias(libs.plugins.androidx.baselineprofile)
 }
 
@@ -47,5 +51,13 @@ android {
 
 dependencies {
     implementation(libs.androidx.benchmark.macro.junit4)
+    // JUnit4 und der AndroidJUnit4-Runner (Befund B-UI-5): beide wurden in
+    // cb7efda beim Modulumbau entfernt, wodurch :benchmarks seit diesem
+    // Commit nicht mehr kompilierte. Aufgefallen ist es nie, weil die CI
+    // com.android.test-Module nicht baut - `test`, `assembleDebug` und
+    // `assembleRelease` fassen sie nicht an. Ein Modul ohne
+    // Compiler-Abdeckung verrottet still.
+    implementation(libs.junit4)
+    implementation(libs.androidx.test.ext.junit)
     implementation(project(":app"))
 }
