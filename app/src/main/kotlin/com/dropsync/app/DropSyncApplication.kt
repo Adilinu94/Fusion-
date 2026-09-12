@@ -9,6 +9,7 @@ import com.dropsync.data.audio.OutputProfileController
 import com.dropsync.data.timer.TimerRecoveryStarter
 import com.dropsync.feature.player.RestMusicCoordinator
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -43,32 +44,42 @@ class DropSyncApplication : Application() {
         restMusicCoordinator.start()
         // Kill-Fallback (Testinfra-Plan 5b): laufenden Resttimer nach einem
         // Xiaomi-Kill rehydrieren und den Service neu starten.
-        CoroutineScope(SupervisorJob() + dispatchers.io).launch {
-            try {
-                timerRecoveryStarter.start()
-            } catch (e: Exception) {
-                Log.e("DropSyncApplication", "Timer-Recovery fehlgeschlagen", e)
-            }
-        }
+        CoroutineScope(SupervisorJob() + dispatchers.io).launch { runTimerRecovery() }
         // Standarduebungen idempotent einspielen (Schritt 3.6); der Seed
         // ueberschreibt nie Benutzerdaten und darf bei jedem Start laufen.
-        CoroutineScope(SupervisorJob() + dispatchers.io).launch {
-            try {
-                val json =
-                    assets.open(ExerciseSeeder.ASSET_PATH).use {
-                        it.readBytes().decodeToString()
-                    }
-                seeder.seed(json)
-            } catch (e: Exception) {
-                // Fehlerhafter Seed darf den App-Start nie verhindern.
-                Log.e("DropSyncApplication", "Seed fehlgeschlagen", e)
-            }
-            try {
-                // Eingebaute EQ-Presets idempotent einspielen (Plan Phase 2).
-                eqPresetSeeder.seed()
-            } catch (e: Exception) {
-                Log.e("DropSyncApplication", "EQ-Preset-Seed fehlgeschlagen", e)
-            }
+        CoroutineScope(SupervisorJob() + dispatchers.io).launch { runSeeders() }
+    }
+
+    private suspend fun runTimerRecovery() {
+        try {
+            timerRecoveryStarter.start()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("DropSyncApplication", "Timer-Recovery fehlgeschlagen", e)
+        }
+    }
+
+    private suspend fun runSeeders() {
+        try {
+            val json =
+                assets.open(ExerciseSeeder.ASSET_PATH).use {
+                    it.readBytes().decodeToString()
+                }
+            seeder.seed(json)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Fehlerhafter Seed darf den App-Start nie verhindern.
+            Log.e("DropSyncApplication", "Seed fehlgeschlagen", e)
+        }
+        try {
+            // Eingebaute EQ-Presets idempotent einspielen (Plan Phase 2).
+            eqPresetSeeder.seed()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e("DropSyncApplication", "EQ-Preset-Seed fehlgeschlagen", e)
         }
     }
 }

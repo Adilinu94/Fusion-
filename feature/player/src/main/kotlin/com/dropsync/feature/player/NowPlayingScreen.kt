@@ -534,11 +534,12 @@ private fun PowerampTitleRow(
             )
         }
         Box(modifier = Modifier.align(Alignment.CenterEnd)) {
+            // A5: 48-dp-Touch-Ziel statt 36 dp.
             IconButton(
                 onClick = onOpenMenu,
                 modifier =
                     Modifier
-                        .size(36.dp)
+                        .size(48.dp)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh, CircleShape),
             ) {
                 Icon(

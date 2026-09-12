@@ -40,15 +40,19 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
@@ -345,10 +349,14 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val destinations = TopLevelDestination.entries
-    val selectedIndex =
-        destinations
-            .indexOfFirst { it.route == currentRoute }
-            .coerceAtLeast(0)
+    // A5: Auf Sub-Routen (Timer, Now-Playing, ...) ist kein Tab aktiv — null
+    // statt per coerceAtLeast(0) faelschlich „Musik" zu melden. Der Indikator
+    // bleibt auf dem zuletzt gueltigen Tab stehen und blendet aus.
+    val selectedIndex: Int? = destinations.indexOfFirst { it.route == currentRoute }.takeIf { it >= 0 }
+    var indicatorIndex by remember { mutableIntStateOf(0) }
+    LaunchedEffect(selectedIndex) {
+        if (selectedIndex != null) indicatorIndex = selectedIndex
+    }
     val pillShape = RoundedCornerShape(50)
     val containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = 0.92f)
     val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
@@ -369,7 +377,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
         // einem Tab zum naechsten gleiten (kein harter Sprung). Etwas
         // Bounce, damit der Wechsel modern und lebendig wirkt.
         val indicatorOffset by animateDpAsState(
-            targetValue = tabWidth * selectedIndex,
+            targetValue = tabWidth * indicatorIndex,
             animationSpec =
                 spring(
                     dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -385,6 +393,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
                     .width(tabWidth)
                     .height(72.dp)
                     .padding(4.dp)
+                    .alpha(if (selectedIndex == null) 0f else 1f)
                     .clip(pillShape)
                     .background(MaterialTheme.colorScheme.primary),
         )
@@ -398,17 +407,17 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
         ) {
             destinations.forEachIndexed { index, destination ->
                 val label = stringResource(destination.labelRes)
-                val selected = index == selectedIndex
+                val isSelected = index == selectedIndex
                 // TalkBack-Ansage aus den Ressourcen (B-UI-3): hartcodiert
                 // sprach die Navigation auch auf englischen Geraeten deutsch.
                 val stateLabel =
                     stringResource(
-                        if (selected) R.string.nav_state_selected else R.string.nav_state_not_selected,
+                        if (isSelected) R.string.nav_state_selected else R.string.nav_state_not_selected,
                     )
                 // Leichter Pop auf dem aktiven Icon, passend zur gleitenden
                 // Pille; inaktive Icons bleiben ruhig.
                 val iconScale by animateFloatAsState(
-                    targetValue = if (selected) 1.12f else 1f,
+                    targetValue = if (isSelected) 1.12f else 1f,
                     animationSpec =
                         spring(
                             dampingRatio = Spring.DampingRatioMediumBouncy,
@@ -423,6 +432,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
                             .fillMaxHeight()
                             .padding(vertical = 6.dp)
                             .semantics {
+                                selected = isSelected
                                 stateDescription = stateLabel
                             }.clickable(
                                 interactionSource = remember { MutableInteractionSource() },
@@ -444,7 +454,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
                                     scaleY = iconScale
                                 },
                         tint =
-                            if (selected) {
+                            if (isSelected) {
                                 MaterialTheme.colorScheme.onPrimary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant
@@ -455,7 +465,7 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
                         text = label,
                         style = MaterialTheme.typography.labelSmall,
                         color =
-                            if (selected) {
+                            if (isSelected) {
                                 MaterialTheme.colorScheme.onPrimary
                             } else {
                                 MaterialTheme.colorScheme.onSurfaceVariant

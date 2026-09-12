@@ -13,6 +13,7 @@ import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
@@ -125,6 +126,8 @@ class PlaybackRepositoryImpl(
             withContext(dispatchers.main) {
                 AppResult.success(connection.requirePlayer().toPlaybackState(lastQueue))
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
         }
@@ -167,6 +170,8 @@ class PlaybackRepositoryImpl(
                 publishAndPersist(player)
             }
             AppResult.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
         }
@@ -217,6 +222,8 @@ class PlaybackRepositoryImpl(
                 }
             }
             AppResult.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
         }
@@ -230,6 +237,8 @@ class PlaybackRepositoryImpl(
                 publishAndPersist(player)
             }
             AppResult.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             AppResult.failure(AppError.Unknown(e.message))
         }

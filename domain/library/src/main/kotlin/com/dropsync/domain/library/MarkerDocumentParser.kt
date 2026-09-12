@@ -1,5 +1,6 @@
 package com.dropsync.domain.library
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonNull
@@ -36,6 +37,8 @@ object MarkerDocumentParser {
             try {
                 Json.parseToJsonElement(jsonText) as? JsonObject
                     ?: return ParsedMarkerDocument.Malformed("Wurzel ist kein Objekt")
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 return ParsedMarkerDocument.Malformed("Kein gueltiges JSON")
             }

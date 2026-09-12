@@ -49,6 +49,7 @@ import com.dropsync.domain.workout.SwapStrategy
 import com.dropsync.domain.workout.WorkoutMath
 import com.dropsync.domain.workout.WorkoutRepository
 import com.dropsync.domain.workout.WorkoutSessionInfo
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -145,6 +146,8 @@ class WorkoutRepositoryImpl(
                     }
                     AppResult.success(sessionId)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("startSession"))
             }
@@ -168,6 +171,8 @@ class WorkoutRepositoryImpl(
                     )
                 workoutDao.updateSessionStatus(sessionId, status.name, clock.epochMillis())
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("setStatus"))
             }
@@ -191,6 +196,8 @@ class WorkoutRepositoryImpl(
                         ),
                     )
                 AppResult.success(id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("addExercise"))
             }
@@ -253,6 +260,8 @@ class WorkoutRepositoryImpl(
                 // Transaktion; ein Fehler darf den Satz nie fehlschlagen lassen.
                 capturePlaybackSnapshotBestEffort(sessionExerciseId)
                 result
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("completeCluster"))
             }
@@ -274,6 +283,8 @@ class WorkoutRepositoryImpl(
                     recomputeInTransaction(sessionExercise.exerciseId)
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("undoCompleteCluster"))
             }
@@ -284,6 +295,8 @@ class WorkoutRepositoryImpl(
             try {
                 transactionRunner { recomputeInTransaction(exerciseId) }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("recomputeRecords"))
             }
@@ -303,6 +316,8 @@ class WorkoutRepositoryImpl(
                         )
                     }
                 AppResult.success(segments)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("lastCompletedClusterPrefill"))
             }
@@ -333,6 +348,8 @@ class WorkoutRepositoryImpl(
                         ),
                     )
                 AppResult.success(id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("recordPlaybackSnapshot"))
             }
@@ -353,6 +370,8 @@ class WorkoutRepositoryImpl(
                         )
                     }
                 AppResult.success(snapshots)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getPlaybackSnapshots"))
             }
@@ -414,6 +433,8 @@ class WorkoutRepositoryImpl(
                     )
                     AppResult.success(exerciseId)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("createCustomExercise"))
             }
@@ -445,6 +466,8 @@ class WorkoutRepositoryImpl(
                         muscles = muscles.sortedByDescending { it.percent },
                     ),
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getExerciseDetail"))
             }
@@ -455,6 +478,8 @@ class WorkoutRepositoryImpl(
             try {
                 exerciseDao.archiveExercise(exerciseId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("archiveExercise"))
             }
@@ -465,6 +490,8 @@ class WorkoutRepositoryImpl(
             try {
                 exerciseDao.restoreExercise(exerciseId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("restoreExercise"))
             }
@@ -481,6 +508,8 @@ class WorkoutRepositoryImpl(
                         )
                     }
                 AppResult.success(pref)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getRestPref"))
             }
@@ -504,6 +533,8 @@ class WorkoutRepositoryImpl(
                     ),
                 )
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("setRestPref"))
             }
@@ -550,6 +581,8 @@ class WorkoutRepositoryImpl(
                     }
                     AppResult.success(Unit)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("swapSessionExercise"))
             }
@@ -588,6 +621,8 @@ class WorkoutRepositoryImpl(
                         id
                     }
                 AppResult.success(newSessionId)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("repeatLastSession"))
             }
@@ -622,6 +657,8 @@ class WorkoutRepositoryImpl(
                         )
                     }
                 AppResult.success(tracks)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getSessionMusic"))
             }

@@ -4,7 +4,7 @@ import android.app.Activity
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -30,13 +30,16 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.model.Song
+import kotlinx.coroutines.CancellationException
 
 /** Ziel im internen Bibliotheks-Backstack (Poweramp-Umbau). */
 private sealed interface LibraryRoute {
@@ -72,6 +75,38 @@ private fun CollectionKind.toView(): LibraryView =
         CollectionKind.GENRE -> LibraryView.GENRES
         CollectionKind.FOLDER -> LibraryView.FOLDERS
     }
+
+/**
+ * Fortschritt der Zurueck-Geste (Ausbauplan A4): liefert den Finger-Fortschritt
+ * 0..1 waehrend der Geste, sonst null. Erst beim Loslassen faellt die
+ * Entscheidung (Auswahl loeschen oder poppen) — Abbruch setzt zurueck.
+ * Eigene Funktion, damit `LibraryContent` unter der Komplexitaetsgrenze bleibt.
+ */
+@Composable
+private fun libraryBackProgress(
+    stack: SnapshotStateList<LibraryRoute>,
+    selectionActive: Boolean,
+    onClearSelection: () -> Unit,
+    onPop: () -> Unit,
+): Float? {
+    var backProgress by remember { mutableStateOf<Float?>(null) }
+    PredictiveBackHandler(enabled = selectionActive || stack.size > 1) { progress ->
+        try {
+            progress.collect { event ->
+                backProgress = if (!selectionActive && stack.size > 1) event.progress else null
+            }
+        } catch (e: CancellationException) {
+            backProgress = null
+            throw e
+        }
+        backProgress = null
+        when {
+            selectionActive -> onClearSelection()
+            else -> onPop()
+        }
+    }
+    return backProgress
+}
 
 /**
  * Bibliotheksinhalt im Poweramp-Aufbau (Umbau): Startseite mit Kategorien,
@@ -111,6 +146,16 @@ internal fun LibraryContent(
         if (stack.size > 1) stack.removeAt(stack.lastIndex)
     }
 
+    // Der Screen folgt dem Finger (leichtes Mitschieben + Abdunkeln, siehe
+    // AnimatedContent-Modifier unten); null ohne Geste oder bei Auswahl-Modus.
+    val backProgress =
+        libraryBackProgress(
+            stack = stack,
+            selectionActive = selectionActive,
+            onClearSelection = viewModel::clearSelection,
+            onPop = ::pop,
+        )
+
     fun requestDelete(songs: List<Song>) {
         if (songs.isEmpty()) return
         val uris = songs.map { Uri.parse(it.contentUri) }
@@ -118,13 +163,6 @@ internal fun LibraryContent(
             pendingDelete = songs
             val pending = MediaStore.createDeleteRequest(context.contentResolver, uris)
             deleteLauncher.launch(IntentSenderRequest.Builder(pending.intentSender).build())
-        }
-    }
-
-    BackHandler(enabled = selectionActive || stack.size > 1) {
-        when {
-            selectionActive -> viewModel.clearSelection()
-            else -> pop()
         }
     }
 
@@ -148,7 +186,16 @@ internal fun LibraryContent(
                     .using(SizeTransform(clip = false))
             },
             label = "library-route",
-            modifier = Modifier.weight(1f),
+            modifier =
+                Modifier
+                    .weight(1f)
+                    .graphicsLayer {
+                        val gesture = backProgress
+                        if (gesture != null) {
+                            translationX = size.width * gesture * 0.25f
+                            alpha = 1f - gesture * 0.25f
+                        }
+                    },
         ) { route ->
             when (route) {
                 LibraryRoute.Home -> {

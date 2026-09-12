@@ -5,6 +5,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -32,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -84,11 +87,19 @@ fun MiniPlayer(
                     )
                 }
                 Spacer(Modifier.width(12.dp))
+                // A5: Titel als Button mit 48-dp-Ziel — TalkBack meldet Titel,
+                // Kuenstler und Aktion in einer Ansage statt getrennt.
                 Column(
                     modifier =
                         Modifier
                             .weight(1f)
-                            .clickable(onClick = onOpenNowPlaying),
+                            .heightIn(min = 48.dp)
+                            .clickable(
+                                role = Role.Button,
+                                onClickLabel = stringResource(R.string.miniplayer_open_label),
+                                onClick = onOpenNowPlaying,
+                            ),
+                    verticalArrangement = Arrangement.Center,
                 ) {
                     Text(
                         text = state.title,

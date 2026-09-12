@@ -32,6 +32,7 @@ import com.dropsync.domain.workout.WorkoutGoalRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -232,6 +233,8 @@ class SettingsViewModel
                                 }
                             writeContent(uri, content)
                             ExportOutcome.Done(document.sets.size)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             ExportOutcome.WriteFailed
                         }
@@ -430,6 +433,8 @@ class SettingsViewModel
                         ReadResult.Ok(bytes.decodeToString())
                     }
                 } ?: ReadResult.Unreadable
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 ReadResult.Unreadable
             }

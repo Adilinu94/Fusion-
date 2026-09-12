@@ -8,6 +8,7 @@ import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.entity.FlatSetEntity
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -35,6 +36,8 @@ class FlatSetRepositoryImpl(
         withContext(dispatchers.io) {
             try {
                 AppResult.success(flatSetDao.getLastForExercise(exerciseId)?.toDomain())
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getLastSet"))
             }
@@ -69,6 +72,8 @@ class FlatSetRepositoryImpl(
                         ),
                     ),
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("logSet"))
             }
@@ -80,6 +85,8 @@ class FlatSetRepositoryImpl(
             try {
                 flatSetDao.delete(setId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("deleteSet"))
             }
@@ -89,6 +96,8 @@ class FlatSetRepositoryImpl(
         withContext(dispatchers.io) {
             try {
                 AppResult.success(flatSetDao.getMaxVolumeForExercise(exerciseId))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getMaxVolumeForExercise"))
             }
@@ -99,6 +108,8 @@ class FlatSetRepositoryImpl(
             try {
                 val dayEnd = dayStart + DAY_MS
                 AppResult.success(flatSetDao.getVolumeForDay(dayStart, dayEnd))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getVolumeForDay"))
             }
@@ -108,6 +119,8 @@ class FlatSetRepositoryImpl(
         withContext(dispatchers.io) {
             try {
                 AppResult.success(flatSetDao.getRecent(limit).map { it.toDomain() })
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getRecentSets"))
             }

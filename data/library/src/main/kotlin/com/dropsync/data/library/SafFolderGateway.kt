@@ -3,6 +3,7 @@ package com.dropsync.data.library
 import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
+import kotlinx.coroutines.CancellationException
 
 /** Datei aus einem SAF-Baum; [relativePath] ist der Ordnerpfad im Baum. */
 data class SafDocument(
@@ -85,6 +86,8 @@ class SafFolderGatewayImpl(
             context.contentResolver.openInputStream(Uri.parse(documentUri))?.use {
                 it.readBytes().decodeToString()
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             null
         }

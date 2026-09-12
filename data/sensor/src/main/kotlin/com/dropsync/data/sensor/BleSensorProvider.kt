@@ -29,6 +29,7 @@ import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -201,6 +202,8 @@ class BleSensorProvider
                             }
                     }
                 connectGatt(device)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 cleanupConnection(DisconnectReason.CONNECT_FAILED)
                 AppResult.failure(BleErrorMapper.map(e))
@@ -534,6 +537,8 @@ class BleSensorProvider
                             }
                             updateHealth()
                             delay(POLL_ERROR_BACKOFF_MS)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             // Transient GATT errors are expected in a tight read
                             // loop; back off briefly instead of killing the stream.

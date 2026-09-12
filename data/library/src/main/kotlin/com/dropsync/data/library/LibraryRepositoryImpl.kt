@@ -19,6 +19,7 @@ import com.dropsync.domain.library.MusicFolderFilterRepository
 import com.dropsync.domain.library.ParsedCueSheet
 import com.dropsync.domain.library.ScannedFile
 import com.dropsync.domain.library.ScannedFileKind
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -123,6 +124,8 @@ class LibraryRepositoryImpl(
                 )
             } catch (e: SecurityException) {
                 AppResult.failure(AppError.PermissionDenied(gateway.requiredPermission()))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("refreshLibrary"))
             }
@@ -143,6 +146,8 @@ class LibraryRepositoryImpl(
             try {
                 songDao.setAvailability(mediaStoreId, isAvailable = false)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("markUnavailable"))
             }
@@ -172,6 +177,8 @@ class LibraryRepositoryImpl(
                     cueTrackDao.insertAll(entities)
                 }
                 AppResult.success(entities.size)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("importCueSheet"))
             }
@@ -231,6 +238,8 @@ class LibraryRepositoryImpl(
                 )
             } catch (e: SecurityException) {
                 AppResult.failure(AppError.PermissionDenied(treeUri))
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("scanFolder"))
             }

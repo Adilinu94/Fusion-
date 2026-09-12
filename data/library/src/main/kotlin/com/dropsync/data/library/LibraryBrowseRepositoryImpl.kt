@@ -25,6 +25,7 @@ import com.dropsync.domain.library.Playlist
 import com.dropsync.domain.library.PlaylistImportResult
 import com.dropsync.domain.library.ShuffleCandidate
 import com.dropsync.domain.library.SongPlayStat
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -101,6 +102,8 @@ class LibraryBrowseRepositoryImpl(
                     }
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("recordPlayback"))
             }
@@ -128,6 +131,8 @@ class LibraryBrowseRepositoryImpl(
                         )
                     }
                 AppResult.success(candidates)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("shuffleCandidates"))
             }
@@ -150,6 +155,8 @@ class LibraryBrowseRepositoryImpl(
                     favoriteDao.remove(songId)
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("setFavorite"))
             }
@@ -167,6 +174,8 @@ class LibraryBrowseRepositoryImpl(
                 val match = toFtsPrefixQuery(trimmed)
                 val hits = browseDao.search(match)
                 AppResult.success(hits.map { it.toDomain() })
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("search"))
             }
@@ -189,6 +198,8 @@ class LibraryBrowseRepositoryImpl(
             try {
                 playlistDao.setLabel(playlistId, label?.name)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("setPlaylistLabel"))
             }
@@ -211,6 +222,8 @@ class LibraryBrowseRepositoryImpl(
                         PlaylistEntity(name = trimmed, createdAtEpochMs = now()),
                     )
                 AppResult.success(id)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("createPlaylist"))
             }
@@ -234,6 +247,8 @@ class LibraryBrowseRepositoryImpl(
                 }
                 playlistDao.renamePlaylist(playlistId, trimmed)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("renamePlaylist"))
             }
@@ -244,6 +259,8 @@ class LibraryBrowseRepositoryImpl(
             try {
                 playlistDao.deletePlaylist(playlistId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("deletePlaylist"))
             }
@@ -269,6 +286,8 @@ class LibraryBrowseRepositoryImpl(
                     playlistDao.insertItems(items)
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("addToPlaylist"))
             }
@@ -294,6 +313,8 @@ class LibraryBrowseRepositoryImpl(
                         }
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("removeFromPlaylist"))
             }
@@ -320,6 +341,8 @@ class LibraryBrowseRepositoryImpl(
                     }
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("moveInPlaylist"))
             }
@@ -392,6 +415,8 @@ class LibraryBrowseRepositoryImpl(
                         unresolved = unresolved,
                     ),
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("importM3uPlaylist"))
             }

@@ -19,7 +19,7 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 | androidx.compose (BOM) | 2026.06.01 | Apache-2.0 | Deklarative UI, Material 3, Window Size Classes | https://developer.android.com/jetpack/compose | FREIGEGEBEN |
 | androidx.navigation:navigation-compose | 2.9.8 | Apache-2.0 | Navigation | https://developer.android.com/jetpack/androidx | FREIGEGEBEN |
 | androidx.room (runtime, ktx, compiler, testing) | 2.8.4 | Apache-2.0 | Lokale Datenbank | https://developer.android.com/jetpack/androidx/releases/room | FREIGEGEBEN |
-| androidx.media3 (exoplayer, session, common, test-utils) | 1.10.1 | Apache-2.0 | Lokale Musikwiedergabe | https://developer.android.com/media/media3 | FREIGEGEBEN |
+| androidx.media3 (exoplayer, session, common, test-utils) | 1.11.0 | Apache-2.0 | Lokale Musikwiedergabe | https://developer.android.com/media/media3 | FREIGEGEBEN |
 | androidx.work:work-runtime-ktx | 2.11.2 | Apache-2.0 | Aufschiebbare Hintergrundaufgaben (nie Timer) | https://developer.android.com/jetpack/androidx/releases/work | FREIGEGEBEN |
 | androidx.datastore:datastore-preferences | 1.2.1 | Apache-2.0 | Kleine Zustandswerte (Scan-Generation u. a.) | https://developer.android.com/jetpack/androidx/releases/datastore | FREIGEGEBEN |
 | androidx.hilt:hilt-navigation-compose | 1.4.0 | Apache-2.0 | Hilt-Integration fuer Navigation | https://developer.android.com/jetpack/androidx/releases/hilt | FREIGEGEBEN |

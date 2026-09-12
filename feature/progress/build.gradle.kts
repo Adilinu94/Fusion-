@@ -32,6 +32,14 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric braucht die gemergten Ressourcen/Manifest fuer
+            // createComposeRule (ComponentActivity-Aufloesung).
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -55,6 +63,12 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(project(":core:testing"))
+    testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    // A5: Semantik-Tests der Chart-Tap-Ebene (Robolectric + createComposeRule).
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

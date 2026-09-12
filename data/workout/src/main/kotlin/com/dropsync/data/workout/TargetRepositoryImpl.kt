@@ -8,6 +8,7 @@ import com.dropsync.core.database.dao.ExerciseTargetDao
 import com.dropsync.core.database.entity.ExerciseTargetEntity
 import com.dropsync.domain.workout.ExerciseTarget
 import com.dropsync.domain.workout.TargetRepository
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -38,6 +39,8 @@ class TargetRepositoryImpl(
         withContext(dispatchers.io) {
             try {
                 AppResult.success(targetDao.getForExercise(exerciseId)?.toDomain())
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getTarget"))
             }
@@ -71,6 +74,8 @@ class TargetRepositoryImpl(
                     ),
                 )
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("setTarget"))
             }
@@ -82,6 +87,8 @@ class TargetRepositoryImpl(
             try {
                 targetDao.delete(exerciseId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("clearTarget"))
             }

@@ -21,6 +21,7 @@ import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.MatchMethod
 import com.dropsync.domain.library.MatchResult
 import com.dropsync.domain.library.SongFingerprint
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -63,6 +64,8 @@ class MarkerRepositoryImpl(
             try {
                 markerDao.update(markerId, marker.label, marker.positionMs, isEnabled = true)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("confirmMarker"))
             }
@@ -79,6 +82,8 @@ class MarkerRepositoryImpl(
             try {
                 markerDao.update(markerId, marker.label, newPositionMs, marker.isEnabled)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("moveMarker"))
             }
@@ -105,6 +110,8 @@ class MarkerRepositoryImpl(
                 ImportValidation.Valid -> {
                     try {
                         AppResult.success(transactionRunner { runImport(tracks) })
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         AppResult.failure(AppError.DatabaseFailure("importDocument"))
                     }
@@ -218,6 +225,8 @@ class MarkerRepositoryImpl(
                     )
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("linkManually"))
             }
@@ -231,6 +240,8 @@ class MarkerRepositoryImpl(
                         .getEnabledMarkersForSong(songId)
                         .map { it.toDomain(linkedSongId = songId) }
                 AppResult.success(markers)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getEnabledMarkersForSong"))
             }
@@ -294,6 +305,8 @@ class MarkerRepositoryImpl(
                         linkedSongId = songId,
                     ),
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("createManualMarker"))
             }
@@ -307,6 +320,8 @@ class MarkerRepositoryImpl(
                 // Loeschen reicht: die Linkzeile faellt per Cascade mit.
                 markerDao.deleteMarker(markerId)
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("deleteMarker"))
             }

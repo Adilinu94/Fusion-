@@ -1320,3 +1320,28 @@ angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
 - [ ] Verbleibend (nicht per Code loesbar oder fremde Entscheidung):
   Geraeteabnahmen (P4/Phase 1: Gate 11b, B1/B9, Health-Connect, Generatorlauf);
   P2-14 weiter zurueckgestellt; Push-Entscheidung beim Nutzer.
+
+## AJ. Ausbauplan Tranche A: Release-Sicherheit (A1-A5, Session: OpenCode)
+
+- [x] A1: `runBlocking` aus `TimerService` entfernt — neue `TimerTermination`
+  (suspend-Sequenz, Phase-10.3-Ordnung bleibt), 4 Tests inkl. Kill-Race-Fall.
+  `:domain:timer` 60/60, `TimerServiceForegroundTest` 7/7.
+- [x] A2: Media3 1.10.1 -> 1.11.0 (+ Notices, FFmpeg-Doku/Skript nachgezogen).
+  Neue `SessionConnectionPolicy` (eigen/System/Dritte), `onConnect` verdrahtet,
+  5 Tests. Konstantennamen gegen Media3-Quelle verifiziert (kein
+  SET_SHUFFLE_ORDER/SKIP_SILENCE/AUX_EFFECT in 1.11). `@SuppressLint` statt
+  `@OptIn` (Objekt-Scope trägt OptIn in dieser Lint-Version nicht).
+- [x] A3: Cancellation-Rethrow an 73 Stellen (14 Dateien) + `DropSyncApplication`
+  in `runTimerRecovery`/`runSeeders` entzerrt (ThrowsCount). `SwallowedException`
+  bewusst aus (AppResult-Vertrag) — stattdessen Architekturtest
+  `cancellation wird nicht verschluckt` in `ModuleDependencyRulesTest`.
+  Abbruch-Test mit Gegenbeweis (rot ohne Fix, grün mit). LargeClass-Baseline
+  per `detektBaseline` generiert (Signatur enthält Superklasse).
+- [x] A4: `tools:targetApi` 36 -> 37, `enableOnBackInvokedCallback`, Bibliothek
+  auf `PredictiveBackHandler` mit Fortschritts-Animation (eigene Composable
+  gegen Komplexitätsgrenze). 16-KB bereits in `docs/ffmpeg-build.md`.
+- [x] A5: Chart-Balken mit Wochen-Ansage (+ Robolectric-Semantik-Test, 8/8),
+  Mini-Player als Button (48 dp, onClickLabel), Now-Playing-Overflow 48 dp,
+  Settings-Chips `heightIn(48)`, Bottom-Bar ohne falschen Tab + `selected`.
+- [x] Gates: `test`, `spotlessCheck`, `lintDebug`, `detekt`, `assembleDebug`,
+  `assembleRelease`, Link-Check — alle grün.

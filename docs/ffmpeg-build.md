@@ -29,13 +29,13 @@ DSD (DSF/DFF) wird zu PCM dekodiert; natives DoP ist Folgeausbau (ADR-0009).
 - Android NDK **r28+** (empfohlen: r28 aligniert nativ auf 16-KB-Pages;
   r27 nur mit explizitem Linker-Flag `-Wl,-z,max-page-size=16384`)
 - FFmpeg 6.1+ Quellen (`git clone https://git.ffmpeg.org/ffmpeg.git`)
-- `androidx/media` Quellen passend zur genutzten Media3-Version (1.10.1)
+- `androidx/media` Quellen passend zur genutzten Media3-Version (1.11.0)
 - Host: Linux/macOS mit `make`, `clang`, `bash` (Windows via WSL)
 
 > **16-KB-Page-Size-Pflicht:** Google Play verlangt fuer Apps mit
 > targetSdk 35+ 16-KB-kompatible native Libraries
 > (https://developer.android.com/guide/practices/page-sizes). FFmpeg wird
-> von media3 1.10.1 **statisch** in `libffmpegJNI.so` gelinkt; das
+> von media3 1.11.0 **statisch** in `libffmpegJNI.so` gelinkt; das
 > Alignment bestimmt daher der NDK-Build der Extension (Schritt 3), nicht
 > der FFmpeg-Configure. Mit NDK r28+ ist nichts weiter zu tun. Verifikation
 > nach dem Bau (jede LOAD-Zeile muss `align 2**14` bzw. `0x4000` zeigen):
@@ -97,7 +97,7 @@ Die manuellen Einzelschritte (falls das Skript angepasst werden soll):
 
 ## Lizenz
 
-FFmpeg ist LGPL-2.1-or-later. **Achtung:** media3 1.10.1 baut FFmpeg mit
+FFmpeg ist LGPL-2.1-or-later. **Achtung:** media3 1.11.0 baut FFmpeg mit
 `--enable-static --disable-shared` und linkt es **statisch** in
 `libffmpegJNI.so` (zudem `--disable-avformat` — nur libavcodec/libavutil/
 libswresample). LGPL-Konformitaet bei statischer Linkung verlangt, dass

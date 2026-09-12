@@ -86,7 +86,7 @@ ANDROID_NDK_HOME=~/android-ndk-r28c bash scripts/build-ffmpeg.sh ~/ffmpeg-build
 
 Das Skript erledigt alles selbst:
 
-1. laedt androidx/media (1.10.1) und FFmpeg (n6.1.2),
+1. laedt androidx/media (1.11.0) und FFmpeg (n6.1.2),
 2. baut nur die Audio-Decoder (LGPL-konform, kein GPL/nonfree),
 3. baut die Extension als AAR,
 4. kopiert das Ergebnis nach `libs/media3-ffmpeg/` im Repo,

@@ -17,12 +17,12 @@ import androidx.core.app.ServiceCompat
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
 import com.dropsync.core.common.Clock
-import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.timer.TimerMode
 import com.dropsync.domain.timer.TimerSnapshotStore
 import com.dropsync.domain.timer.TimerState
 import com.dropsync.domain.timer.TimerStatus
+import com.dropsync.domain.timer.TimerTermination
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -32,7 +32,6 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.util.Locale
 import javax.inject.Inject
 
@@ -97,19 +96,33 @@ class TimerService : Service() {
     // --- Actions -----------------------------------------------------------
 
     /**
-     * Umbauplan Phase 10.3: Abbruchpfade muessen das Snapshot SYNCHRON
-     * loeschen, BEVOR der Service stoppt - sonst stellt ein spaeterer
-     * Prozessstart den bereits abgebrochenen Timer wieder her.
+     * Abbruch-Sequenzierung (Ausbauplan A1): Engine stoppen, Snapshot
+     * loeschen, Uhr stempeln — als suspend-Sequenz im Service-Scope, danach
+     * stoppen. Gleiche Ordnungsgarantie wie frueher `runBlocking`
+     * (Phase 10.3), aber ohne Main-Blockade.
+     */
+    private val termination by lazy {
+        TimerTermination(
+            timerEngine,
+            clearSnapshot = { snapshotStore.clear() },
+            stampMonotonicClock = {
+                monotonicStateStore.setLastElapsedRealtimeMs(clock.elapsedRealtimeMs())
+            },
+        )
+    }
+
+    /**
+     * Umbauplan Phase 10.3: Abbruchpfade muessen das Snapshot loeschen, BEVOR
+     * der Service stoppt - sonst stellt ein spaeterer Prozessstart den bereits
+     * abgebrochenen Timer wieder her. Das Stoppen haengt hinter der Sequenz
+     * in derselben Coroutine (A1).
      */
     private fun terminateTimer() {
-        timerEngine.cancel(CancelReason.USER)
-        timerEngine.reset()
-        runBlocking {
-            snapshotStore.clear()
-            monotonicStateStore.setLastElapsedRealtimeMs(clock.elapsedRealtimeMs())
+        serviceScope.launch {
+            termination.terminate()
+            ServiceCompat.stopForeground(this@TimerService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+            stopSelf()
         }
-        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
-        stopSelf()
     }
 
     /** Skip: cancel the current rest and go back to IDLE. */
@@ -119,12 +132,9 @@ class TimerService : Service() {
 
     /** +15 s: finish the current rest, then start a fresh 15 s rest. */
     private fun onPlus15() {
-        timerEngine.cancel(CancelReason.USER)
-        timerEngine.reset()
-        // Phase 10.3: altes Snapshot synchron loeschen, damit ein Kill
-        // zwischen cancel und neuem Tick nicht den alten Timer restauriert.
-        runBlocking { snapshotStore.clear() }
-        timerEngine.start(TimerMode.REST, PLUS_15_MS)
+        // Phase 10.3: altes Snapshot verwerfen, bevor der frische Timer
+        // startet — sequenziert in derselben Coroutine statt runBlocking (A1).
+        serviceScope.launch { termination.restartFresh(PLUS_15_MS) }
     }
 
     /** Finish exercise: cancel the timer immediately (design rule step 5). */

@@ -288,26 +288,23 @@ class PlaybackService : MediaLibraryService() {
          * Das interne Drop-Landungs-Kommando wird nur dem eigenen Package
          * freigegeben; fremde Controller (Android Auto, BT) bekommen
          * ausschliesslich die Standard-Browse- und Transportkommandos.
+         * Staffelung siehe [SessionConnectionPolicy] (Ausbauplan A2):
+         * System-UIDs voll (ohne Custom), Dritte ohne Queue-/Tempo-Eingriffe.
          */
         private fun isOwnPackage(controller: MediaSession.ControllerInfo): Boolean =
-            controller.packageName == ownPackageName
+            SessionConnectionPolicy.isOwnPackage(controller.packageName, ownPackageName)
 
         /** Meldet das eigene Drop-Landungs-Kommando als verfuegbar an. */
         override fun onConnect(
             session: MediaSession,
             controller: MediaSession.ControllerInfo,
         ): MediaSession.ConnectionResult {
-            val sessionCommands =
-                MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
-                    .buildUpon()
-            if (isOwnPackage(controller)) {
-                sessionCommands
-                    .add(SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY))
-                    .add(SessionCommand(PlaybackCommands.ACTION_SET_SCRUBBING_MODE, Bundle.EMPTY))
-            }
+            val own = isOwnPackage(controller)
+            val system = SessionConnectionPolicy.isSystemUid(controller.uid)
             return MediaSession.ConnectionResult
                 .AcceptedResultBuilder(session)
-                .setAvailableSessionCommands(sessionCommands.build())
+                .setAvailableSessionCommands(SessionConnectionPolicy.sessionCommands(own))
+                .setAvailablePlayerCommands(SessionConnectionPolicy.playerCommands(own, system))
                 .build()
         }
 

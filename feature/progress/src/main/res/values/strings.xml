@@ -30,6 +30,8 @@
     <string name="progress_chart_a11y">Volume of the last eight weeks, %1$s, this week %2$s</string>
     <string name="progress_chart_week_label">Wk %d</string>
     <string name="progress_chart_week_info">Wk %1$d · %2$s · %3$d of %4$d</string>
+    <!-- A5: Ansage je Balken der Tap-Ebene (Woche + Volumen). -->
+    <string name="progress_chart_bar_a11y">Week %1$d, volume %2$s</string>
     <string name="progress_trend_up">increasing</string>
     <string name="progress_trend_down">decreasing</string>
     <string name="progress_trend_flat">steady</string>

@@ -19,6 +19,11 @@ complexity:
 
 exceptions:
   SwallowedException:
+    # Bewusst aus: Der Code-Vertrag ist `catch -> AppResult.failure`
+    # (domainweit). Die echte Gefahrenklasse — verschluckte
+    # Coroutine-Abbrueche — sichert stattdessen der Architekturtest
+    # `cancellation wird nicht verschluckt` in ModuleDependencyRulesTest,
+    # der jeden `catch (e: Exception)` ohne Cancellation-Rethrow rot meldet.
     active: false
   TooGenericExceptionCaught:
     active: false

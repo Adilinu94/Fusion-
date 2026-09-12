@@ -660,6 +660,8 @@ private fun MixTransitionsSection(
                         label = { Text(stringResource(option.labelRes())) },
                         // B-AUD-5 (Weg b): kein Konsument — Chips ausgegraut.
                         enabled = false,
+                        // A5: 48-dp-Mindesthoehe fuers Touch-Ziel.
+                        modifier = Modifier.heightIn(min = 48.dp),
                     )
                 }
             }
@@ -773,6 +775,8 @@ private fun RestDuckSection(
                     selected = restDuckDb == value,
                     onClick = { onSetRestDuckDb(value) },
                     label = { Text("${value.roundToInt()} dB") },
+                    // A5: 48-dp-Mindesthoehe fuers Touch-Ziel.
+                    modifier = Modifier.heightIn(min = 48.dp),
                 )
             }
         }

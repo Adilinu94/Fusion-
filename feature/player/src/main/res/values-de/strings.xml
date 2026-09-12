@@ -7,6 +7,8 @@
     <string name="now_playing_title">Läuft gerade</string>
     <string name="now_playing_back">Zurück</string>
     <string name="now_playing_more">Weitere Optionen</string>
+    <!-- A5: onClickLabel des Mini-Player-Titels (TalkBack). -->
+    <string name="miniplayer_open_label">Now Playing öffnen</string>
     <string name="now_playing_add_marker">Marker hier setzen</string>
     <string name="now_playing_empty">Gerade läuft nichts.</string>
     <string name="now_playing_cover">Albumcover</string>

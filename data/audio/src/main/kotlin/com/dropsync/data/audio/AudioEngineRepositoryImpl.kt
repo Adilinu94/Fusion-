@@ -13,6 +13,7 @@ import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.EqBand
 import com.dropsync.domain.audio.EqPreset
 import com.dropsync.domain.audio.EqSettings
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -83,6 +84,8 @@ class AudioEngineRepositoryImpl(
                         AppResult.success(newId)
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("saveEqPreset"))
             }
@@ -97,6 +100,8 @@ class AudioEngineRepositoryImpl(
                 } else {
                     AppResult.failure(AppError.Unknown("Preset $id fehlt oder ist eingebaut"))
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("deleteEqPreset"))
             }
@@ -117,6 +122,8 @@ class AudioEngineRepositoryImpl(
                     )
                 settingsStore.save(DspConfig.sanitized(updated))
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("applyEqPreset"))
             }

@@ -551,7 +551,7 @@ private fun VolumeTile(
  * Tap auf einen Balken nennt `KW x · Volumen · y von z`.
  */
 @Composable
-private fun ChartTile(
+internal fun ChartTile(
     progress: ProgressUiState,
     modifier: Modifier = Modifier,
 ) {
@@ -588,13 +588,23 @@ private fun ChartTile(
             )
             // Tap-Ebene: acht unsichtbare Spalten ueber dem Canvas, damit der
             // Balken-Dialog ohne eigene Pointer-Logik im Chart funktioniert.
+            // A5: jede Spalte nennt Woche + Volumen — TalkBack hoert sonst
+            // achtmal nur „Button".
             Row(modifier = Modifier.matchParentSize()) {
-                bars.forEachIndexed { index, _ ->
+                bars.forEachIndexed { index, bar ->
+                    // A5-Ansage im Composable-Kontext aufloesen (semantics ist keiner).
+                    val barLabel =
+                        stringResource(
+                            R.string.progress_chart_bar_a11y,
+                            isoWeekNumber(bar.weekStartEpochMs),
+                            ProgressFormatters.volume(bar.volumeKg),
+                        )
                     Box(
                         modifier =
                             Modifier
                                 .weight(1f)
                                 .fillMaxHeight()
+                                .semantics { contentDescription = barLabel }
                                 .clickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,

@@ -16,6 +16,7 @@ import com.dropsync.domain.sensor.RepEngineVersion
 import com.dropsync.domain.sensor.RepSignalKind
 import com.dropsync.domain.sensor.calibration.ProfileLearningPolicy
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -62,6 +63,8 @@ class DataStoreCalibrationProfileRepository
                             ?: migrateLegacyIfNeeded(prefs, exerciseId, deviceId)
                     },
                 )
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration load: ${e.message}"))
             }
@@ -81,6 +84,8 @@ class DataStoreCalibrationProfileRepository
                         .mapNotNull { (_, value) -> decode(value as? String ?: "", exerciseId, deviceId) }
                         .sortedByDescending { it.revision }
                 AppResult.success(profiles)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration history: ${e.message}"))
             }
@@ -115,6 +120,8 @@ class DataStoreCalibrationProfileRepository
                     }
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration save: ${e.message}"))
             }
@@ -169,6 +176,8 @@ class DataStoreCalibrationProfileRepository
                     }
                 }
                 AppResult.success(result)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration promotion: ${e.message}"))
             }
@@ -194,6 +203,8 @@ class DataStoreCalibrationProfileRepository
                     rolledBack = true
                 }
                 AppResult.success(rolledBack)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration rollback: ${e.message}"))
             }
@@ -210,6 +221,8 @@ class DataStoreCalibrationProfileRepository
                     }
                 }
                 AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.Unknown("calibration delete: ${e.message}"))
             }

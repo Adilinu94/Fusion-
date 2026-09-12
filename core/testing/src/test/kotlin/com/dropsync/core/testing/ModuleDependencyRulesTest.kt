@@ -303,4 +303,50 @@ class ModuleDependencyRulesTest {
             )
         }
     }
+
+    // --- Cancellation-Regel (Ausbauplan A3) ----------------------------------
+
+    /**
+     * Jeder `catch (e: Exception)` braucht direkt davor einen
+     * `catch (e: CancellationException)` mit Rethrow. Sonst verwandelt der
+     * Fehlervertrag (`AppResult.failure`) Coroutine-Abbrueche in Werte und
+     * Scopes raeumen nie auf. Detekts `SwallowedException` bleibt bewusst aus
+     * (der AppResult-Vertrag ist Absicht) — diese Pruefung sichert stattdessen
+     * genau die Gefahrenklasse.
+     */
+    @Test
+    fun `cancellation wird nicht verschluckt`() {
+        val roots = listOf("app", "data", "domain", "feature", "core")
+        val violations = mutableListOf<String>()
+        var guarded = 0
+        for (root in roots) {
+            val sourceRoot = File(repoRoot, root)
+            if (!sourceRoot.isDirectory) continue
+            sourceRoot
+                .walkTopDown()
+                .filter { it.isFile && it.extension == "kt" && it.path.contains("src${File.separator}main") }
+                .forEach { file ->
+                    val lines = file.readLines()
+                    lines.forEachIndexed { index, line ->
+                        if (line.trim() == "} catch (e: Exception) {") {
+                            val guard = lines.getOrNull(index - 2)?.trim()
+                            if (guard == "} catch (e: CancellationException) {") {
+                                guarded++
+                            } else {
+                                violations += "${file.relativeTo(repoRoot).path}:${index + 1}"
+                            }
+                        }
+                    }
+                }
+        }
+        assertTrue(
+            "Cancellation-Pruefung greift ins Leere: kein bewachter Catch gefunden",
+            guarded >= 10,
+        )
+        assertTrue(
+            "catch (e: Exception) ohne Cancellation-Rethrow davor (Ausbauplan A3):\n" +
+                violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
 }

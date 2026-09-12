@@ -8,6 +8,10 @@
     <ID>CyclomaticComplexMethod:DataStoreCalibrationProfileRepository.kt:DataStoreCalibrationProfileRepository$private fun decode: CalibrationProfile?</ID>
     <ID>CyclomaticComplexMethod:OutputProfiles.kt:DspConfigCodec$fun decode: DspConfig?</ID>
     <ID>CyclomaticComplexMethod:Waveform.kt:@Composable fun RunningWaveform</ID>
+    <!-- A3 (Ausbauplan): +54 Zeilen Cancellation-Rethrow haben die Klasse ueber
+         die LargeClass-Schwelle gehoben; Split ist eigene Arbeit (B-UI-2-Niveau),
+         kein neuer Smell. -->
+    <ID>LargeClass:WorkoutRepositoryImpl.kt:WorkoutRepositoryImpl : WorkoutRepository</ID>
     <ID>LongMethod:CalibrationWizardScreen.kt:@Composable fun CalibrationWizardScreen</ID>
     <ID>LongMethod:DetailScreens.kt:@Composable internal fun FolderTreeScreen</ID>
     <ID>LongMethod:LibraryContent.kt:@Composable internal fun LibraryContent</ID>

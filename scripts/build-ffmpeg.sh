@@ -15,7 +15,7 @@
 #     scripts/build-ffmpeg.sh [ARBEITSVERZEICHNIS]
 #
 # Optionale Umgebungsvariablen:
-#   MEDIA_VERSION   Git-Tag/Branch von androidx/media (Default: 1.10.1)
+#   MEDIA_VERSION   Git-Tag/Branch von androidx/media (Default: 1.11.0)
 #   FFMPEG_REF      Git-Tag/Branch von FFmpeg (Default: n6.1.2)
 #   ANDROID_ABIS    Leerzeichenliste der ABIs (Default: arm64-v8a armeabi-v7a x86_64)
 #   ANDROID_API     Mindest-API des nativen Builds (Default: 24)
@@ -28,7 +28,7 @@ ENABLED_DECODERS=(
   dsd_lsbf dsd_msbf dsd_lsbf_planar dsd_msbf_planar wavpack
 )
 
-MEDIA_VERSION="${MEDIA_VERSION:-1.10.1}"
+MEDIA_VERSION="${MEDIA_VERSION:-1.11.0}"
 FFMPEG_REF="${FFMPEG_REF:-n6.1.2}"
 ANDROID_API="${ANDROID_API:-24}"
 read -r -a ANDROID_ABIS <<<"${ANDROID_ABIS:-arm64-v8a armeabi-v7a x86_64}"
