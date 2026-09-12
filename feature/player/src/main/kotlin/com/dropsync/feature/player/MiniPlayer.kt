@@ -21,12 +21,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -41,6 +44,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
+import kotlinx.coroutines.launch
 
 /**
  * Aktiver Mini-Player: bleibt als klar beschriebene, bedienbare
@@ -53,11 +57,16 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     onOpenNowPlaying: () -> Unit = {},
     viewModel: PlayerViewModel = hiltViewModel(),
+    // B4: App-weiter Snackbar-Host (Undo) — die Shell blendet ihn ein.
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val state by viewModel.miniPlayer.collectAsStateWithLifecycle()
     if (!state.isVisible) return
 
     var showQueue by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val queueRemovedText = stringResource(R.string.player_queue_removed)
+    val undoText = stringResource(R.string.player_undo)
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
@@ -144,7 +153,23 @@ fun MiniPlayer(
             onDismiss = { showQueue = false },
             onPlay = viewModel::playQueueItem,
             onMove = viewModel::moveQueueItem,
-            onRemove = viewModel::removeQueueItem,
+            // B4: Entfernen mit Undo (gleiche Logik wie im Now-Playing-Sheet).
+            onRemove = { index ->
+                viewModel.removeQueueItem(index)
+                if (viewModel.hasQueueUndo()) {
+                    scope.launch {
+                        val result =
+                            snackbarHostState.showSnackbar(
+                                message = queueRemovedText,
+                                actionLabel = undoText,
+                                withDismissAction = true,
+                            )
+                        if (result == SnackbarResult.ActionPerformed) {
+                            viewModel.undoRemoveQueueItem()
+                        }
+                    }
+                }
+            },
         )
     }
 }

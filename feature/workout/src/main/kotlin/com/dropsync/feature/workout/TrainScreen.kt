@@ -125,8 +125,11 @@ fun TrainScreen(
             viewModel.refreshHeartRate()
         }
 
-    // POST_NOTIFICATIONS runtime request (Phase 3 step 3). Denied -> the
-    // foreground service keeps running and cues still fire (Xiaomi fallback).
+    // POST_NOTIFICATIONS mit Kontext (B3): keine kommentarlose Anfrage mehr —
+    // eine Karte erklaert den Nutzen (Timer mit Skip/+15 s bei dunklem
+    // Bildschirm), der Nutzer entscheidet per Button. Ablehnen -> Xiaomi-
+    // Fallback (Service laeuft, Cues feuern), „Spaeter" blendet fuer die
+    // Sitzung aus.
     val context = LocalContext.current
     var notificationsAllowed by remember {
         mutableStateOf(
@@ -135,15 +138,11 @@ fun TrainScreen(
                 PackageManager.PERMISSION_GRANTED,
         )
     }
+    var notificationsDismissed by remember { mutableStateOf(false) }
     val notificationPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             notificationsAllowed = granted
         }
-    LaunchedEffect(Unit) {
-        if (!notificationsAllowed) {
-            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
 
     Column(
         modifier =
@@ -156,6 +155,13 @@ fun TrainScreen(
                 ),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
+        if (!notificationsAllowed && !notificationsDismissed) {
+            NotificationRationaleCard(
+                onActivate = { notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) },
+                onLater = { notificationsDismissed = true },
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         // Übungs-Chips + "Neue Übung"
         ExerciseChipRow(
             exercises = exercises,
@@ -1013,3 +1019,42 @@ private fun SensorWaveform(
  * Ruhephasen optisch aufzublasen.
  */
 private const val WAVEFORM_MAX_G = 3f
+
+/**
+ * Benachrichtigungs-Karte mit Kontext (Ausbauplan B3). Erklaert den Nutzen,
+ * bevor das System fragt — statt der frueheren kommentarlosen Anfrage beim
+ * ersten Compose. „Spaeter" blendet fuer die Sitzung aus.
+ */
+@Composable
+private fun NotificationRationaleCard(
+    onActivate: () -> Unit,
+    onLater: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    FlowRepSurface(modifier = modifier) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = stringResource(R.string.train_notifications_title),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Text(
+                text = stringResource(R.string.train_notifications_desc),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                FlowRepPrimaryButton(
+                    text = stringResource(R.string.train_notifications_activate),
+                    onClick = onActivate,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onLater) {
+                    Text(stringResource(R.string.train_notifications_later))
+                }
+            }
+        }
+    }
+}

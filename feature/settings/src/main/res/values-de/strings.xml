@@ -50,6 +50,20 @@
     <string name="settings_mix_duration">Übergangsdauer: %1$d s</string>
     <string name="settings_audio_entry">Audio &amp; DSP</string>
     <string name="settings_audio_entry_desc">Equalizer, Effekte, Resampler, Bit-Perfect und Ausgabeprofile</string>
+    <!-- B2: Timer-Einstieg in den Einstellungen. -->
+    <string name="settings_timer_entry">Resttimer</string>
+    <string name="settings_timer_entry_desc">Eigenständiger Timer mit Presets und Get-Ready-Vorlauf</string>
+    <!-- B5: Health-Connect nach offizieller UX-Vorgabe. -->
+    <string name="settings_health_section">Puls (Health Connect)</string>
+    <string name="settings_health_sync_title">Puls synchronisieren</string>
+    <string name="settings_health_sync_desc">Pausiert die Puls-Synchronisation oder setzt sie fort. Aus stoppt jeden Sync, die Anzeige behält den letzten Wert.</string>
+    <string name="settings_health_manage">Zugriff verwalten</string>
+    <string name="settings_health_permission_hint">Berechtigung fehlt — FlowRep kann deinen Puls nicht lesen. Freigabe in den Health-Einstellungen erteilen.</string>
+    <string name="settings_health_status_unavailable">Health Connect ist auf diesem Gerät nicht verfügbar.</string>
+    <string name="settings_health_status_update">Health Connect braucht ein Update (Play Store).</string>
+    <string name="settings_health_status_permission">Berechtigung nicht erteilt.</string>
+    <string name="settings_health_status_nodata">Verbunden — noch keine aktuellen Daten.</string>
+    <string name="settings_health_status_ready">Verbunden — Puls wird synchronisiert.</string>
     <string name="settings_privacy_section">Datenschutz</string>
     <string name="settings_privacy_body">DropSync arbeitet vollständig offline. Es gibt keine Analytics, keine Werbung und keine Netzwerkübertragung. Song-Hashes stammen nur aus Markerdateien, die du selbst importierst.</string>
     <string name="settings_rest_music_section">Musik in Pausen</string>

@@ -98,6 +98,9 @@ Verwandte Plaene: `VERBESSERUNGSPLAN.md` (Befunde B-SEC/B-DB/B-ARCH/B-UI/B-DOC),
 
 ## 4. Tranche B — Spuerbarer Nutzer-Impact (ca. 1-2 Wochen)
 
+**Status:** `[x]` erledigt bis auf Geraete-Anteile (Session: OpenCode, STATUS AK).
+B1-Generatorlauf + Messzahlen brauchen ein Geraet (Runbook + CI-Gate liegen).
+
 ### B1. Baseline Profile wirksam machen (T3)
 
 - Ziel: Eingechecktes Profil + messbarer Startup-Gewinn.

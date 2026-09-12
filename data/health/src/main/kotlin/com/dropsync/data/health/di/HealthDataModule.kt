@@ -34,6 +34,7 @@ internal object HealthDataModule {
             tokenStore = settingsStore,
             clock = clock,
             dispatchers = dispatchers,
+            syncSettings = settingsStore,
         )
 
     /**

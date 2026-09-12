@@ -34,6 +34,8 @@ import androidx.compose.material3.NavigationRail
 import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -138,14 +140,29 @@ private const val ARG_DEVICE_ID = "deviceId"
 fun DropSyncApp(windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
     val useRail = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
-
-    if (useRail) {
-        Row(modifier = Modifier.fillMaxSize()) {
-            DropSyncNavigationRail(navController)
-            DropSyncContent(navController, showBottomBar = false)
+    // B3: First-Run-Onboarding — null, solange DataStore laedt (kein Flackern
+    // fuer bestehende Nutzer), danach genau einmal bis zum Abschluss.
+    val onboardingViewModel: OnboardingViewModel = hiltViewModel()
+    val onboardingSeen by onboardingViewModel.seen.collectAsStateWithLifecycle()
+    when (onboardingSeen) {
+        null -> {
+            Box(modifier = Modifier.fillMaxSize())
         }
-    } else {
-        DropSyncContent(navController, showBottomBar = true)
+
+        false -> {
+            OnboardingScreen(onFinish = onboardingViewModel::markSeen)
+        }
+
+        true -> {
+            if (useRail) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    DropSyncNavigationRail(navController)
+                    DropSyncContent(navController, showBottomBar = false)
+                }
+            } else {
+                DropSyncContent(navController, showBottomBar = true)
+            }
+        }
     }
 }
 
@@ -186,8 +203,13 @@ private fun DropSyncContent(
         }
     }
 
+    // B4: Ein Snackbar-Host fuer die ganze Shell (Undo nach Queue-/Marker-
+    // Aktionen) — Screens zeigen darueber, kein eigener Host je Screen.
+    val appSnackbar = remember { SnackbarHostState() }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
+        snackbarHost = { SnackbarHost(hostState = appSnackbar) },
         bottomBar = {
             Column {
                 if (!hideMiniPlayer) {
@@ -195,6 +217,7 @@ private fun DropSyncContent(
                     MiniPlayer(
                         onOpenNowPlaying = { navController.openNowPlaying() },
                         viewModel = playerViewModel,
+                        snackbarHostState = appSnackbar,
                     )
                 }
                 if (showBottomBar) {
@@ -207,6 +230,7 @@ private fun DropSyncContent(
             navController,
             innerPadding,
             playerViewModel,
+            appSnackbar,
         )
     }
 }
@@ -219,6 +243,7 @@ private fun DropSyncNavHost(
     navController: NavHostController,
     contentPadding: PaddingValues,
     playerViewModel: PlayerViewModel,
+    snackbarHostState: SnackbarHostState,
 ) {
     NavHost(
         navController = navController,
@@ -277,6 +302,7 @@ private fun DropSyncNavHost(
                 // Tap auf einen Titel oeffnet direkt den Now-Playing-Screen
                 // (wie Poweramp), zusaetzlich zum Mini-Player-Tap.
                 onOpenNowPlaying = { navController.openNowPlaying() },
+                snackbarHostState = snackbarHostState,
             )
         }
         composable(TopLevelDestination.HISTORY.route) {
@@ -305,6 +331,8 @@ private fun DropSyncNavHost(
             SettingsScreen(
                 contentPadding = contentPadding,
                 onOpenAudioSettings = { navController.navigate(ROUTE_AUDIO_SETTINGS) },
+                // B2: Timer-Einstieg aus den Einstellungen (kein fuenfter Tab).
+                onOpenTimer = { navController.navigate(ROUTE_TIMER) { launchSingleTop = true } },
             )
         }
         composable(ROUTE_AUDIO_SETTINGS) {
@@ -324,6 +352,7 @@ private fun DropSyncNavHost(
                 contentPadding = contentPadding,
                 onBack = { navController.popBackStack() },
                 viewModel = playerViewModel,
+                snackbarHostState = snackbarHostState,
             )
         }
         composable(

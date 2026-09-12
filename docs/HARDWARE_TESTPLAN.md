@@ -330,6 +330,29 @@ trägt: bewusste Entscheidung dokumentieren (ADR-0001 aktualisieren).
 
 ---
 
+## B1. Baseline Profile erzeugen und vermessen (Ausbauplan)
+
+**Warum:** Die B-UI-5-Verdrahtung (`baselineProfile(project(":benchmarks"))`,
+`BaselineProfileGenerator`, `StartupBenchmark`) ist codeseitig fertig, aber
+ohne eingechecktes Profil wirkungslos. Die CI (`B1-Gate`) faellt, bis diese
+Datei existiert und nicht leer ist:
+`app/src/release/generated/baselineProfiles/baseline-prof.txt`.
+
+**Voraussetzung:** Geraet mit Root oder API 33+ (Sammeln liest
+`/data/misc/profiles`); Emulator nur mit `aosp`-Abbild (nicht `google_apis`).
+
+**Ablauf:**
+1. `./gradlew :app:generateBaselineProfile` mit verbundenem Geraet.
+2. Pruefen: Datei existiert, groesser 0 Zeilen, enthaelt App-Klassen
+   (`com.dropsync`).
+3. Einchecken: `git add app/src/release/generated/baselineProfiles/baseline-prof.txt`.
+4. Vermessen: Macrobenchmark `StartupBenchmark` (`startupNoCompilation` vs.
+   `startupBaselineProfile`, je 10 Iterationen, COLD) — p50/p90 notieren.
+5. Zahlen + Datum in `docs/STATUS_FORTSCHRITT.md` und in die Protokolltabelle
+   unten (Test-ID `B1`) eintragen. Danach ist das B1-Gate gruen.
+
+---
+
 ## 10. Freigabe-Protokoll (laufend ausfüllen)
 
 | Datum | Test-ID | Ergebnis (PASS/FAIL/ABWEICHUNG) | Artefakt/Notiz |

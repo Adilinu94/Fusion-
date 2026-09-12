@@ -17,4 +17,14 @@
     <string name="health_rationale_scope">Nur Lesezugriff, und nur auf die Herzfrequenz. FlowRep schreibt nichts nach Health Connect und liest keine anderen Gesundheitsdaten.</string>
     <string name="health_rationale_offline">Gelesen wird nur, solange die App offen ist. Der Wert bleibt auf deinem Gerät: FlowRep hat gar keine Netzwerkberechtigung, es kann also nichts übertragen werden.</string>
     <string name="health_rationale_revoke">Du kannst die Freigabe jederzeit in Health Connect zurücknehmen. FlowRep funktioniert auch ohne sie weiter — die Pulsanzeige bleibt dann einfach leer.</string>
+    <!-- First-Run-Onboarding (B3): drei Seiten, kein Wischzwang. -->
+    <string name="onboarding_music_title">Deine Musik, offline</string>
+    <string name="onboarding_music_desc">FlowRep spielt deine lokale Bibliothek — ohne Konto, ohne Streaming, ohne Netzwerk. Warteschlange, Equalizer und Marker inklusive.</string>
+    <string name="onboarding_drop_title">Drops auf den Punkt</string>
+    <string name="onboarding_drop_desc">Setze Marker auf deine Tracks. Der Resttimer landet genau auf dem Drop, mit Countdown-Ansagen zum Hören und Fühlen.</string>
+    <string name="onboarding_training_title">Ein Tagebuch, das mitzählt</string>
+    <string name="onboarding_training_desc">Sätze loggen, Pausen im Blick, Fortschritt verfolgen. Deine Trainingsdaten verlassen dieses Gerät nie.</string>
+    <string name="onboarding_next">Weiter</string>
+    <string name="onboarding_start">Los geht’s</string>
+    <string name="onboarding_skip">Überspringen</string>
 </resources>

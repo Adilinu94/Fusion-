@@ -203,4 +203,9 @@
     <string name="a11y_weight_increment">Gewicht um 2,5 Kilogramm erhöhen</string>
     <string name="a11y_close_calibration">Kalibrierung schließen</string>
     <string name="a11y_sensor_waveform">Live-Sensorsignal</string>
+    <!-- B3: Benachrichtigungs-Karte mit Kontext statt kommentarloser Anfrage. -->
+    <string name="train_notifications_title">Timer-Ansagen in der Benachrichtigung</string>
+    <string name="train_notifications_desc">FlowRep zeigt den laufenden Resttimer mit Überspringen- und +15-s-Aktionen — auch bei ausgeschaltetem Bildschirm. Ohne diese Freigabe feuern die Ansagen weiter, aber stumm.</string>
+    <string name="train_notifications_activate">Aktivieren</string>
+    <string name="train_notifications_later">Später</string>
 </resources>

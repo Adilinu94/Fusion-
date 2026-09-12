@@ -1,5 +1,7 @@
 package com.dropsync.feature.settings
 
+import android.content.Context
+import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -38,9 +40,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -57,6 +61,8 @@ import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.core.model.ThemeMode
 import com.dropsync.domain.audio.MixPreset
+import com.dropsync.domain.health.HEALTH_CONNECT_SETTINGS_ACTION
+import com.dropsync.domain.health.HeartRateAvailability
 import com.dropsync.domain.workout.ExportFormat
 import com.dropsync.domain.workout.WorkoutGoalRepository
 import kotlin.math.roundToInt
@@ -72,6 +78,7 @@ fun SettingsScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     onOpenAudioSettings: () -> Unit = {},
+    onOpenTimer: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val unmatched by viewModel.unmatchedMarkers.collectAsStateWithLifecycle()
@@ -85,6 +92,9 @@ fun SettingsScreen(
     val smartShuffleEnabled by viewModel.smartShuffleEnabled.collectAsStateWithLifecycle()
     val weeklyTrainingGoal by viewModel.weeklyTrainingGoal.collectAsStateWithLifecycle()
     val dspConfig by viewModel.dspConfig.collectAsStateWithLifecycle()
+    val heartRateSyncEnabled by viewModel.heartRateSyncEnabled.collectAsStateWithLifecycle()
+    val heartRateAvailability by viewModel.heartRateAvailability.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     var markerToLink by remember { mutableStateOf<SongMarker?>(null) }
 
@@ -197,6 +207,32 @@ fun SettingsScreen(
                 onSetPresets = viewModel::setRestPresets,
                 smartShuffleEnabled = smartShuffleEnabled,
                 onSetSmartShuffle = viewModel::setSmartShuffleEnabled,
+            )
+        }
+        item {
+            // B2: eigenstaendiger Timer-Einstieg (kein fuenfter Tab) — gleiche
+            // Route wie aus der Train-Pause, gleiche geteilte Engine.
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_timer_entry)) },
+                supportingContent = { Text(stringResource(R.string.settings_timer_entry_desc)) },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(onClick = onOpenTimer),
+            )
+        }
+        item {
+            // B5: Health-Connect nach offizieller UX-Vorgabe (Sync-Toggle,
+            // Manage-Zugriff, Hinweis bei fehlender Berechtigung).
+            HealthSyncSection(
+                syncEnabled = heartRateSyncEnabled,
+                availability = heartRateAvailability,
+                onSetSyncEnabled = viewModel::setHeartRateSyncEnabled,
+                onManageAccess = {
+                    openHealthSettings(context)
+                    viewModel.refreshHeartRateAvailability()
+                },
             )
         }
         item {
@@ -589,6 +625,77 @@ private fun WorkoutExtrasSection(
 
 /** Waehlbare Sekundenwerte fuer die Rest-Schnellwahl (B8). */
 private val PRESET_CHOICES: List<Int> = listOf(30, 45, 60, 75, 90, 120, 150, 180, 240, 300)
+
+/**
+ * Health-Connect-Abschnitt (B5, offizielle UX-Vorgabe): Sync-Schalter zum
+ * Pausieren/Fortsetzen, Statuszeile je Verfuegbarkeit, Hinweis bei fehlender
+ * Berechtigung und „Zugriff verwalten"-Button in die Health-Einstellungen.
+ */
+@Composable
+private fun HealthSyncSection(
+    syncEnabled: Boolean,
+    availability: HeartRateAvailability,
+    onSetSyncEnabled: (Boolean) -> Unit,
+    onManageAccess: () -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Text(
+            text = stringResource(R.string.settings_health_section),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        Text(
+            text = stringResource(healthStatusRes(availability)),
+            style = MaterialTheme.typography.bodySmall,
+        )
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 8.dp),
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    text = stringResource(R.string.settings_health_sync_title),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    text = stringResource(R.string.settings_health_sync_desc),
+                    style = MaterialTheme.typography.bodySmall,
+                )
+            }
+            Switch(checked = syncEnabled, onCheckedChange = onSetSyncEnabled)
+        }
+        if (availability == HeartRateAvailability.PERMISSION_REQUIRED) {
+            Text(
+                text = stringResource(R.string.settings_health_permission_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
+        TextButton(onClick = onManageAccess) {
+            Text(stringResource(R.string.settings_health_manage))
+        }
+    }
+}
+
+private fun healthStatusRes(availability: HeartRateAvailability): Int =
+    when (availability) {
+        HeartRateAvailability.HEALTH_CONNECT_NOT_AVAILABLE -> R.string.settings_health_status_unavailable
+        HeartRateAvailability.UPDATE_REQUIRED -> R.string.settings_health_status_update
+        HeartRateAvailability.PERMISSION_REQUIRED -> R.string.settings_health_status_permission
+        HeartRateAvailability.NO_RECENT_DATA -> R.string.settings_health_status_nodata
+        HeartRateAvailability.READY -> R.string.settings_health_status_ready
+    }
+
+/**
+ * Oeffnet die Health-Connect-Einstellungen („Manage access", B5). Nur wenn
+ * das System die Aktion aufloest — aeltere Geraete kennen sie nicht, dort
+ * passiert still nichts statt abzustuerzen.
+ */
+private fun openHealthSettings(context: Context) {
+    val intent = Intent(HEALTH_CONNECT_SETTINGS_ACTION)
+    if (intent.resolveActivity(context.packageManager) != null) {
+        context.startActivity(intent)
+    }
+}
 
 /**
  * Mix-Uebergaenge (Mix-Uebergaenge-Plan Phase 3): automatischer

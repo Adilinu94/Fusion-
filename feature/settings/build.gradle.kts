@@ -48,6 +48,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:designsystem"))
     implementation(project(":domain:audio"))
+    implementation(project(":domain:health"))
     implementation(project(":domain:library"))
     implementation(project(":domain:playback"))
     implementation(project(":domain:settings"))
@@ -73,6 +74,7 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

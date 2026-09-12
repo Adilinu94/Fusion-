@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +57,8 @@ fun LibraryScreen(
     modifier: Modifier = Modifier,
     onOpenNowPlaying: () -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel(),
+    // B4: App-weiter Snackbar-Host (Undo) aus der Shell.
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val error by viewModel.error.collectAsStateWithLifecycle()
 
@@ -92,6 +95,7 @@ fun LibraryScreen(
                 scanFailed = error == LibraryError.SCAN_FAILED,
                 onOpenNowPlaying = onOpenNowPlaying,
                 modifier = modifier,
+                snackbarHostState = snackbarHostState,
             )
         }
     }

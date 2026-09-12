@@ -15,6 +15,8 @@ import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.audio.CrossfadeCurves
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.MixPreset
+import com.dropsync.domain.health.HeartRateAvailability
+import com.dropsync.domain.health.HeartRateSource
 import com.dropsync.domain.library.ImportReport
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.LibraryViewPreferencesRepository
@@ -77,6 +79,7 @@ class SettingsViewModel
         private val flatSetRepository: FlatSetRepository,
         private val workoutRepository: WorkoutRepository,
         private val workoutGoalRepository: WorkoutGoalRepository,
+        private val heartRateSource: HeartRateSource,
         private val dispatchers: DispatcherProvider,
     ) : ViewModel() {
         /** Nicht zugeordnete Marker fuer die manuelle Zuordnung (Schritt 6.6). */
@@ -170,6 +173,32 @@ class SettingsViewModel
                 SharingStarted.WhileSubscribed(5_000),
                 DspConfig(),
             )
+
+        /** Herzfrequenz-Sync an/aus (B5, Google-Vorgabe „Sync with Health Connect"). */
+        val heartRateSyncEnabled: StateFlow<Boolean> =
+            heartRateSource.heartRateSyncEnabled.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                true,
+            )
+
+        /** Verfuegbarkeit der Herzfrequenz-Quelle (Status + Hinweise, B5). */
+        val heartRateAvailability: StateFlow<HeartRateAvailability> =
+            heartRateSource.availability.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                HeartRateAvailability.HEALTH_CONNECT_NOT_AVAILABLE,
+            )
+
+        /** Schaltet die Herzfrequenz-Synchronisation an/aus (B5). */
+        fun setHeartRateSyncEnabled(enabled: Boolean) {
+            viewModelScope.launch { heartRateSource.setHeartRateSyncEnabled(enabled) }
+        }
+
+        /** Liest Verfuegbarkeit neu (nach Rueckkehr aus den Health-Einstellungen, B5). */
+        fun refreshHeartRateAvailability() {
+            viewModelScope.launch { heartRateSource.refreshAvailability() }
+        }
 
         private val mutableImportState = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
         val importState: StateFlow<ImportUiState> = mutableImportState.asStateFlow()

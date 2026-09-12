@@ -203,4 +203,9 @@
     <string name="a11y_weight_increment">Increase weight by 2.5 kilograms</string>
     <string name="a11y_close_calibration">Close calibration</string>
     <string name="a11y_sensor_waveform">Live sensor signal</string>
+    <!-- B3: Benachrichtigungs-Karte mit Kontext statt kommentarloser Anfrage. -->
+    <string name="train_notifications_title">Timer cues in the notification</string>
+    <string name="train_notifications_desc">FlowRep shows the running rest timer with skip and +15 s actions — also when the screen is off. Without this permission the cues still fire, but silently.</string>
+    <string name="train_notifications_activate">Enable</string>
+    <string name="train_notifications_later">Later</string>
 </resources>

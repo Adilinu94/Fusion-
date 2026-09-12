@@ -1345,3 +1345,33 @@ angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
   Settings-Chips `heightIn(48)`, Bottom-Bar ohne falschen Tab + `selected`.
 - [x] Gates: `test`, `spotlessCheck`, `lintDebug`, `detekt`, `assembleDebug`,
   `assembleRelease`, Link-Check — alle grün.
+
+## AK. Ausbauplan Tranche B: Nutzer-Impact (B1-B5, Session: OpenCode)
+
+- [x] B1: B-UI-5-Verdrahtung verifiziert (Producer, Generator, `Require`-Benchmark).
+  CI-Gate `Baseline-Profil vorhanden` (faellt mit Runbook-Verweis, bis das
+  Profil eingecheckt ist) + Ablauf in `docs/HARDWARE_TESTPLAN.md` (neuer
+  Abschnitt B1). Generatorlauf + Messzahlen brauchen ein Geraet (offen).
+- [x] B2: Timer-Einstieg in den Einstellungen (kein 5. Tab, gleiche Route und
+  Engine wie Train-Pause). Stellrad: STD/MIN/SEK lokalisiert, Stunden-Spalte
+  aktiv (0-23 h, max. 23:59:59, pure `split/shift`-Funktionen). Tests:
+  TimerWheelMath (5) + TimerWheel-Interaktion (3, Robolectric). Timer 14/14.
+- [x] B3: First-Run-Onboarding (3 Seiten, DataStore-Flag via
+  `OnboardingRepository`/`OnboardingStore`, tri-state ohne Flackern) +
+  POST_NOTIFICATIONS-Karte mit Kontext statt Auto-Anfrage (TrainScreen).
+  Store-Test (2). Hinweis: OnboardingScreen liegt in `:app` (Shell-Flow,
+  B-ARCH-5-Spannung dokumentiert).
+- [x] B4: Undo-Snackbars ueber einen App-Host: Queue (Ende+Move-Best-Effort,
+  CUE-Tracks ohne Song-ID ohne Undo), Marker (Long-Press sofort + Undo statt
+  Dialog; Review-Bestaetigen/Verwerfen bleibt), Playlist-Eintrag und ganze
+  Playlist (mit Songs + Label). `deletePlaylist` dafuer suspend (Race
+  erklaert). Player-Tests +3 (38/38). Library-VM ohne Testinfra — Review only.
+- [x] B5: Health-Connect nach Vorgabe — Sync-Toggle (Default an, Gating in der
+  Source, Persistenz im Health-Store), Status je Availability, Hinweis bei
+  fehlender Berechtigung, Manage-Access-Button (resolve-gesichert),
+  Refresh nach Rueckkehr. Tests: Source-Sync (1), Settings-Toggle (2).
+  Health 10/10, Settings 8/8.
+- [x] Gates: `test`, `spotlessCheck`, `lintDebug`, `detekt`, `assembleDebug`,
+  `assembleRelease`, Link-Check — alle gruen.
+- [ ] Offen (Geraet/Store): B1-Generatorlauf + Messzahlen, Geraeteabnahmen
+  (P4/Schritt 13), Push-Entscheidung.

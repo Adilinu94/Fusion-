@@ -28,9 +28,6 @@
     <string name="now_playing_marker_label">Label (optional)</string>
     <string name="now_playing_marker_default_label">Drop</string>
     <string name="now_playing_marker_add_confirm">Marker setzen</string>
-    <string name="now_playing_marker_delete_title">Marker löschen?</string>
-    <string name="now_playing_marker_delete_message">\"%1$s\" bei %2$s wird entfernt.</string>
-    <string name="now_playing_marker_delete_confirm">Löschen</string>
     <string name="now_playing_marker_cancel">Abbrechen</string>
     <string name="now_playing_marker_status">%1$d bestätigte Marker</string>
     <string name="now_playing_marker_legend">Durchgezogene Linien sind aktive DropSync-Marker</string>
@@ -73,4 +70,8 @@
     <string name="now_playing_tempo_lock_effective">Lock-Tempo: %1$.2fx</string>
     <string name="quick_eq_title">Equalizer</string>
     <string name="quick_eq_bands">%1$d Bänder · dB</string>
+    <!-- B4: Undo-Snackbars (Queue, Marker). -->
+    <string name="player_queue_removed">Aus der Warteschlange entfernt</string>
+    <string name="player_marker_deleted">Marker gelöscht</string>
+    <string name="player_undo">Rückgängig</string>
 </resources>

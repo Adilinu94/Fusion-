@@ -19,4 +19,14 @@
     <string name="health_rationale_scope">Read access only, and only heart rate. FlowRep never writes to Health Connect and reads no other health data.</string>
     <string name="health_rationale_offline">Reading happens only while the app is open. The value stays on your device: FlowRep has no network permission at all, so nothing can be sent anywhere.</string>
     <string name="health_rationale_revoke">You can withdraw this permission at any time in Health Connect. FlowRep keeps working without it — the heart rate display simply stays empty.</string>
+    <!-- First-Run-Onboarding (B3): drei Seiten, kein Wischzwang. -->
+    <string name="onboarding_music_title">Your music, offline</string>
+    <string name="onboarding_music_desc">FlowRep plays your local library — no account, no streaming, no network. Queue, equalizer and markers included.</string>
+    <string name="onboarding_drop_title">Drops right on time</string>
+    <string name="onboarding_drop_desc">Set markers on your tracks. The rest timer lands exactly on the drop, with countdown cues you can hear and feel.</string>
+    <string name="onboarding_training_title">A logbook that counts along</string>
+    <string name="onboarding_training_desc">Log sets, watch your rest, follow your progress. Your training data never leaves this device.</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get started</string>
+    <string name="onboarding_skip">Skip</string>
 </resources>

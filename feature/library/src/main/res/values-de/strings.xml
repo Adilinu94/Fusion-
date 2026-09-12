@@ -135,4 +135,8 @@
     <string name="library_marker_confirm">Bestätigen</string>
     <string name="library_marker_discard">Verwerfen</string>
     <string name="library_unknown_track">Unbekannter Titel</string>
+    <!-- B4: Undo-Snackbars (Playlist-Eintrag, Playlist). -->
+    <string name="library_playlist_entry_removed">Aus der Playlist entfernt</string>
+    <string name="library_playlist_deleted">Playlist gelöscht</string>
+    <string name="library_undo">Rückgängig</string>
 </resources>

@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -29,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
@@ -40,6 +43,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.model.Song
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 /** Ziel im internen Bibliotheks-Backstack (Poweramp-Umbau). */
 private sealed interface LibraryRoute {
@@ -120,6 +125,8 @@ internal fun LibraryContent(
     scanFailed: Boolean,
     onOpenNowPlaying: () -> Unit,
     modifier: Modifier = Modifier,
+    // B4: App-weiter Snackbar-Host (Undo) aus der Shell.
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val stack = remember { mutableStateListOf<LibraryRoute>(LibraryRoute.Home) }
     val current = stack.last()
@@ -219,6 +226,7 @@ internal fun LibraryContent(
                         onAddToPlaylist = { songForPlaylist = it },
                         onDelete = ::requestDelete,
                         onOpenNowPlaying = onOpenNowPlaying,
+                        snackbarHostState = snackbarHostState,
                     )
                 }
 
@@ -262,6 +270,7 @@ internal fun LibraryContent(
                         contentPadding = contentPadding,
                         onBack = ::pop,
                         onOpenNowPlaying = onOpenNowPlaying,
+                        snackbarHostState = snackbarHostState,
                     )
                 }
             }
@@ -355,7 +364,12 @@ private fun CategoryRoute(
     onAddToPlaylist: (Song) -> Unit,
     onDelete: (List<Song>) -> Unit,
     onOpenNowPlaying: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
+    // B4: Undo-Texte und Scope im Composable-Kontext.
+    val scope = rememberCoroutineScope()
+    val playlistDeletedText = stringResource(R.string.library_playlist_deleted)
+    val undoText = stringResource(R.string.library_undo)
     when (category) {
         LibraryCategory.ALL_SONGS, LibraryCategory.FAVORITES, LibraryCategory.RECENTLY_ADDED,
         LibraryCategory.RECENTLY_PLAYED, LibraryCategory.MOST_PLAYED,
@@ -428,10 +442,46 @@ private fun CategoryRoute(
                     onOpen = onOpenPlaylist,
                     onCreate = viewModel::createPlaylist,
                     onRename = viewModel::renamePlaylist,
-                    onDelete = viewModel::deletePlaylist,
+                    // B4: Loeschen mit Undo statt unwiderruflich (suspend:
+                    // erst danach ist hasPlaylistUndo() aussagekraeftig).
+                    onDelete = { playlistId ->
+                        scope.launch {
+                            viewModel.deletePlaylist(playlistId)
+                            scope.showLibraryUndoSnackbar(
+                                host = snackbarHostState,
+                                message = playlistDeletedText,
+                                actionLabel = undoText,
+                                hasUndo = viewModel.hasPlaylistUndo(),
+                                onUndo = viewModel::undoDeletePlaylist,
+                            )
+                        }
+                    },
                 )
             }
         }
+    }
+}
+
+/**
+ * B4: Undo-Snackbar — Aufrufer loesen Texte und Scope im Composable-Kontext
+ * auf und reichen den App-Host durch.
+ */
+private fun CoroutineScope.showLibraryUndoSnackbar(
+    host: SnackbarHostState,
+    message: String,
+    actionLabel: String,
+    hasUndo: Boolean,
+    onUndo: () -> Unit,
+) {
+    if (!hasUndo) return
+    launch {
+        val result =
+            host.showSnackbar(
+                message = message,
+                actionLabel = actionLabel,
+                withDismissAction = true,
+            )
+        if (result == SnackbarResult.ActionPerformed) onUndo()
     }
 }
 
@@ -611,10 +661,15 @@ private fun PlaylistDetailRoute(
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     onOpenNowPlaying: () -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     LaunchedEffect(playlistId) { viewModel.openPlaylist(playlistId) }
     val playlist by viewModel.openPlaylist.collectAsStateWithLifecycle()
     val songs by viewModel.playlistSongs.collectAsStateWithLifecycle()
+    // B4: Undo-Texte und Scope im Composable-Kontext.
+    val scope = rememberCoroutineScope()
+    val entryRemovedText = stringResource(R.string.library_playlist_entry_removed)
+    val undoText = stringResource(R.string.library_undo)
     val pl = playlist
     if (pl != null) {
         PlaylistDetail(
@@ -629,7 +684,19 @@ private fun PlaylistDetailRoute(
                 viewModel.play(songs, index)
                 onOpenNowPlaying()
             },
-            onRemove = { position -> viewModel.removeFromPlaylist(pl.id, position) },
+            onRemove = { position ->
+                // B4: Entfernen mit Undo (Song-ID fuer das Wiederanhaengen).
+                songs.getOrNull(position)?.let { song ->
+                    viewModel.removeFromPlaylist(pl.id, position, song.mediaStoreId)
+                    scope.showLibraryUndoSnackbar(
+                        host = snackbarHostState,
+                        message = entryRemovedText,
+                        actionLabel = undoText,
+                        hasUndo = viewModel.hasPlaylistEntryUndo(),
+                        onUndo = viewModel::undoRemoveFromPlaylist,
+                    )
+                }
+            },
             onMove = { from, to -> viewModel.moveInPlaylist(pl.id, from, to) },
             onSetLabel = { label -> viewModel.setPlaylistLabel(pl.id, label) },
         )

@@ -1,5 +1,6 @@
 package com.dropsync.feature.settings
 
+import app.cash.turbine.test
 import com.dropsync.core.model.AccentColor
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.ThemeMode
@@ -48,6 +49,7 @@ class SettingsViewModelTest {
     private val accent = FakeAccentColorRepository()
     private val libraryViews = FakeLibraryViewPreferencesRepository()
     private val goals = RecordingWorkoutGoalRepository()
+    private val heart = FakeHeartRateSourceForSettings()
 
     @Before
     fun setUpMainDispatcher() {
@@ -75,6 +77,7 @@ class SettingsViewModelTest {
             flatSetRepository = FakeFlatSetRepository(),
             workoutRepository = FakeWorkoutRepository(),
             workoutGoalRepository = goals,
+            heartRateSource = heart,
             dispatchers = TestDispatcherProvider(dispatcher),
         )
 
@@ -170,5 +173,34 @@ class SettingsViewModelTest {
             assertEquals(AccentColor.BLUE, accent.lastWritten)
             assertEquals(true, libraryViews.lastShuffleWritten)
             assertEquals(5, goals.lastWritten)
+        }
+
+    @Test
+    fun `herzfrequenz-sync-ausschalten erreicht die quelle`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.setHeartRateSyncEnabled(false)
+            advanceUntilIdle()
+
+            assertEquals(false, heart.lastSyncWritten)
+            model.heartRateSyncEnabled.test {
+                awaitItem() // Startwert true, dann der Fake-Wert.
+                assertEquals(false, awaitItem())
+            }
+        }
+
+    @Test
+    fun `herzfrequenz-verfuegbarkeit wird durchgereicht`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.heartRateAvailability.test {
+                awaitItem() // Startwert NOT_AVAILABLE, dann der Fake-Wert.
+                assertEquals(
+                    com.dropsync.domain.health.HeartRateAvailability.READY,
+                    awaitItem(),
+                )
+            }
         }
 }

@@ -39,6 +39,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -91,6 +92,20 @@ data class BucketDetail(
     val view: LibraryView,
     val key: String,
     val label: String,
+)
+
+/** B4: Gemerkter Playlist-Eintrag fuer Undo (Playlist + Song + alte Position). */
+private data class RemovedPlaylistEntry(
+    val playlistId: Long,
+    val songId: Long,
+    val position: Int,
+)
+
+/** B4: Gemerkte geloeschte Playlist fuer Undo (neue ID beim Wiederherstellen). */
+private data class DeletedPlaylist(
+    val name: String,
+    val songIds: List<Long>,
+    val label: PlaylistLabel?,
 )
 
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
@@ -330,6 +345,12 @@ class LibraryViewModel
 
         private val selectedPlaylistId = MutableStateFlow<Long?>(null)
 
+        /** B4: Zuletzt entfernter Playlist-Eintrag fuer Undo (null = keins offen). */
+        private var lastRemovedPlaylistEntry: RemovedPlaylistEntry? = null
+
+        /** B4: Zuletzt geloeschte Playlist fuer Undo (null = keins offen). */
+        private var lastDeletedPlaylist: DeletedPlaylist? = null
+
         /** Aktuell geoeffnete Playlist-Detailansicht; null = Liste. */
         val openPlaylist: StateFlow<Playlist?> =
             combine(selectedPlaylistId, browseRepository.playlists) { id, all ->
@@ -557,10 +578,41 @@ class LibraryViewModel
             viewModelScope.launch { browseRepository.renamePlaylist(playlistId, trimmed) }
         }
 
-        /** Loescht eine Playlist und schliesst ggf. deren Detailansicht. */
-        fun deletePlaylist(playlistId: Long) {
+        /**
+         * Loescht eine Playlist und schliesst ggf. deren Detailansicht.
+         *
+         * Suspend statt Fire-and-forget (B4): Die UI zeigt erst danach Undo an —
+         * sonst wuerde `hasPlaylistUndo()` noch den alten Stand lesen und ein
+         * schnelles Undo liefe ins Leere (oder stellte spaeter die falsche
+         * Playlist wieder her).
+         */
+        suspend fun deletePlaylist(playlistId: Long) {
             if (selectedPlaylistId.value == playlistId) selectedPlaylistId.value = null
-            viewModelScope.launch { browseRepository.deletePlaylist(playlistId) }
+            // B4: Stand fuer Undo merken (Name, Songs, Label).
+            val info = playlists.value.find { it.id == playlistId }
+            val songIds = browseRepository.songsOfPlaylist(playlistId).first().map { it.mediaStoreId }
+            browseRepository.deletePlaylist(playlistId)
+            lastDeletedPlaylist = info?.let { DeletedPlaylist(it.name, songIds, it.label) }
+        }
+
+        /** B4: true, solange eine geloeschte Playlist wiederherstellbar ist. */
+        fun hasPlaylistUndo(): Boolean = lastDeletedPlaylist != null
+
+        /**
+         * B4: Legt die geloeschte Playlist mit Songs und Label wieder an
+         * (neue ID — Verknuepfungen anderswo zeigen auf die alte).
+         */
+        fun undoDeletePlaylist() {
+            val deleted = lastDeletedPlaylist ?: return
+            lastDeletedPlaylist = null
+            viewModelScope.launch {
+                browseRepository.createPlaylist(deleted.name).onSuccess { id ->
+                    if (deleted.songIds.isNotEmpty()) {
+                        browseRepository.addToPlaylist(id, deleted.songIds)
+                    }
+                    browseRepository.setPlaylistLabel(id, deleted.label)
+                }
+            }
         }
 
         /** Fuegt [song] der Playlist [playlistId] hinzu. */
@@ -575,8 +627,30 @@ class LibraryViewModel
         fun removeFromPlaylist(
             playlistId: Long,
             position: Int,
+            songId: Long,
         ) {
+            lastRemovedPlaylistEntry = RemovedPlaylistEntry(playlistId, songId, position)
             viewModelScope.launch { browseRepository.removeFromPlaylist(playlistId, position) }
+        }
+
+        /** B4: true, solange ein entfernter Playlist-Eintrag wiederherstellbar ist. */
+        fun hasPlaylistEntryUndo(): Boolean = lastRemovedPlaylistEntry != null
+
+        /**
+         * B4: Haengt den entfernten Eintrag wieder an und schiebt ihn an die
+         * alte Position (Best-Effort: ohne Insert-API ueber Ende + Move).
+         */
+        fun undoRemoveFromPlaylist() {
+            val removed = lastRemovedPlaylistEntry ?: return
+            lastRemovedPlaylistEntry = null
+            viewModelScope.launch {
+                val sizeBefore = playlistSongs.value.size
+                browseRepository.addToPlaylist(removed.playlistId, listOf(removed.songId))
+                val target = removed.position.coerceAtMost(sizeBefore)
+                if (target < sizeBefore) {
+                    browseRepository.moveInPlaylist(removed.playlistId, sizeBefore, target)
+                }
+            }
         }
 
         /** Verschiebt einen Playlist-Eintrag; Reihenfolge bleibt lueckenlos. */

@@ -28,9 +28,6 @@
     <string name="now_playing_marker_label">Label (optional)</string>
     <string name="now_playing_marker_default_label">Drop</string>
     <string name="now_playing_marker_add_confirm">Set marker</string>
-    <string name="now_playing_marker_delete_title">Delete marker?</string>
-    <string name="now_playing_marker_delete_message">\"%1$s\" at %2$s will be removed.</string>
-    <string name="now_playing_marker_delete_confirm">Delete</string>
     <string name="now_playing_marker_cancel">Cancel</string>
     <string name="now_playing_marker_status">%1$d confirmed markers</string>
     <string name="now_playing_marker_legend">Solid ticks are active DropSync markers</string>
@@ -73,4 +70,8 @@
     <string name="now_playing_tempo_lock_effective">Lock speed: %1$.2fx</string>
     <string name="quick_eq_title">Equalizer</string>
     <string name="quick_eq_bands">%1$d bands · dB</string>
+    <!-- B4: Undo-Snackbars (Queue, Marker). -->
+    <string name="player_queue_removed">Removed from queue</string>
+    <string name="player_marker_deleted">Marker deleted</string>
+    <string name="player_undo">Undo</string>
 </resources>

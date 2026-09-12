@@ -35,6 +35,8 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -43,6 +45,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -74,6 +77,7 @@ import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
+import kotlinx.coroutines.launch
 import java.util.Locale
 import kotlin.math.abs
 
@@ -165,6 +169,9 @@ fun NowPlayingScreen(
     onBack: () -> Unit,
     contentPadding: PaddingValues = PaddingValues(),
     viewModel: PlayerViewModel = hiltViewModel(),
+    // B4: App-weiter Snackbar-Host (Undo) — die Shell blendet ihn ueber dem
+    // Mini-Player ein.
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val state by viewModel.nowPlaying.collectAsStateWithLifecycle()
     // P1-Fix (deferred state read): die Live-Position wird ABSICHTLICH nicht
@@ -191,9 +198,35 @@ fun NowPlayingScreen(
 
     var menuOpen by remember { mutableStateOf(false) }
     var createMarkerAtMs by remember { mutableStateOf<Long?>(null) }
-    var deleteMarker by remember { mutableStateOf<SongMarker?>(null) }
     var showQueue by remember { mutableStateOf(false) }
     var showTempo by remember { mutableStateOf(false) }
+
+    // B4: Undo-Texte im Composable-Kontext aufloesen (Gesten-Lambdas sind keiner).
+    val scope = rememberCoroutineScope()
+    val queueRemovedText = stringResource(R.string.player_queue_removed)
+    val markerDeletedText = stringResource(R.string.player_marker_deleted)
+    val undoText = stringResource(R.string.player_undo)
+
+    /**
+     * B4: Zeigt nach einer loeschenden Aktion Undo an; bei Bestaetigung laeuft
+     * das gemerkte Undo im ViewModel.
+     */
+    fun showUndoSnackbar(
+        message: String,
+        hasUndo: Boolean,
+        onUndo: () -> Unit,
+    ) {
+        if (!hasUndo) return
+        scope.launch {
+            val result =
+                snackbarHostState.showSnackbar(
+                    message = message,
+                    actionLabel = undoText,
+                    withDismissAction = true,
+                )
+            if (result == SnackbarResult.ActionPerformed) onUndo()
+        }
+    }
 
     // Marker-Anteile EINMAL je Marker-/Dauer-Aenderung berechnen (P1-Fix).
     // Vorher entstand diese Liste zweimal pro Recomposition — also zehnmal
@@ -333,7 +366,14 @@ fun NowPlayingScreen(
                                 MARKER_HIT_SLOP_FRACTION,
                             )
                         if (nearest >= 0) {
-                            deleteMarker = markers[nearest]
+                            // B4: sofort loeschen + Undo statt Bestaetigungsdialog.
+                            val marker = markers[nearest]
+                            viewModel.deleteMarker(marker.id)
+                            showUndoSnackbar(
+                                message = markerDeletedText,
+                                hasUndo = viewModel.hasMarkerUndo(),
+                                onUndo = viewModel::undoDeleteMarker,
+                            )
                         } else {
                             createMarkerAtMs = (fraction * duration).toLong()
                         }
@@ -362,23 +402,20 @@ fun NowPlayingScreen(
             onDismiss = { createMarkerAtMs = null },
         )
     }
-    deleteMarker?.let { marker ->
-        DeleteMarkerDialog(
-            marker = marker,
-            onConfirm = {
-                viewModel.deleteMarker(marker.id)
-                deleteMarker = null
-            },
-            onDismiss = { deleteMarker = null },
-        )
-    }
     if (showQueue) {
         QueueSheet(
             state = queue,
             onDismiss = { showQueue = false },
             onPlay = viewModel::playQueueItem,
             onMove = viewModel::moveQueueItem,
-            onRemove = viewModel::removeQueueItem,
+            onRemove = { index ->
+                viewModel.removeQueueItem(index)
+                showUndoSnackbar(
+                    message = queueRemovedText,
+                    hasUndo = viewModel.hasQueueUndo(),
+                    onUndo = viewModel::undoRemoveQueueItem,
+                )
+            },
         )
     }
     if (showTempo) {
@@ -842,33 +879,6 @@ private fun CreateMarkerDialog(
         },
         confirmButton = {
             TextButton(onClick = { onConfirm(label) }) { Text(stringResource(R.string.now_playing_marker_add_confirm)) }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.now_playing_marker_cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun DeleteMarkerDialog(
-    marker: SongMarker,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(stringResource(R.string.now_playing_marker_delete_title)) },
-        text = {
-            Text(
-                stringResource(
-                    R.string.now_playing_marker_delete_message,
-                    marker.label.ifEmpty { stringResource(R.string.now_playing_marker_default_label) },
-                    formatTimeMs(marker.positionMs),
-                ),
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = onConfirm) { Text(stringResource(R.string.now_playing_marker_delete_confirm)) }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text(stringResource(R.string.now_playing_marker_cancel)) }

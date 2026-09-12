@@ -73,6 +73,12 @@ data class QueueUiState(
     val currentIndex: Int = -1,
 )
 
+/** B4: Gemerkter Queue-Eintrag fuer Undo (Eintrag + alte Position). */
+private data class RemovedQueueEntry(
+    val item: QueueItem,
+    val index: Int,
+)
+
 /**
  * Zustand der Waveform-Anzeige (Marker/Waveform-Plan Phase 3). Die
  * Grundfunktion (Abspielen, Springen per Zeit) haengt nie an der Analyse:
@@ -478,6 +484,12 @@ class PlayerViewModel
          */
         private val markersVersion = MutableStateFlow(0)
 
+        /** B4: Zuletzt geloeschter Marker fuer Undo (null = keins offen). */
+        private var lastDeletedMarker: SongMarker? = null
+
+        /** B4: Zuletzt entfernter Queue-Eintrag fuer Undo (null = keins offen). */
+        private var lastRemovedQueueEntry: RemovedQueueEntry? = null
+
         @OptIn(ExperimentalCoroutinesApi::class)
         val nowPlayingMarkers: StateFlow<List<SongMarker>> =
             combine(currentSongId, markersVersion) { songId, _ -> songId }
@@ -503,8 +515,27 @@ class PlayerViewModel
 
         /** Marker nach Bestaetigung loeschen (Phase 4, Long-Press). */
         fun deleteMarker(markerId: Long) {
+            lastDeletedMarker = nowPlayingMarkers.value.find { it.id == markerId }
             viewModelScope.launch {
                 markerRepository.deleteMarker(markerId)
+                markersVersion.value++
+            }
+        }
+
+        /** B4: true, solange ein geloeschter Marker wiederherstellbar ist. */
+        fun hasMarkerUndo(): Boolean = lastDeletedMarker != null
+
+        /**
+         * B4: Stellt den zuletzt geloeschten Marker wieder her (gleicher Song,
+         * gleiches Label, gleiche Position — neue ID). Ersetzt den
+         * Bestaetigungsdialog durch sofortiges Loeschen + Undo.
+         */
+        fun undoDeleteMarker() {
+            val marker = lastDeletedMarker ?: return
+            lastDeletedMarker = null
+            val songId = marker.linkedSongId ?: nowPlaying.value.songId ?: return
+            viewModelScope.launch {
+                markerRepository.createManualMarker(songId, marker.label, marker.positionMs)
                 markersVersion.value++
             }
         }
@@ -546,7 +577,31 @@ class PlayerViewModel
         }
 
         fun removeQueueItem(index: Int) {
+            val item = queue.value.items.getOrNull(index)
+            lastRemovedQueueEntry = item?.let { RemovedQueueEntry(it, index) }
             viewModelScope.launch { playbackRepository.removeFromQueue(index) }
+        }
+
+        /** B4: true, solange ein entfernter Queue-Eintrag wiederherstellbar ist. */
+        fun hasQueueUndo(): Boolean = lastRemovedQueueEntry?.item?.songId != null
+
+        /**
+         * B4: Haengt den entfernten Eintrag wieder an und schiebt ihn an die
+         * alte Position (Best-Effort: ohne Insert-API ueber Ende + Move).
+         * Virtuelle CUE-Tracks (ohne Song-ID) sind nicht wiederherstellbar.
+         */
+        fun undoRemoveQueueItem() {
+            val removed = lastRemovedQueueEntry ?: return
+            lastRemovedQueueEntry = null
+            val songId = removed.item.songId ?: return
+            viewModelScope.launch {
+                val song = libraryRepository.getSong(songId).getOrNull() ?: return@launch
+                playbackRepository.addToQueueEnd(song)
+                val lastIndex = queue.value.items.lastIndex
+                if (removed.index in 0..lastIndex) {
+                    playbackRepository.moveInQueue(lastIndex, removed.index)
+                }
+            }
         }
 
         // Queue-Prewarming (Umbauplan Phase 4): sobald die Waveform des

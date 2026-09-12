@@ -50,6 +50,20 @@
     <string name="settings_mix_duration">Transition length: %1$d s</string>
     <string name="settings_audio_entry">Audio &amp; DSP</string>
     <string name="settings_audio_entry_desc">Equalizer, effects, resampler, bit-perfect and output profiles</string>
+    <!-- B2: Timer-Einstieg in den Einstellungen. -->
+    <string name="settings_timer_entry">Rest timer</string>
+    <string name="settings_timer_entry_desc">Standalone timer with presets and get-ready lead-in</string>
+    <!-- B5: Health-Connect nach offizieller UX-Vorgabe. -->
+    <string name="settings_health_section">Heart rate (Health Connect)</string>
+    <string name="settings_health_sync_title">Sync heart rate</string>
+    <string name="settings_health_sync_desc">Pauses or resumes heart rate sync. Off stops all sync, the display keeps its last value.</string>
+    <string name="settings_health_manage">Manage access</string>
+    <string name="settings_health_permission_hint">Permission missing — FlowRep cannot read your heart rate. Grant access in the Health settings.</string>
+    <string name="settings_health_status_unavailable">Health Connect is not available on this device.</string>
+    <string name="settings_health_status_update">Health Connect needs an update (Play Store).</string>
+    <string name="settings_health_status_permission">Permission not granted.</string>
+    <string name="settings_health_status_nodata">Connected — no recent data yet.</string>
+    <string name="settings_health_status_ready">Connected — heart rate is syncing.</string>
     <string name="settings_privacy_section">Privacy</string>
     <string name="settings_privacy_body">FlowRep works entirely offline. There is no analytics, no advertising and no network traffic.</string>
     <string name="settings_rest_music_section">Music during breaks</string>

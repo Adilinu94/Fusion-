@@ -2,8 +2,10 @@ package com.dropsync.data.settings.di
 
 import android.content.Context
 import com.dropsync.data.settings.AccentColorStore
+import com.dropsync.data.settings.OnboardingStore
 import com.dropsync.data.settings.ThemeSettingsStore
 import com.dropsync.domain.settings.AccentColorRepository
+import com.dropsync.domain.settings.OnboardingRepository
 import com.dropsync.domain.settings.ThemeSettingsRepository
 import dagger.Module
 import dagger.Provides
@@ -31,4 +33,10 @@ object SettingsDataModule {
     fun provideAccentColorRepository(
         @ApplicationContext context: Context,
     ): AccentColorRepository = AccentColorStore(context)
+
+    @Provides
+    @Singleton
+    fun provideOnboardingRepository(
+        @ApplicationContext context: Context,
+    ): OnboardingRepository = OnboardingStore(context)
 }

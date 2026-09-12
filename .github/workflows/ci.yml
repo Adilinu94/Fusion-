@@ -82,6 +82,21 @@ jobs:
       - name: Benchmark-Modul kompilieren (./gradlew compileBenchmarkReleaseKotlin)
         run: ./gradlew compileBenchmarkReleaseKotlin --stacktrace
 
+      # B1 (Ausbauplan): Das Baseline Profile muss eingecheckt sein — ohne
+      # Datei ist die gesamte B-UI-5-Verdrahtung wirkungslos und wuerde wieder
+      # still nichts produzieren. Runbook: docs/HARDWARE_TESTPLAN.md,
+      # Abschnitt B1. Der Generatorlauf braucht ein Geraet (Root oder API 33+,
+      # Emulator nur mit aosp-Abbild).
+      - name: Baseline-Profil vorhanden (B1-Gate)
+        run: |
+          PROFILE="app/src/release/generated/baselineProfiles/baseline-prof.txt"
+          if [ ! -s "$PROFILE" ]; then
+            echo "::error::Baseline Profile fehlt: $PROFILE (nicht vorhanden oder leer)."
+            echo "::error::Runbook: docs/HARDWARE_TESTPLAN.md, Abschnitt B1."
+            exit 1
+          fi
+          echo "Baseline Profile vorhanden: $(wc -l < "$PROFILE") Zeilen."
+
       # Der Debug-Build laeuft ohne R8. Ein Release-Build ist das einzige
       # Gate, das Minification/Shrinking prueft - genau dort entstehen
       # Fehler, die im Debug-Build unsichtbar bleiben (fehlende Keep-Regeln

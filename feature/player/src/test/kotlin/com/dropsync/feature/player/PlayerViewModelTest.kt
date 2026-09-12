@@ -32,6 +32,7 @@ import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
+import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -286,6 +287,87 @@ class PlayerViewModelTest {
             assertEquals(listOf(1L), markerRepository.deleteCalls)
         }
 
+    @Test
+    fun `undo stellt entfernten Queue-Eintrag an alter Position wieder her`() =
+        runTest(dispatcher) {
+            libraryRepository.songById[7L] = songFixture(id = 7L, title = "Drop City")
+            playbackRepository.stateFlow.value =
+                PlaybackState(
+                    currentSongId = 7L,
+                    queue =
+                        listOf(
+                            QueueItem("m7", 7L, "Drop City", "Artist 7"),
+                            QueueItem("m8", 8L, "Other", null),
+                            QueueItem("m9", 9L, "Third", null),
+                        ),
+                    currentIndex = 0,
+                )
+            val vm = viewModel()
+            vm.queue.test {
+                awaitQueueUntil { it.items.size == 3 }
+                assertFalse(vm.hasQueueUndo())
+                vm.removeQueueItem(0)
+                assertTrue(vm.hasQueueUndo())
+                vm.undoRemoveQueueItem()
+                dispatcher.scheduler.advanceUntilIdle()
+                assertEquals(listOf(0), playbackRepository.removedIndices)
+                assertEquals(listOf(7L), playbackRepository.addedToEnd.map { it.mediaStoreId })
+                assertEquals(listOf(2 to 0), playbackRepository.movedPairs)
+                assertFalse(vm.hasQueueUndo())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `undo ohne Song-ID ist nicht verfuegbar`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value =
+                PlaybackState(
+                    queue = listOf(QueueItem("cue-1", null, "CUE-Track", null)),
+                    currentIndex = 0,
+                )
+            val vm = viewModel()
+            vm.queue.test {
+                awaitQueueUntil { it.items.size == 1 }
+                vm.removeQueueItem(0)
+                assertFalse(vm.hasQueueUndo())
+                vm.undoRemoveQueueItem()
+                dispatcher.scheduler.advanceUntilIdle()
+                assertTrue(playbackRepository.addedToEnd.isEmpty())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
+    @Test
+    fun `undo stellt geloeschten Marker mit Label und Position wieder her`() =
+        runTest(dispatcher) {
+            markerRepository.markersBySong[7L] =
+                listOf(
+                    SongMarker(
+                        id = 1L,
+                        label = "Drop",
+                        positionMs = 60_000L,
+                        source = com.dropsync.core.model.MarkerSource.MANUAL,
+                        isEnabled = true,
+                        linkedSongId = 7L,
+                    ),
+                )
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            val vm = viewModel()
+            vm.nowPlayingMarkers.test {
+                awaitMarkersUntil { it.size == 1 }
+                assertFalse(vm.hasMarkerUndo())
+                vm.deleteMarker(1L)
+                assertTrue(vm.hasMarkerUndo())
+                vm.undoDeleteMarker()
+                dispatcher.scheduler.advanceUntilIdle()
+                assertEquals(listOf(1L), markerRepository.deleteCalls)
+                assertEquals(listOf(Triple(7L, "Drop", 60_000L)), markerRepository.createCalls)
+                assertFalse(vm.hasMarkerUndo())
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
     private suspend fun app.cash.turbine.TurbineTestContext<NowPlayingUiState>.awaitItemUntil(
         predicate: (NowPlayingUiState) -> Boolean,
     ): NowPlayingUiState {
@@ -298,6 +380,24 @@ class PlayerViewModelTest {
     private suspend fun app.cash.turbine.TurbineTestContext<WaveformUiState>.awaitItemUntilWaveform(
         predicate: (WaveformUiState) -> Boolean,
     ): WaveformUiState {
+        while (true) {
+            val item = awaitItem()
+            if (predicate(item)) return item
+        }
+    }
+
+    private suspend fun app.cash.turbine.TurbineTestContext<QueueUiState>.awaitQueueUntil(
+        predicate: (QueueUiState) -> Boolean,
+    ): QueueUiState {
+        while (true) {
+            val item = awaitItem()
+            if (predicate(item)) return item
+        }
+    }
+
+    private suspend fun app.cash.turbine.TurbineTestContext<List<SongMarker>>.awaitMarkersUntil(
+        predicate: (List<SongMarker>) -> Boolean,
+    ): List<SongMarker> {
         while (true) {
             val item = awaitItem()
             if (predicate(item)) return item
@@ -369,16 +469,29 @@ private class FakePlaybackRepository : PlaybackRepository {
 
     override suspend fun skipToQueueIndex(index: Int): AppResult<Unit> = AppResult.success(Unit)
 
+    val movedPairs = mutableListOf<Pair<Int, Int>>()
+    val removedIndices = mutableListOf<Int>()
+    val addedToEnd = mutableListOf<Song>()
+
     override suspend fun moveInQueue(
         fromIndex: Int,
         toIndex: Int,
-    ): AppResult<Unit> = AppResult.success(Unit)
+    ): AppResult<Unit> {
+        movedPairs += fromIndex to toIndex
+        return AppResult.success(Unit)
+    }
 
-    override suspend fun removeFromQueue(index: Int): AppResult<Unit> = AppResult.success(Unit)
+    override suspend fun removeFromQueue(index: Int): AppResult<Unit> {
+        removedIndices += index
+        return AppResult.success(Unit)
+    }
 
     override suspend fun playNext(song: Song): AppResult<Unit> = AppResult.success(Unit)
 
-    override suspend fun addToQueueEnd(song: Song): AppResult<Unit> = AppResult.success(Unit)
+    override suspend fun addToQueueEnd(song: Song): AppResult<Unit> {
+        addedToEnd += song
+        return AppResult.success(Unit)
+    }
 
     override suspend fun setShuffle(enabled: Boolean): AppResult<Unit> = AppResult.success(Unit)
 

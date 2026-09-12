@@ -23,6 +23,18 @@ class FakeHeartRateSource : HeartRateSource {
 
     override val requiredPermissions: Set<String> = setOf("android.permission.health.READ_HEART_RATE")
 
+    private val _heartRateSyncEnabled = MutableStateFlow(true)
+
+    override val heartRateSyncEnabled: Flow<Boolean> = _heartRateSyncEnabled.asStateFlow()
+
+    fun setSyncEnabled(enabled: Boolean) {
+        _heartRateSyncEnabled.value = enabled
+    }
+
+    override suspend fun setHeartRateSyncEnabled(enabled: Boolean) {
+        _heartRateSyncEnabled.value = enabled
+    }
+
     var refreshCalls = 0
         private set
 

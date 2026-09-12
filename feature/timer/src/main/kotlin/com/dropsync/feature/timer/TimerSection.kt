@@ -193,45 +193,60 @@ fun TimerSection(
 }
 
 @Composable
-private fun TimerWheel(
+internal fun TimerWheel(
     seconds: Int,
     onSecondsChange: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val minutes = seconds / 60
-    val remainder = seconds % 60
+    val (hours, minutes, remainder) = splitTimerSeconds(seconds)
     Row(
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
+        // B2: Die Stunden-Spalte war deaktiviert (00/01-Placeholder) — jetzt
+        // echte Stunden 0..23 in Stunden-Schritten, Maximum 23:59:59.
         TimerWheelColumn(
-            label = "STD",
-            previousValue = "23",
-            value = "00",
-            nextValue = "01",
-            onPrevious = {},
-            onNext = {},
-            enabled = false,
+            label = stringResource(R.string.timer_wheel_hours),
+            previousValue = "%02d".format((hours - 1).coerceAtLeast(0)),
+            value = "%02d".format(hours),
+            nextValue = "%02d".format((hours + 1).coerceAtMost(23)),
+            onPrevious = { onSecondsChange(shiftTimerSeconds(seconds, -3_600)) },
+            onNext = { onSecondsChange(shiftTimerSeconds(seconds, 3_600)) },
         )
         TimerWheelColumn(
-            label = "MIN",
+            label = stringResource(R.string.timer_wheel_minutes),
             previousValue = "%02d".format((minutes - 1).coerceAtLeast(0)),
             value = "%02d".format(minutes),
             nextValue = "%02d".format((minutes + 1).coerceAtMost(59)),
-            onPrevious = { onSecondsChange((seconds - 60).coerceAtLeast(0)) },
-            onNext = { onSecondsChange((seconds + 60).coerceAtMost(3_599)) },
+            onPrevious = { onSecondsChange(shiftTimerSeconds(seconds, -60)) },
+            onNext = { onSecondsChange(shiftTimerSeconds(seconds, 60)) },
         )
         TimerWheelColumn(
-            label = "SEK",
+            label = stringResource(R.string.timer_wheel_seconds),
             previousValue = "%02d".format((remainder - 15).coerceAtLeast(0)),
             value = "%02d".format(remainder),
             nextValue = "%02d".format((remainder + 15).coerceAtMost(59)),
-            onPrevious = { onSecondsChange((seconds - 15).coerceAtLeast(0)) },
-            onNext = { onSecondsChange((seconds + 15).coerceAtMost(3_599)) },
+            onPrevious = { onSecondsChange(shiftTimerSeconds(seconds, -15)) },
+            onNext = { onSecondsChange(shiftTimerSeconds(seconds, 15)) },
         )
     }
 }
+
+/** Obergrenze des Stellrads: 23:59:59 (B2). */
+internal const val MAX_TIMER_SECONDS: Int = 86_399
+
+/** Zerlegt Gesamtsekunden in Stunden/Minuten/Restsekunden (B2, testbar). */
+internal fun splitTimerSeconds(totalSeconds: Int): Triple<Int, Int, Int> {
+    val clamped = totalSeconds.coerceIn(0, MAX_TIMER_SECONDS)
+    return Triple(clamped / 3_600, (clamped % 3_600) / 60, clamped % 60)
+}
+
+/** Verschiebt die Stellrad-Zeit um [deltaSeconds], geklemmt (B2, testbar). */
+internal fun shiftTimerSeconds(
+    currentSeconds: Int,
+    deltaSeconds: Int,
+): Int = (currentSeconds + deltaSeconds).coerceIn(0, MAX_TIMER_SECONDS)
 
 @Composable
 private fun TimerWheelColumn(

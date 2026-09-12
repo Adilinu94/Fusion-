@@ -15,4 +15,8 @@
     <string name="timer_state_paused">Timer paused</string>
     <string name="timer_state_completed">Time is up</string>
     <string name="timer_state_cancelled">Timer stopped</string>
+    <!-- B2: Stellrad-Spalten, Stunden-Spalte jetzt aktiv. -->
+    <string name="timer_wheel_hours">HRS</string>
+    <string name="timer_wheel_minutes">MIN</string>
+    <string name="timer_wheel_seconds">SEC</string>
 </resources>

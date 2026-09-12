@@ -12,6 +12,9 @@ import com.dropsync.domain.audio.BitPerfectSupport
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.EqBand
 import com.dropsync.domain.audio.EqPreset
+import com.dropsync.domain.health.HeartRateAvailability
+import com.dropsync.domain.health.HeartRateSample
+import com.dropsync.domain.health.HeartRateSource
 import com.dropsync.domain.library.CueVirtualTrack
 import com.dropsync.domain.library.FolderScanResult
 import com.dropsync.domain.library.ImportReport
@@ -249,4 +252,34 @@ class RecordingWorkoutGoalRepository(
         lastWritten = days
         state.value = days
     }
+}
+
+/**
+ * Modul-lokaler Herzfrequenz-Fake (B5): Sync-Schalter als StateFlow plus
+ * frei setzbare Verfuegbarkeit — wie die anderen Fakes hier schreibt der
+ * Setter denselben Zustand, den der Strom liest.
+ */
+class FakeHeartRateSourceForSettings(
+    syncEnabled: Boolean = true,
+    availability: HeartRateAvailability = HeartRateAvailability.READY,
+) : HeartRateSource {
+    private val syncState = MutableStateFlow(syncEnabled)
+    private val availabilityState = MutableStateFlow(availability)
+
+    override val heartRateSyncEnabled: Flow<Boolean> = syncState
+    override val availability: Flow<HeartRateAvailability> = availabilityState
+    override val latestSample: Flow<HeartRateSample?> = flowOf(null)
+    override val requiredPermissions: Set<String> = emptySet()
+
+    var lastSyncWritten: Boolean? = null
+        private set
+
+    override suspend fun setHeartRateSyncEnabled(enabled: Boolean) {
+        lastSyncWritten = enabled
+        syncState.value = enabled
+    }
+
+    override suspend fun refreshAvailability() = Unit
+
+    override suspend fun refresh(): AppResult<Unit> = AppResult.success(Unit)
 }

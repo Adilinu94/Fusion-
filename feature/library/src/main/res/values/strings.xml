@@ -141,4 +141,8 @@
     <string name="library_marker_confirm">Confirm</string>
     <string name="library_marker_discard">Discard</string>
     <string name="library_unknown_track">Unknown track</string>
+    <!-- B4: Undo-Snackbars (Playlist-Eintrag, Playlist). -->
+    <string name="library_playlist_entry_removed">Removed from playlist</string>
+    <string name="library_playlist_deleted">Playlist deleted</string>
+    <string name="library_undo">Undo</string>
 </resources>

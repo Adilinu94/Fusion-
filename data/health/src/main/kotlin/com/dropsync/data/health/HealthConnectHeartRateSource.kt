@@ -13,6 +13,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 
 /**
@@ -27,6 +28,7 @@ internal class HealthConnectHeartRateSource(
     private val tokenStore: ChangesTokenStore,
     private val clock: Clock,
     private val dispatchers: DispatcherProvider,
+    private val syncSettings: HeartRateSyncSettings,
 ) : HeartRateSource {
     private val availabilityState = MutableStateFlow(HeartRateAvailability.HEALTH_CONNECT_NOT_AVAILABLE)
     private val latestState = MutableStateFlow<HeartRateSample?>(null)
@@ -37,12 +39,23 @@ internal class HealthConnectHeartRateSource(
 
     override val requiredPermissions: Set<String> = setOf(READ_HEART_RATE_PERMISSION)
 
+    override val heartRateSyncEnabled: Flow<Boolean> = syncSettings.heartRateSyncEnabled
+
+    override suspend fun setHeartRateSyncEnabled(enabled: Boolean) {
+        syncSettings.setHeartRateSyncEnabled(enabled)
+    }
+
     override suspend fun refreshAvailability() {
         withContext(dispatchers.io) { updateAvailability() }
     }
 
     override suspend fun refresh(): AppResult<Unit> =
         withContext(dispatchers.io) {
+            // B5: Sync pausiert — keine Synchronisation, aber auch kein Fehler
+            // (der Nutzer hat bewusst pausiert, die Anzeige bleibt stehen).
+            if (!syncSettings.heartRateSyncEnabled.first()) {
+                return@withContext AppResult.success(Unit)
+            }
             val availability = updateAvailability()
             when (availability) {
                 HeartRateAvailability.HEALTH_CONNECT_NOT_AVAILABLE,

@@ -23,6 +23,16 @@ interface HeartRateSource {
     /** Permission-Strings fuer den Berechtigungs-Launcher. */
     val requiredPermissions: Set<String>
 
+    /**
+     * Sync-Schalter (B5, Google-Vorgabe „Sync with Health Connect"): Aus
+     * pausiert jede Synchronisation, an setzt sie fort. Default an; die
+     * Persistenz liegt bei der Implementierung.
+     */
+    val heartRateSyncEnabled: Flow<Boolean>
+
+    /** Schaltet die Synchronisation an/aus (nur eigene Datenflüsse). */
+    suspend fun setHeartRateSyncEnabled(enabled: Boolean)
+
     /** Nach Dialog-Ergebnis oder App-Resume den Zustand neu bestimmen. */
     suspend fun refreshAvailability()
 
@@ -52,3 +62,12 @@ data class HeartRateSample(
     val bpm: Int,
     val recordedAtEpochMs: Long,
 )
+
+/**
+ * Aktion der Health-Connect-Einstellungen (B5, „Manage access"-Button).
+ * Wertgleich mit `HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS`; als
+ * String-Konstante hier, damit Features kein Health-Connect-SDK kennen muessen
+ * (gleiche Regel wie beim Permission-Contract, Plan 3.2). Aufruf immer mit
+ * `resolveActivity`-Pruefung — aeltere Geraete kennen die Aktion nicht.
+ */
+const val HEALTH_CONNECT_SETTINGS_ACTION: String = "androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"

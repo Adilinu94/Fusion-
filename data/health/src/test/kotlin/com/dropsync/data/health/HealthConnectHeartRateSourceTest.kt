@@ -7,6 +7,8 @@ import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.domain.health.HeartRateAvailability
 import com.dropsync.domain.health.HeartRateAvailabilityResolver.ProviderState
 import com.dropsync.domain.health.HeartRateSample
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -22,9 +24,11 @@ import org.junit.Test
 class HealthConnectHeartRateSourceTest {
     private val gateway = FakeGateway()
     private val tokenStore = FakeTokenStore()
+    private val syncSettings = FakeSyncSettings()
     private val clock = FakeClock(initialEpochMillis = NOW_MS)
 
-    private fun source() = HealthConnectHeartRateSource(gateway, tokenStore, clock, TestDispatcherProvider())
+    private fun source() =
+        HealthConnectHeartRateSource(gateway, tokenStore, clock, TestDispatcherProvider(), syncSettings)
 
     @Test
     fun `ohne provider bleibt availability not available und refresh ist erfolgreich`() =
@@ -64,6 +68,22 @@ class HealthConnectHeartRateSourceTest {
                 (result as AppResult.Failure).error,
             )
             assertEquals(HeartRateAvailability.PERMISSION_REQUIRED, source.availability.first())
+        }
+
+    @Test
+    fun `pausierter sync laedt nichts nach und meldet trotzdem erfolg`() =
+        runTest {
+            syncSettings.setHeartRateSyncEnabled(false)
+            gateway.recentSamples =
+                listOf(HeartRateSample(bpm = 150, recordedAtEpochMs = NOW_MS - 1_000))
+            val source = source()
+
+            val result = source.refresh()
+
+            assertTrue(result is AppResult.Success)
+            assertEquals(0, gateway.readCalls)
+            assertNull(source.latestSample.first())
+            assertNull(tokenStore.stored)
         }
 
     @Test
@@ -180,6 +200,18 @@ class HealthConnectHeartRateSourceTest {
 
         override suspend fun clearChangesToken() {
             stored = null
+        }
+    }
+
+    private class FakeSyncSettings(
+        enabled: Boolean = true,
+    ) : HeartRateSyncSettings {
+        private val flow = MutableStateFlow(enabled)
+
+        override val heartRateSyncEnabled: Flow<Boolean> = flow
+
+        override suspend fun setHeartRateSyncEnabled(enabled: Boolean) {
+            flow.value = enabled
         }
     }
 
