@@ -72,6 +72,7 @@ import com.dropsync.feature.player.PlayerViewModel
 import com.dropsync.feature.progress.AllSetsScreen
 import com.dropsync.feature.progress.ProgressDashboardScreen
 import com.dropsync.feature.settings.SettingsScreen
+import com.dropsync.feature.timer.TimerScreen
 import com.dropsync.feature.workout.CalibrationWizardScreen
 import com.dropsync.feature.workout.ExerciseLibraryScreen
 import com.dropsync.feature.workout.TrainScreen
@@ -98,6 +99,13 @@ enum class TopLevelDestination(
  * Erreichbar ueber den Audio-Einstieg in [SettingsScreen].
  */
 private const val ROUTE_AUDIO_SETTINGS = "audio_settings"
+
+/**
+ * Standalone-Resttimer (B-ARCH-2 / P2-17, Nutzerentscheidung "Verdrahten"):
+ * kein Hauptziel, erreichbar per Tap auf die Countdown-Anzeige der
+ * Train-Pausenkonsole. Teilt sich die TimerEngine mit dem Train-Tab.
+ */
+private const val ROUTE_TIMER = "timer"
 
 /**
  * Now-Playing-Screen (Marker/Waveform-Plan Phase 1), erreichbar per Tap
@@ -256,6 +264,7 @@ private fun DropSyncNavHost(
                     navController.navigate("calibration/$exerciseId/$deviceId")
                 },
                 onOpenLibrary = { navController.navigate(ROUTE_EXERCISE_LIBRARY) { launchSingleTop = true } },
+                onOpenTimer = { navController.navigate(ROUTE_TIMER) { launchSingleTop = true } },
             )
         }
         composable(TopLevelDestination.MUSIC.route) {
@@ -296,6 +305,12 @@ private fun DropSyncNavHost(
         }
         composable(ROUTE_AUDIO_SETTINGS) {
             AudioSettingsScreen(
+                contentPadding = contentPadding,
+                onBack = { navController.popBackStack() },
+            )
+        }
+        composable(ROUTE_TIMER) {
+            TimerScreen(
                 contentPadding = contentPadding,
                 onBack = { navController.popBackStack() },
             )

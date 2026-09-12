@@ -50,6 +50,12 @@ class TemplateMatcher(
     private val threshold: Double = 0.7,
     private val poolSize: Int = 5,
     private val mode: TemplateMatchMode = TemplateMatchMode.DTW,
+    /**
+     * Umbauplan 2026-09-04 Phase 6.2: Bandbreite als Konstruktor-Parameter,
+     * damit der Offline-Sweep sie variieren kann. Default unveraendert
+     * ([DTW_BAND]); Produktivcode setzt ihn nicht.
+     */
+    private val dtwBand: Int = DTW_BAND,
 ) {
     private val templates: MutableList<List<Double>> = mutableListOf()
 
@@ -90,7 +96,7 @@ class TemplateMatcher(
         val best =
             when (mode) {
                 TemplateMatchMode.NCC -> templates.maxOf { crossCorrelate(it, normalized) }
-                TemplateMatchMode.DTW -> templates.maxOf { dtwSimilarity(it, normalized) }
+                TemplateMatchMode.DTW -> templates.maxOf { dtwSimilarity(it, normalized, dtwBand) }
             }
         return MatchResult(best, accepted = best >= threshold)
     }
@@ -178,11 +184,12 @@ class TemplateMatcher(
         internal fun dtwSimilarity(
             a: List<Double>,
             b: List<Double>,
+            bandWidth: Int = DTW_BAND,
         ): Double {
             val n = a.size
             val m = b.size
             if (n == 0 || m == 0) return -1.0
-            val band = DTW_BAND.coerceAtLeast(abs(n - m))
+            val band = bandWidth.coerceAtLeast(abs(n - m))
 
             var previous = DoubleArray(m + 1) { Double.POSITIVE_INFINITY }
             var current = DoubleArray(m + 1) { Double.POSITIVE_INFINITY }

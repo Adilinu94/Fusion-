@@ -21,7 +21,7 @@ Pro Session zwei Dateien:
   "known_active_reps": [12, 10, 8],
   "device": "M5StickC-Plus2",
   "notes": "Template aktiv, normales Tempo",
-  "samples_recorded": false
+  "samples_recorded": true
 }
 ```
 
@@ -32,6 +32,36 @@ Harness ihn nur dann, wenn `confirmedRepsEdited=true` (D3-Regel).
 Fuer Szenario `reconnect`: `reconnect_before_set` gibt an, vor welchem Satz
 (0-basiert) der Reconnect passiert ist. Saetze davor duerfen dokumentierte
 Abweichungen haben, erst ab diesem Satz gilt `delta = 0`.
+
+## Rohdaten (Umbauplan 2026-09-04 Phase 0)
+
+Der Recorder schreibt seit Phase 0 die Rohsamples jedes gezaehlten Satzes mit
+— `samples_recorded` ist `true`. Damit wird der Corpus von einem
+Abnahmeprotokoll zu einem Regressionskorpus: ohne Rohdaten laesst sich kein
+Offline-Sweep und keine Driftmessung rechnen.
+
+Pro Satz entstehen zwei Eventtypen zusaetzlich zum `set`-Event:
+
+```
+{"t":"set_window","setIndex":0,"exerciseId":7,"rateHz":49.8,"n":612,
+ "tsFirst":12340,"tsLast":24560}
+{"t":"sample","setIndex":0,"ts":12340,"ax":0.02,"ay":-0.98,"az":0.11,
+ "gx":1.4,"gy":-0.6,"gz":0.2}
+```
+
+`setIndex` stellt die Zuordnung zu `known_active_reps[i]` her — ohne ihn sind
+die Samples wieder nur ein Protokoll. Der Recorder vergibt ihn selbst aus dem
+Zaehler der `set`-Events, der Aufrufer setzt ihn nicht.
+
+**Dateigroesse:** ca. **0,4 MB je Minute** aktiver Zaehlung (50 Hz x 6 Kanaele
+als JSONL). Eine 45-Minuten-Session mit ~15 Minuten Zaehlzeit liegt bei
+**~6 MB**. Vor langen Aufnahmesessions den freien Speicher pruefen.
+
+Der Harness meldet je Session die gemessene Abtastrate und beanstandet
+Saetze mit weniger als 150 Samples oder einem mittleren Sample-Abstand
+ausserhalb 15-25 ms. Solche Saetze sind fuer Parameter-Sweeps unbrauchbar
+(die 20-ms-Firmware-Garantie hat dann nicht gehalten) — die Meldung ist eine
+Diagnose, kein PASS/FAIL-Kriterium.
 
 ## Abnahmekriterien (SHADOW_DIFF_HARNESS_PLAN.md Abschnitt 10)
 
@@ -60,9 +90,9 @@ Abweichungen haben, erst ab diesem Satz gilt `delta = 0`.
 3. **Kalibrierung:** Fuer Szenario 2, 3, 5 vorher die Kalibrierung in der
    App durchfuehren (Profil anlegen). Fuer Szenario 1 bewusst KEIN Profil
    verwenden.
-4. **Rohdaten-Schalter:** nur bei kurzen Szenario-Laeufen aktivieren
-   (Plan Abschnitt 8.1, der Recorder schreibt aktuell keine Rohdaten,
-   sondern nur die Satz-Events).
+4. **Rohdaten:** kein Schalter noetig, der Recorder schreibt sie immer mit
+   (siehe Abschnitt "Rohdaten"). Bei langen Sessions den freien Speicher im
+   Blick behalten: ~0,4 MB je Minute Zaehlzeit.
 
 ### Aufnahme einer Session
 
@@ -80,8 +110,8 @@ Abweichungen haben, erst ab diesem Satz gilt `delta = 0`.
    /sdcard/Android/data/com.dropsync/files/recordings/`) nach
    `tools/golden_shadow_corpus/` kopieren.
 2. Manifest daneben anlegen: `<name>.jsonl.meta.json` mit
-   `scenario` aus der Tabelle oben und `known_active_reps` (deine
-   Handnotizen, chronologisch, ein Wert pro Satz).
+   `scenario` aus der Tabelle oben, `known_active_reps` (deine Handnotizen,
+   chronologisch, ein Wert pro Satz) und `samples_recorded: true`.
 3. Fuer Szenario 4 (Reconnect): `reconnect_before_set` im Manifest auf den
    Satz-Index setzen, AB dem der Reconnect stattgefunden hat; in `notes`
    den Reconnect-Zeitpunkt festhalten (z. B. "Reconnect vor Satz 3").

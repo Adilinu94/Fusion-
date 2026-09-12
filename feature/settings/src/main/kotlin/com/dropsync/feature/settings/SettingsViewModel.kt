@@ -195,8 +195,8 @@ class SettingsViewModel
         val exportState: StateFlow<ExportUiState> = mutableExportState.asStateFlow()
 
         /**
-         * Exportiert das Satz-Log an die vom Nutzer gewaehlte SAF-Datei
-         * (Verbesserungsplan Phase 3). Uebungsnamen kommen aus der
+         * Exportiert das Satz-Log an die vom Nutzer gewaehlte SAF-Datei.
+         * Uebungsnamen kommen aus der
          * Bibliothek, damit der Export lesbar bleibt.
          */
         fun exportTo(

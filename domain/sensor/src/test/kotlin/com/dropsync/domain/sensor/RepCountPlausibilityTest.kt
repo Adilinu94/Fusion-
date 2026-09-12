@@ -118,4 +118,31 @@ class RepCountPlausibilityTest {
         assertEquals(RepCountPlausibility.Verdict.CONSISTENT, result.verdict)
         assertEquals(5.0, result.periodSeconds!!, 0.2)
     }
+
+    // --- countedReps im Ergebnis (Umbauplan 2026-09-04 Phase 7) ----------
+    //
+    // Die UI zeigt beide Zahlen an. Holte sie den Zaehlerstand aus einer
+    // zweiten Quelle, koennte er sich zwischen Pruefung und Anzeige geaendert
+    // haben (der Nutzer darf die Rep-Zahl vor dem Loggen korrigieren) - die
+    // Anzeige behauptete dann eine Aussage, die die Pruefung nie gemacht hat.
+
+    @Test
+    fun `Ergebnis traegt den geprueften Zaehlerstand`() {
+        val signal = periodicSignal(reps = 8, periodS = 2.0)
+        val result = RepCountPlausibility.check(signal, sampleRateHz, countedReps = 16)
+        assertEquals(16, result.countedReps)
+        assertEquals(8, result.estimatedReps)
+    }
+
+    @Test
+    fun `auch ein ergebnisloser Lauf traegt den Zaehlerstand`() {
+        // INCONCLUSIVE heisst "keine Aussage", nicht "bestaetigt". Damit ein
+        // Verbraucher das unterscheiden kann, muss er am Ergebnis sehen,
+        // worauf sich das Schweigen bezieht.
+        val tooShort = DoubleArray(100) { 60.0 * sin(2.0 * PI * it / 50.0) }
+        val result = RepCountPlausibility.check(tooShort, sampleRateHz, countedReps = 2)
+        assertEquals(RepCountPlausibility.Verdict.INCONCLUSIVE, result.verdict)
+        assertEquals(2, result.countedReps)
+        assertNull(result.estimatedReps)
+    }
 }

@@ -38,20 +38,12 @@ android {
             // JVM-Unit-Tests ein Stub; ohne diese Option wirft jeder
             // Log.d-Aufruf "Method not mocked" und beendet den Collector.
             isReturnDefaultValues = true
+            // Robolectric fuer den JSONL-Recorder (Umbauplan 2026-09-04
+            // Phase 0): der Schreibpfad haengt an Context.getExternalFilesDir,
+            // das nur mit Android-Ressourcen aufloest.
+            isIncludeAndroidResources = true
         }
     }
-}
-
-tasks.withType<Test>().configureEach {
-    // Gradle 9.5 on Windows passes -Djava.library.path unquoted when the PATH
-    // contains spaces (e.g. "C:\Program Files\PowerShell\7"). The JVM launcher
-    // then splits the argument and fails with "main class Files". Configure the
-    // property AFTER AGP (configureEach runs last) with a space-free value.
-    systemProperty("java.library.path", "C:\\dev\\jbr17\\bin")
-    // Windows appends the system PATH to java.library.path anyway, which
-    // reintroduces the spaces. Give the test worker a minimal, space-free
-    // PATH so the unquoted argument survives the launcher.
-    environment("PATH", "C:\\dev\\jbr17\\bin;C:\\Windows\\System32;C:\\Windows")
 }
 
 dependencies {
@@ -86,6 +78,10 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(project(":core:testing"))
+    // Robolectric: JsonlShadowSessionRecorderTest braucht einen echten
+    // Context fuer getExternalFilesDir (Umbauplan 2026-09-04 Phase 0.3).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

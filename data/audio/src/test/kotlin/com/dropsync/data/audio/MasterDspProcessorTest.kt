@@ -9,6 +9,7 @@ import com.dropsync.domain.audio.EqMode
 import com.dropsync.domain.audio.EqSettings
 import com.dropsync.domain.audio.ResamplerQuality
 import com.dropsync.domain.audio.ResamplerSettings
+import com.dropsync.domain.audio.ReverbSettings
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -225,5 +226,100 @@ class MasterDspProcessorTest {
         val output = readShorts(processor.output)
         val distinct = output.toSet()
         assertTrue("Dither muss mehrere Stufen erzeugen, war $distinct", distinct.size > 1)
+    }
+
+    /**
+     * B-AUD-1: `queueInput` laeuft auf dem Audiothread des
+     * `DefaultAudioSink`. Jede Allokation dort riskiert einen GC-Stall, also
+     * einen hoerbaren Underrun. Die drei Faelle unten pruefen genau die
+     * Ausloeser, die vorher `rebuildStages()` gerufen haben: Preset-Wechsel
+     * mit anderer Bandanzahl, Dither-Umschaltung und Seek/Titelwechsel.
+     *
+     * Der Nachweis laeuft ueber Referenzidentitaet der Stufenobjekte, nicht
+     * ueber Speichermessung: bleibt dieselbe Instanz aktiv, hat niemand
+     * allokiert.
+     */
+    @Test
+    fun `preset wechsel mit anderer bandanzahl allokiert keine filter`() {
+        val processor = processor(DspConfig(eq = EqSettings(enabled = true, bands = EqSettings.graphicBands(10))))
+        processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+        processor.queueInput(floatBuffer(0.1f, 0.1f))
+        val before = processor.stageIdentitiesForTest()
+
+        // 10 -> 31 Baender: vorher der Hauptausloeser fuer rebuildStages().
+        processor.submitConfig(
+            DspConfig(eq = EqSettings(enabled = true, bands = EqSettings.graphicBands(31))),
+        )
+        processor.queueInput(floatBuffer(0.1f, 0.1f))
+
+        assertEquals(
+            "Bandwechsel darf keine Stufe neu allokieren",
+            before,
+            processor.stageIdentitiesForTest(),
+        )
+        // Die neue Bandanzahl muss trotzdem wirksam sein.
+        assertEquals(31, processor.activeBandCountForTest())
+    }
+
+    @Test
+    fun `dither umschaltung allokiert keinen neuen generator`() {
+        val processor = processor(DspConfig(ditherMode = DitherMode.TPDF))
+        processor.configure(AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_16BIT))
+        processor.flush()
+        processor.queueInput(pcm16Buffer(100, 100))
+        val before = processor.stageIdentitiesForTest()
+
+        processor.submitConfig(DspConfig(ditherMode = DitherMode.SHAPED))
+        processor.queueInput(pcm16Buffer(100, 100))
+
+        assertEquals(
+            "Dither-Wechsel darf keinen neuen Generator allokieren",
+            before,
+            processor.stageIdentitiesForTest(),
+        )
+        assertEquals(DitherMode.SHAPED, processor.ditherModeForTest())
+    }
+
+    @Test
+    fun `flush setzt zustand zurueck ohne neu zu allokieren`() {
+        val config =
+            DspConfig(
+                enabled = true,
+                reverb = ReverbSettings(enabled = true, wet = 0.5),
+                resampler = ResamplerSettings(targetRateHz = 96_000, quality = ResamplerQuality.SINC),
+            )
+        val processor = processor(config)
+        processor.configure(AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT))
+        processor.flush()
+        // Mehr Frames als der laengste Freeverb-Kammfilter (1617 Taps auf
+        // 44,1 kHz, skaliert also ~1760 bei 48 kHz). Mit einem kurzen Block
+        // laeuft der Leseindex nie ueber die geschriebenen Stellen und der
+        // Test wuerde einen fehlenden Reset nicht bemerken.
+        val frames = 4_000
+        val loud = ByteBuffer.allocateDirect(frames * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(frames * 2) { loud.putFloat(0.5f) }
+        loud.flip()
+        processor.queueInput(loud)
+        val before = processor.stageIdentitiesForTest()
+
+        // Seek/Titelwechsel: vorher rebuildStages() bei JEDEM Aufruf.
+        processor.flush()
+
+        assertEquals(
+            "flush darf keine Stufe neu allokieren",
+            before,
+            processor.stageIdentitiesForTest(),
+        )
+
+        // Und der Nachhall des alten Materials darf nicht nachklingen:
+        // Stille rein, Stille raus.
+        val silence = ByteBuffer.allocateDirect(frames * 2 * 4).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(frames * 2) { silence.putFloat(0.0f) }
+        silence.flip()
+        processor.queueInput(silence)
+        val tail = readFloats(processor.output)
+        val peak = tail.maxOfOrNull { abs(it) } ?: 0f
+        assertTrue("Nach flush darf kein Reverb-Rest klingen, Spitze war $peak", peak < 1e-6f)
     }
 }

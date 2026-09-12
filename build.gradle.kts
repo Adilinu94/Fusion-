@@ -47,6 +47,12 @@ detekt {
     source.setFrom(
         files(
             "app/src",
+            // benchmarks fehlte neben feature/progress (Befund B-ARCH-4):
+            // die Liste wird manuell gepflegt, jede Auslassung bleibt still.
+            // Bewusst NICHT hier: training-core (Git-Submodul, gepinnt auf
+            // v1.0.0 - Fremdcode, dessen Findings nur im eigenen Repo
+            // behebbar sind) und libs/media3-ffmpeg (kein Kotlin-Code).
+            "benchmarks/src",
             "core/common/src",
             "core/model/src",
             "core/database/src",
@@ -71,6 +77,7 @@ detekt {
             "feature/library/src",
             "feature/audio/src",
             "feature/player/src",
+            "feature/progress/src",
             "feature/timer/src",
             "feature/workout/src",
             "feature/settings/src",

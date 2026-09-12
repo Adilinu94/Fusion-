@@ -595,6 +595,12 @@ private val PRESET_CHOICES: List<Int> = listOf(30, 45, 60, 75, 90, 120, 150, 180
  * Uebergang zwischen Titeln mit waehlbarem Preset und Dauer. An/aus
  * entspricht Crossfade-Dauer > 0; bei Bit-Perfect (ADR-0009) ist der
  * Crossfade technisch deaktiviert, der Abschnitt weist darauf hin.
+ *
+ * B-AUD-5 (Weg b, Nutzerentscheidung): Die Bedienung ist ausgegraut — die
+ * Kurven haben keinen Konsumenten, Uebergaenge laufen als harter Wechsel.
+ * Stil und Dauer bleiben persistiert und sichtbar, damit sie greifen, sobald
+ * der Konsument existiert; der Hinweis steht immer da, nicht nur im
+ * Bit-Perfect-Fall.
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -620,9 +626,15 @@ private fun MixTransitionsSection(
                 Switch(
                     checked = enabled,
                     onCheckedChange = onSetEnabled,
-                    enabled = !bitPerfectEnabled,
+                    // B-AUD-5 (Weg b): kein Konsument — Schalter ausgegraut.
+                    enabled = false,
                 )
             },
+        )
+        Text(
+            text = stringResource(R.string.settings_mix_no_effect),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 16.dp),
         )
         if (bitPerfectEnabled) {
             Text(
@@ -646,6 +658,8 @@ private fun MixTransitionsSection(
                         selected = option == preset,
                         onClick = { onSetPreset(option) },
                         label = { Text(stringResource(option.labelRes())) },
+                        // B-AUD-5 (Weg b): kein Konsument — Chips ausgegraut.
+                        enabled = false,
                     )
                 }
             }
@@ -666,6 +680,8 @@ private fun MixTransitionsSection(
                 valueRange = 1f..12f,
                 steps = 10,
                 modifier = Modifier.padding(horizontal = 16.dp),
+                // B-AUD-5 (Weg b): kein Konsument — Regler ausgegraut.
+                enabled = false,
             )
         }
     }

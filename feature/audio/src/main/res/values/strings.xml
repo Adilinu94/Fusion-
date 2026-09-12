@@ -78,6 +78,7 @@
     <string name="audio_crossfade_title">Crossfade</string>
     <string name="audio_crossfade_seconds">Duration</string>
     <string name="audio_crossfade_desc">0 = off. Never applied for gapless albums or in Bit-Perfect mode.</string>
+    <string name="audio_crossfade_no_effect">Currently without effect. Transitions play as a hard cut. Duration is kept and will apply once the consumer exists.</string>
 
     <!-- MusicFX / system effects -->
     <string name="audio_musicfx_title">System effects (MusicFX)</string>
@@ -87,7 +88,7 @@
     <!-- Bit-Perfect -->
     <string name="audio_bitperfect_title">Bit-Perfect</string>
     <string name="audio_bitperfect_enable">Bit-Perfect output</string>
-    <string name="audio_bitperfect_desc">USB DAC on Android 14+ only. Bypasses the DSP chain and float output; impossible over Bluetooth.</string>
+    <string name="audio_bitperfect_desc">USB DAC on Android 14+ only. Currently only bypasses the DSP chain. Bit-exact mixer output is not implemented yet. Impossible over Bluetooth.</string>
     <string name="audio_bitperfect_device">Device: %1$s</string>
     <string name="audio_bitperfect_rates">Sample rates: %1$s</string>
     <string name="audio_bitperfect_encodings">Encodings: %1$s</string>

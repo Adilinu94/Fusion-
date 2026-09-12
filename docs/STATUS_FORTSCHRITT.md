@@ -1208,3 +1208,115 @@ und gehen mit dem Doku-Commit der anderen Session. `spotlessCheck` ist aus
 demselben Grund rot: `data/audio/.../MasterDspProcessor.kt` ist eine offene
 fremde Baustelle (B-AUD-1). Meine Kotlin-Dateien sind sauber - der Check
 nennt genau diese eine Datei.
+
+## AH. Fremd-TODOs abgearbeitet: Link-Fix, P2-15, Phase 6.2 (2026-09-11, Session: OpenCode)
+
+Anlass: offene Punkte einer anderen KI-Session (Link-Fix UMBAUPLAN:1477,
+P2-15 zweite Haelfte, Phase 6.2 Sweep-Werkzeug) plus Nutzerentscheidungen zu
+B-AUD-4/B-AUD-5, P2-16/17 und naechstem Schwerpunkt (B-UI-1 statt P2-14).
+
+- [x] **Link-Fix:** `doku_links_check.py` war mit genau einem Fehler rot
+  (Zahl-Verweis 'Abschnitt 7' in UMBAUPLAN:1477). Anker
+  `<a name="risiko-schwelle">` vor `### 7.6 Risiko`, Verweis auf
+  `[Risiko-Abschnitt](#risiko-schwelle)` umgebogen. Check gruen (49 Dateien).
+- [x] **P2-15 zweite Haelfte:** `AudioSettingsViewModelTest` (6 Tests) +
+  modul-lokale `AudioSettingsFakes.kt` nach Settings-Muster. Bewusst OHNE
+  Robolectric (kein Context, kein Log, keine Ressourcen — Muster
+  `TrainViewModelTest`); `build.gradle.kts` nur um junit4/coroutines-test
+  ergaenzt. **Echter Bug gefunden und gefixt:** `update()` las
+  `dspConfig.value` (WhileSubscribed, ohne Abonnent dauerhaft Initialwert) —
+  zwei schnelle Aenderungen ueberschrieben sich still. Liest jetzt
+  `repository.dspConfig.first()` wie `SettingsViewModel`. Gegenbeweis: alte
+  Lesart = 2 Tests rot, neue = 6/6 gruen.
+- [x] **Fremde Regression gefangen:** Nach gruenen Laeufen schlug ploetzlich
+  `graphic band count` fehl (31 vs 10 Baender). Ursache: fremde Aenderung
+  IM BAUM (`setGraphicBandCount` ignorierte `count`, hart `graphicBands(10)`
+  — mtime 11.09. 22:00, nach meiner Arbeit). Die UI bietet 10/15/31 an; mit
+  dem Hardcode taete die Wahl nichts. `count` wiederhergestellt, 6/6 gruen.
+  Beleg, dass P2-15 seinen Zweck erfuellt — und Warnung, wie schnell ein
+  uncommitteter Baum fremde Regressionen versteckt.
+- [x] **Phase 6.2 Sweep-Werkzeug** (`:domain:sensor`-Testquellen, kein
+  Produktivcode ausser additiver Config-Durchreichung `accelVoteWindowMs` +
+  `dtwBand` mit unveraenderten Defaults): `CorpusFiles.kt` (JSONL/Manifest-
+  Parser im Recorder-Stil, ohne neue Dependency), `CorpusSweepHarness.kt`
+  (frische Pipeline je Parametersatz, echte Timestamps mit Luecken, CSV mit
+  Delta + Abstands-Metriken, zweistufige Accel-Derivation analog
+  `calibrateAccelThreshold`). `CorpusSweepHarnessTest` (Mini-Corpus 2 Saetze:
+  Baseline exakt, Accel-Schwelle trennscharf, profillose Fenster
+  protokolliert) + `CorpusReplayDeterminismTest` (zweimal = bitgleich inkl.
+  Events, Loader-Roundtrip identisch). 7 Tests; `:domain:sensor` 127/127
+  gruen. Echte Sweep-Ergebnisse brauchen weiter Phase-1-Aufnahmen; Einstieg
+  per `-Dsweep.corpus.dir=...` (ohne Flag No-Op, CI-sicher). Zwei Lektionen:
+  Marks sind Rep-Mitten (Kalibrierungs-`RepMark` = Exkursionsmaximum, nicht
+  Rep-Ende), Ruhesigma ist die stillste Sekunde (nicht "alles ausserhalb der
+  Marks" — EMA-Auslaufenden blaehen es auf und druecken jede Schwelle auf 0).
+- [x] **B-AUD-4 (Weg b):** `audio_bitperfect_desc` DE/EN verspricht keine
+  Mixer-Ausgabe mehr; Schalter (DSP-Bypass) bleibt funktional.
+- [x] **B-AUD-5 (Weg b):** `MixTransitionsSection` (Schalter/Chips/Regler)
+  und `CrossfadeSection` (Regler) ausgegraut + Hinweis "derzeit ohne
+  Wirkung" (`settings_mix_no_effect`, `audio_crossfade_no_effect`, DE/EN,
+  Ressourcen-Paritaet geprueft); Werte bleiben persistiert.
+- [x] **P2-16 (Weg b "Regeln extrahieren"):** `docs/ARCHITEKTURREGELN.md` neu
+  (3.2/1-4 aus dem Architekturtest als normativer Anker, Bauplan-Schritte aus
+  Code-Zitaten mit Belegstelle, nur-Namen-nur-Namen-Ehrlichkeit); README-Kopf
+  verweist auf die Rekonstruktion statt aufs fehlende Original.
+- [x] **P2-17 ("Verdrahten"):** neuer `TimerScreen` (TopAppBar +
+  `TimerSection`) in `:feature:timer`, Route `timer` im App-NavHost (kein
+  fuenfter Tab), Einstieg per Tap auf die Countdown-Anzeige der
+  Train-Pausenkonsole (`TrainScreen.onOpenTimer`, `train_rest_open_timer`
+  DE/EN, `onClickLabel` statt contentDescription damit TalkBack weiter die
+  Zeit vorliest). Gleiche geteilte Engine — konsistenter Zustand. Der
+  `"TIMER STARTEN"`-Teil war bereits durch B-UI-3 erledigt.
+- [x] Verifikation: `spotlessCheck`, `detekt`, `:domain:sensor:test`
+  (127/127), `:feature:audio:testDebugUnitTest` (6/6),
+  `:feature:settings:lintDebug`, `:feature:audio:lintDebug`,
+  `:feature:timer:lintDebug`, `:feature:workout:lintDebug`,
+  `:app:assembleDebug`, `doku_links_check.py` — alle gruen.
+- [ ] Naechster Schwerpunkt per Nutzerentscheidung: **B-UI-1 naechste Stufe**
+  (Tests fuer player/timer/workout nach settings/audio-Muster), nicht P2-14.
+  Offen ausserdem: uncommitteter Gesamtbaum (diese Arbeit + fremde
+  REPCOUNT-/B-DB-1-/B-AUD-1-Arbeit) sichten und committen; Push-Entscheidung;
+  Geraeteabnahmen (P4/Phase 1).
+
+**Koordination:** Parallelsession-Aenderungen im selben Baum wurden nicht
+angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
+
+1. `AudioSettingsViewModel.kt` Zeile 87 — fremde Regression
+   (`graphicBands(count)`→`graphicBands(10)`, mtime 11.09. 22:00, nach meiner
+   Arbeit): als Bugfix mit Testbeleg wiederhergestellt.
+2. **Wiederholung am 12.09. 13:41:** dieselbe Zeile erneut auf `graphicBands(10)`
+   gesetzt (Detekt `UnusedParameter` + Test `31 vs 10 Baender` wurden rot).
+   Erneut wiederhergestellt. Wer die Bandanzahl absichtlich festlegen will,
+   muss `AudioEqSection.kt:63` (Aufrufer mit 10/15/31), den KDoc-Vertrag und
+   `AudioSettingsViewModelTest` gleichzeitig aendern — stilles Festnageln
+   bricht den UI-Vertrag.
+3. `tools/doku_links_check.py`: eigener Bug gefixt (Absturz `ValueError` bei
+   Links aus `docs/` heraus, z. B. auf `../VERBESSERUNGSPLAN.md#anker` —
+   Anker werden jetzt bei Bedarf eingelesen, Pfade Repo-relativ gemeldet).
+   Beruehrt die fremden Fence-Hunks nicht.
+
+## AI. B-UI-1 erledigt: Timer- und Settings-Store-Tests (Session: OpenCode)
+
+- [x] Befund beim Sichten: `feature/player` (PlayerViewModelTest u. a.) und
+  `feature/workout` (TrainViewModelTest, PlausibilityTest,
+  CalibrationViewModelTest) waren bereits abgedeckt und gruen. Offen waren nur
+  noch `feature/timer` (0 Tests) und `data/settings` (0 Tests).
+- [x] `feature/timer`: `TimerViewModelTest` (6 Tests) + `TimerFakes.kt`
+  (FakeTimerClock, RecordingCueOutput, FakeRestTimerPreferences) gegen die
+  echte `TimerEngine`; `withViewModel`-Muster mit Scope-Cancel (250-ms-Ticker).
+  Dabei **Produktionsbug gefixt**: `getReady` lief mit `WhileSubscribed` ohne
+  Abonnenten, `startRest` las ewig den Startwert - B9-Vorlauf tot (Gegenbeweis:
+  Get-Ready-Test rot vor dem Fix auf `Eagerly`, 5/6 uebrige schon vorher gruen).
+- [x] `data/settings`: `ThemeSettingsStoreTest` (4) + `AccentColorStoreTest`
+  (3) per Robolectric nach dem DataStore-Sensor-Muster (sdk=33): Roundtrip,
+  Ueberschreiben, Defaults SYSTEM/LIME, Fallback unbekannter Rohwerte ueber
+  denselben DataStore-Namen.
+- [x] Plan nachgezogen: B-UI-1 `[x]`, P2-15 auf erledigt erweitert, Kennzahl
+  "Module ohne Tests" 0 (war 4), B-UI-2-Folgesatz aktualisiert.
+- [x] Verifikation: `spotlessCheck`, `detekt`, Tests timer 6/6, settings 7/7,
+  player 35/35, workout 34/34, audio 6/6, `:domain:sensor` 127/127,
+  `lintDebug` timer/settings, `:app:assembleDebug`, `doku_links_check.py`
+  (50 Dateien) - alle gruen.
+- [ ] Verbleibend (nicht per Code loesbar oder fremde Entscheidung):
+  Geraeteabnahmen (P4/Phase 1: Gate 11b, B1/B9, Health-Connect, Generatorlauf);
+  P2-14 weiter zurueckgestellt; Push-Entscheidung beim Nutzer.

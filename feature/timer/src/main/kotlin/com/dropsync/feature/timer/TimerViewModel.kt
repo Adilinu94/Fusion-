@@ -32,14 +32,20 @@ class TimerViewModel
     ) : ViewModel() {
         val state: StateFlow<TimerState> = timerEngine.state
 
-        /** Get-Ready-Vorlauf (B9): startRest zieht ihn als prepMs heran. */
+        /**
+         * Get-Ready-Vorlauf (B9): startRest zieht ihn als prepMs heran.
+         *
+         * Eagerly statt WhileSubscribed: Diesen Strom abonniert niemand,
+         * startRest liest nur `.value`. Mit WhileSubscribed staende dort
+         * ewig der Startwert (Vorlauf aus) — der B9-Vorlauf waere tot.
+         */
         private val getReady: StateFlow<Pair<Boolean, Int>> =
             combine(
                 restTimerPreferences.getReadyEnabled,
                 restTimerPreferences.getReadySeconds,
             ) { enabled, seconds -> enabled to seconds }.stateIn(
                 viewModelScope,
-                SharingStarted.WhileSubscribed(5_000),
+                SharingStarted.Eagerly,
                 false to RestTimerPreferencesRepository.DEFAULT_GET_READY_SECONDS,
             )
 

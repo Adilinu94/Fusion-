@@ -12,6 +12,7 @@ import com.dropsync.domain.audio.BiquadType
 import com.dropsync.domain.audio.DitherGenerator
 import com.dropsync.domain.audio.DitherMode
 import com.dropsync.domain.audio.DspConfig
+import com.dropsync.domain.audio.EqSettings
 import com.dropsync.domain.audio.Freeverb
 import com.dropsync.domain.audio.PcmCodec
 import com.dropsync.domain.audio.PcmEncoding
@@ -62,8 +63,16 @@ class MasterDspProcessor : BaseAudioProcessor() {
     private var outputRateHz = 0
     private var outputIs16Bit = false
 
-    // Zustandsbehaftete Stufen; Aufbau in onConfigure/applyConfig.
+    // Zustandsbehaftete Stufen; einmalig in onConfigure aufgebaut.
+    //
+    // B-AUD-1: Diese Objekte werden NIE im laufenden Betrieb neu allokiert.
+    // queueInput laeuft auf dem Audiothread des DefaultAudioSink; ein
+    // Freeverb-Neubau kostet dort bei Stereo rund 300 KB, und ein GC-Stall
+    // auf diesem Thread ist ein hoerbarer Underrun. Der EQ ist deshalb
+    // immer fuer EqSettings.MAX_BANDS Baender allokiert; wie viele davon
+    // wirklich rechnen, sagt activeBandCount.
     private var eqFilters: Array<Array<BiquadFilter>> = emptyArray()
+    private var activeBandCount = 0
     private var bassFilters: Array<BiquadFilter> = emptyArray()
     private var trebleFilters: Array<BiquadFilter> = emptyArray()
     private var reverb: Freeverb? = null
@@ -120,9 +129,11 @@ class MasterDspProcessor : BaseAudioProcessor() {
     }
 
     override fun onFlush() {
-        // Seek/Titelwechsel: Filterzustaende und Resampler-Historie leeren.
+        // Seek/Titelwechsel: Filterzustaende und Resampler-Historie leeren,
+        // aber nichts neu allokieren (B-AUD-1). Ein Waveform-Drag loest
+        // onFlush in dichter Folge aus.
         if (sampleRateHz > 0) {
-            rebuildStages()
+            resetStageState()
         }
     }
 
@@ -211,7 +222,10 @@ class MasterDspProcessor : BaseAudioProcessor() {
             }
         }
         if (config.eq.enabled) {
-            for (band in eqFilters) {
+            // Nur die aktiven Baender rechnen; der Rest ist allokiert, aber
+            // auf Durchlass gesetzt (B-AUD-1).
+            for (index in 0 until activeBandCount) {
+                val band = eqFilters[index]
                 for (channel in 0 until channelCount) {
                     band[channel].processInterleaved(data, count, channel, channelCount)
                 }
@@ -252,23 +266,31 @@ class MasterDspProcessor : BaseAudioProcessor() {
 
     private fun applyPendingConfig() {
         val next = pendingConfig.getAndSet(null) ?: return
-        val eqChanged =
-            next.eq.bands.size != config.eq.bands.size ||
-                next.ditherMode != config.ditherMode
         config = next
         if (sampleRateHz == 0) return
-        if (eqChanged) {
-            rebuildStages()
-        } else {
-            updateCoefficients()
-        }
+        // B-AUD-1: kein rebuildStages mehr. Bandanzahl und Dithermodus
+        // aendern nur noch Zustand in bereits allokierten Objekten - ein
+        // Preset-Wechsel ist damit allokationsfrei.
+        activeBandCount =
+            config.eq.bands.size
+                .coerceAtMost(eqFilters.size)
+        dither.mode = config.ditherMode
+        updateCoefficients()
     }
 
+    /**
+     * Allokiert alle Stufen fuer die Maximalkonfiguration. Ausschliesslich
+     * aus [onConfigure] aufgerufen - Media3 ruft das nicht im Audiothread,
+     * sondern beim Aufbau der Kette (B-AUD-1).
+     */
     private fun rebuildStages() {
         eqFilters =
-            Array(config.eq.bands.size) {
+            Array(EqSettings.MAX_BANDS) {
                 Array(channelCount) { BiquadFilter(BiquadCoefficients.IDENTITY) }
             }
+        activeBandCount =
+            config.eq.bands.size
+                .coerceAtMost(EqSettings.MAX_BANDS)
         bassFilters = Array(channelCount) { BiquadFilter(BiquadCoefficients.IDENTITY) }
         trebleFilters = Array(channelCount) { BiquadFilter(BiquadCoefficients.IDENTITY) }
         updateCoefficients()
@@ -291,14 +313,38 @@ class MasterDspProcessor : BaseAudioProcessor() {
         dither = DitherGenerator(config.ditherMode)
     }
 
+    /**
+     * Leert alle Verlaufszustaende ohne Neuallokation (B-AUD-1). Nach Seek
+     * oder Titelwechsel darf kein Rest des alten Materials nachklingen.
+     * `BiquadFilter.reset()` existierte bereits, wurde aber nirgends
+     * aufgerufen.
+     */
+    private fun resetStageState() {
+        for (band in eqFilters) {
+            for (filter in band) filter.reset()
+        }
+        for (filter in bassFilters) filter.reset()
+        for (filter in trebleFilters) filter.reset()
+        reverb?.reset()
+        resampler?.reset()
+    }
+
     private fun updateCoefficients() {
         val rate = sampleRateHz.toDouble()
         config.eq.bands.forEachIndexed { index, band ->
-            if (index >= eqFilters.size) return@forEachIndexed
+            if (index >= activeBandCount) return@forEachIndexed
             val coefficients =
                 BiquadCoefficients.of(band.type, band.frequencyHz, rate, band.gainDb, band.q)
             for (channel in 0 until channelCount) {
                 eqFilters[index][channel].coefficients = coefficients
+            }
+        }
+        // Baender jenseits der aktiven Anzahl auf Durchlass setzen: sie
+        // rechnen nicht mit, aber ein alter Koeffizientensatz darf nach
+        // einem Preset-Wechsel nicht wieder auftauchen.
+        for (index in activeBandCount until eqFilters.size) {
+            for (channel in 0 until channelCount) {
+                eqFilters[index][channel].coefficients = BiquadCoefficients.IDENTITY
             }
         }
         val bass =
@@ -329,4 +375,26 @@ class MasterDspProcessor : BaseAudioProcessor() {
         const val BASS_SHELF_HZ: Double = 100.0
         const val TREBLE_SHELF_HZ: Double = 8_000.0
     }
+
+    // --- Nur fuer Tests (B-AUD-1) ---------------------------------------
+    // Der Nachweis "keine Allokation im Audiothread" laesst sich von aussen
+    // nur ueber Referenzidentitaet fuehren. Diese drei Zugriffe geben genau
+    // das her, ohne den Zustand veraenderbar zu machen.
+
+    /** Identitaeten aller zustandsbehafteten Stufen, fuer Referenzvergleich. */
+    internal fun stageIdentitiesForTest(): List<Int> =
+        buildList {
+            for (band in eqFilters) {
+                for (filter in band) add(System.identityHashCode(filter))
+            }
+            for (filter in bassFilters) add(System.identityHashCode(filter))
+            for (filter in trebleFilters) add(System.identityHashCode(filter))
+            add(System.identityHashCode(reverb))
+            add(System.identityHashCode(resampler))
+            add(System.identityHashCode(dither))
+        }
+
+    internal fun activeBandCountForTest(): Int = activeBandCount
+
+    internal fun ditherModeForTest(): DitherMode = dither.mode
 }

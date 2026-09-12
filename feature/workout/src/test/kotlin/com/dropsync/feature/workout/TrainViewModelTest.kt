@@ -17,6 +17,7 @@ import com.dropsync.domain.timer.CueOutput
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.workout.ExerciseInfo
+import com.dropsync.feature.workout.shadow.SampleWindow
 import com.dropsync.feature.workout.shadow.ShadowDiffEvent
 import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
 import kotlinx.coroutines.Dispatchers
@@ -348,6 +349,54 @@ class TrainViewModelTest {
                     event.shadowReps,
                 )
                 assertEquals(2, event.liveCountedReps)
+
+                // Umbauplan 2026-09-04 Phase 0: derselbe Satz muss ein
+                // Sample-Fenster geschrieben haben, und zwar NACH dem
+                // set-Event (der Recorder leitet den setIndex daraus ab).
+                assertEquals(listOf("set", "samples"), shadowSessionRecorder.callOrder)
+                val window = shadowSessionRecorder.sampleWindows.single()
+                assertEquals(1L, window.exerciseId)
+                assertEquals(
+                    "Fenster muss die Rohsamples des Traces tragen, nicht eine Kopie mit anderer Laenge",
+                    samples.size,
+                    window.samples.size,
+                )
+                assertEquals(samples.first().gx, window.samples.first().gx, 1e-9)
+                assertEquals(samples.last().gx, window.samples.last().gx, 1e-9)
+
+                // Nachtrag Phase 0.7: ohne die kalibrierte Achse ist ein
+                // Offline-Replay sinnlos - es projizierte auf die
+                // Neutralachse und messe eine Pipeline, die live nie lief.
+                assertEquals(
+                    "Fenster muss das aktive Profil tragen",
+                    listOf(1.0, 0.0, 0.0),
+                    window.profile?.rotationAxis,
+                )
+                assertEquals(15.0, window.profile?.detectionThreshold)
+            }
+        }
+
+    @Test
+    fun `logSet ohne Live-Set schreibt kein Sample-Fenster`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                // Kein startCountedSet -> finishAndTakeTrace liefert null.
+                // Ein Fenster ohne Trace waere ein Fenster ohne Samples und
+                // wuerde im Corpus als "Satz ohne Rohdaten" erscheinen.
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                vm.setWeight("20")
+                vm.setReps("12")
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(1, shadowSessionRecorder.recorded.size)
+                assertEquals(
+                    "ohne Trace darf kein Sample-Fenster entstehen",
+                    0,
+                    shadowSessionRecorder.sampleWindows.size,
+                )
+                assertEquals(listOf("set"), shadowSessionRecorder.callOrder)
             }
         }
 
@@ -633,6 +682,14 @@ class TrainViewModelTest {
 
     private class FakeShadowSessionRecorder : ShadowSessionRecorder {
         val recorded = mutableListOf<ShadowDiffEvent>()
+
+        /**
+         * Umbauplan 2026-09-04 Phase 0: Reihenfolge der Aufrufe ist Teil des
+         * Vertrags (recordSamples nach recordSet), deshalb wird sie hier
+         * mitprotokolliert und nicht nur die Nutzlast.
+         */
+        val callOrder = mutableListOf<String>()
+        val sampleWindows = mutableListOf<SampleWindow>()
         var started: MutableList<String> = mutableListOf()
         var ended: Int = 0
 
@@ -642,6 +699,12 @@ class TrainViewModelTest {
 
         override fun recordSet(event: ShadowDiffEvent) {
             recorded += event
+            callOrder += "set"
+        }
+
+        override fun recordSamples(window: SampleWindow) {
+            sampleWindows += window
+            callOrder += "samples"
         }
 
         override fun endSession() {

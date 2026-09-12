@@ -18,10 +18,16 @@ from pathlib import Path
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
 ARCHIVE = DOCS / "archive"
+REPO = DOCS.parent
 
 LINK_RE = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
 NUMMER_RE = re.compile(r"\bAbschnitt\s+\d+(?:a|b)?\b", re.IGNORECASE)
-CODE_SPAN_RE = re.compile(r"`[^`]*`")
+# Zaeune zuerst, dann Inline-Spans. Inline-Code kann in Markdown keine
+# Zeile ueberspannen - deshalb `[^`\n]*`. Ohne das \n frisst der Ausdruck
+# alles zwischen zwei beliebigen Backticks im ganzen Dokument und
+# verschiebt damit jede gemeldete Zeilennummer.
+FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
+CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
 
 # Dateien aus dem DropSync-Ursprungsrepo, die hier bewusst nicht
 # gespiegelt sind (Kopf-Tabelle des Design-Dokuments).
@@ -36,7 +42,15 @@ def collect_md_files() -> list[Path]:
 
 
 def strip_code_spans(text: str) -> str:
-    return CODE_SPAN_RE.sub("", text)
+    """Entfernt Code-Inhalte, haelt aber die Zeilenzahl stabil.
+
+    Codeblock-Inhalte werden durch ebenso viele Leerzeilen ersetzt, damit
+    die Zeilennummer in einer Fehlermeldung der Datei entspricht.
+    """
+    def blank_out(match: re.Match[str]) -> str:
+        return "\n" * match.group(0).count("\n")
+
+    return CODE_SPAN_RE.sub("", FENCE_RE.sub(blank_out, text))
 
 
 def main() -> int:
@@ -67,9 +81,21 @@ def main() -> int:
                 errors.append(f"{rel}: toter Link '{m.group(2)}'")
                 continue
             if anchor is not None and target_path.suffix == ".md":
-                if anchor not in anchors.get(str(target_path), set()):
-                    errors.append(f"{rel}: Anker '#{anchor}' fehlt in "
-                                  f"{target_path.relative_to(DOCS)}")
+                if str(target_path) not in anchors:
+                    # Ziel ausserhalb von docs/ (z. B. Root-README oder
+                    # VERBESSERUNGSPLAN): Anker bei Bedarf einlesen statt
+                    # abzustuerzen (ValueError in relative_to).
+                    try:
+                        outside = target_path.read_text(encoding="utf-8")
+                    except OSError:
+                        outside = ""
+                    anchors[str(target_path)] = set(re.findall(r'<a name="([^"]+)"></a>', outside))
+                if anchor not in anchors[str(target_path)]:
+                    try:
+                        shown = target_path.relative_to(DOCS)
+                    except ValueError:
+                        shown = target_path.relative_to(REPO)
+                    errors.append(f"{rel}: Anker '#{anchor}' fehlt in {shown}")
     if errors:
         print("Doku-Link-Check FEHLGESCHLAGEN:")
         for e in errors:

@@ -41,6 +41,60 @@ MAE_MAX = 0.0                     # bei Toleranz 0
 # Referenz-Zaehlung > 0 fuer Fenster mit Wahrheit > 0 (KEIN Exact-Match).
 REFERENCE_SCENARIO_PREFIXES = ("recofit_reference", "mmfit_reference")
 
+# Sample-Konsistenz (Umbauplan 2026-09-04 Phase 0.2). Ein Satz, der diese
+# Grenzen verletzt, ist fuer Parameter-Sweeps unbrauchbar - nicht weil die
+# Zaehlung falsch waere, sondern weil jede Zeitkonstante der Pipeline an der
+# Abtastrate haengt.
+MIN_SAMPLES_PER_SET = 150      # Untergrenze von RepCountPlausibility.MIN_SAMPLES
+MIN_SAMPLE_PERIOD_MS = 15.0    # Firmware-Garantie 20 ms, Toleranz nach unten
+MAX_SAMPLE_PERIOD_MS = 25.0    # Toleranz nach oben
+
+
+def check_sample_windows(events: list) -> dict:
+    """
+    Prueft je `set_window` das Sample-Raster (Umbauplan Phase 0.2).
+
+    Nur eine Diagnose, kein PASS/FAIL-Kriterium: ein grobes Raster macht das
+    Set fuer Sweeps unbrauchbar, sagt aber nichts darueber, ob die Zaehlung
+    in diesem Satz richtig war. Deshalb steht das Ergebnis im Report und
+    nicht im Abnahmeurteil.
+    """
+    windows = [e for e in events if e.get("t") == "set_window"]
+    # set-Events tragen keinen setIndex im JSONL (der Index ist die Position
+    # in der Session); deshalb hier die Anzahl statt einer Index-Menge.
+    n_sets = len([e for e in events if e.get("t") == "set"])
+
+    issues = []
+    rates = []
+    for w in windows:
+        idx = w.get("setIndex")
+        n = int(w.get("n", 0))
+        ts_first = float(w.get("tsFirst", 0))
+        ts_last = float(w.get("tsLast", 0))
+
+        if idx is None or not (0 <= idx < n_sets):
+            issues.append(f"set_window setIndex={idx} zeigt auf keinen Satz (Session hat {n_sets})")
+            continue
+        if n < MIN_SAMPLES_PER_SET:
+            issues.append(f"Satz {idx}: nur {n} Samples (< {MIN_SAMPLES_PER_SET}), fuer Sweeps unbrauchbar")
+        if n < 2:
+            continue
+        period = (ts_last - ts_first) / (n - 1)
+        rates.append(1000.0 / period if period > 0 else 0.0)
+        if not (MIN_SAMPLE_PERIOD_MS <= period <= MAX_SAMPLE_PERIOD_MS):
+            issues.append(
+                f"Satz {idx}: mittlerer Sample-Abstand {period:.1f} ms ausserhalb "
+                f"[{MIN_SAMPLE_PERIOD_MS:.0f}, {MAX_SAMPLE_PERIOD_MS:.0f}] - "
+                f"die 20-ms-Firmware-Garantie hat hier nicht gehalten"
+            )
+
+    return {
+        "n_windows": len(windows),
+        "n_sets": n_sets,
+        "measured_rates_hz": rates,
+        "issues": issues,
+    }
+
 
 def parse_jsonl(path: Path) -> list:
     lines = []
@@ -142,6 +196,9 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
             "n_passed": sum(1 for r in results if r["pass"] is True),
             "n_failed": sum(1 for r in results if r["pass"] is False),
             "n_no_truth": sum(1 for r in results if r["pass"] is None),
+            # Externe Korpora haben keine set_window-Events (die Fenster
+            # stehen im Manifest), also nichts zu pruefen.
+            "samples": {"n_windows": 0, "n_sets": 0, "measured_rates_hz": [], "issues": []},
         }
 
     results = []
@@ -200,6 +257,8 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
         "n_passed": sum(1 for r in results if r["pass"] is True),
         "n_failed": sum(1 for r in results if r["pass"] is False),
         "n_no_truth": sum(1 for r in results if r["pass"] is None),
+        # Umbauplan 2026-09-04 Phase 0.2: Rohdaten-Diagnose, kein Urteil.
+        "samples": check_sample_windows(events),
     }
 
 
@@ -243,6 +302,21 @@ def run_report(corpus_path: Path) -> bool:
             print(f"  {sess['session']} (exercise={sess['exercise_id']}): "
                   f"{sess['n_passed']}/{sess['n_sets']} passed, "
                   f"{sess['n_failed']} failed, {sess['n_no_truth']} no truth")
+            # Rohdaten-Diagnose (Umbauplan 2026-09-04 Phase 0.2): sagt, ob
+            # diese Session fuer Offline-Sweeps taugt - nicht, ob sie die
+            # Abnahme besteht.
+            s = sess.get("samples") or {}
+            if s.get("n_sets", 0) > 0:
+                rates = s.get("measured_rates_hz") or []
+                if rates:
+                    rate_txt = (f"{min(rates):.1f}-{max(rates):.1f} Hz"
+                                if len(rates) > 1 else f"{rates[0]:.1f} Hz")
+                else:
+                    rate_txt = "n/a"
+                print(f"    Rohdaten: {s['n_windows']}/{s['n_sets']} Saetze mit Samples, "
+                      f"gemessene Rate {rate_txt}")
+                for issue in s.get("issues", []):
+                    print(f"    WARN: {issue}")
             for r in sess["results"]:
                 if r["pass"] is not None:
                     all_deltas.append(r["delta"])
@@ -309,6 +383,31 @@ def _make_set_event(confirmed, shadow, edited):
     }
 
 
+def _make_sample_lines(set_index, n, period_ms=20.0, start_ms=1000):
+    """set_window + n sample-Zeilen wie vom JsonlShadowSessionRecorder."""
+    ts = [int(start_ms + i * period_ms) for i in range(n)]
+    window = {
+        "t": "set_window",
+        "setIndex": set_index,
+        "exerciseId": 1,
+        "rateHz": 1000.0 / period_ms,
+        "n": n,
+        "tsFirst": ts[0],
+        "tsLast": ts[-1],
+    }
+    samples = [
+        {
+            "t": "sample",
+            "setIndex": set_index,
+            "ts": t,
+            "ax": 0.0, "ay": -0.98, "az": 0.11,
+            "gx": 1.0, "gy": -0.6, "gz": 0.2,
+        }
+        for t in ts
+    ]
+    return [window] + samples
+
+
 def smoke_test() -> bool:
     """Erzeugt synthetische Fixtures und prueft die Harness-Mechanik."""
     with tempfile.TemporaryDirectory() as tmp:
@@ -357,6 +456,82 @@ def smoke_test() -> bool:
         assert result["results"][0]["pass"] is None, result
         assert result["n_no_truth"] == 1, result
         print("SMOKE TEST: no_truth-Pfad liefert pass=None wie erwartet")
+
+        # Sample-Pfad (Umbauplan 2026-09-04 Phase 0.2): gutes Raster darf
+        # keine Meldung erzeugen, schlechtes Raster muss eine erzeugen.
+        session = "smoke_samples_ok"
+        jsonl = corpus / f"{session}.jsonl"
+        meta = corpus / f"{session}.jsonl.meta.json"
+        with open(jsonl, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"t": "session_start", "sessionId": session}) + "\n")
+            f.write(json.dumps(_make_set_event(12, 12, True)) + "\n")
+            for line in _make_sample_lines(0, 200, period_ms=20.0):
+                f.write(json.dumps(line) + "\n")
+            f.write(json.dumps({"t": "session_end", "sessionId": session}) + "\n")
+        with open(meta, "w", encoding="utf-8") as f:
+            json.dump({
+                "recording": f"{session}.jsonl",
+                "exercise_id": "bicep_curl",
+                "scenario": "sample_check",
+                "known_active_reps": [12],
+                "device": "smoke",
+                "samples_recorded": True,
+            }, f, indent=2)
+        result = evaluate_session(jsonl, parse_manifest(meta))
+        assert result["samples"]["n_windows"] == 1, result["samples"]
+        assert result["samples"]["issues"] == [], result["samples"]
+        rate = result["samples"]["measured_rates_hz"][0]
+        assert 49.0 <= rate <= 51.0, rate
+        print(f"SMOKE TEST: Sample-Pfad erkennt {rate:.1f} Hz ohne Beanstandung")
+
+        # Absichtlich falsches Raster: 40 ms statt 20 ms, und zu wenige
+        # Samples. Beides muss gemeldet werden.
+        session = "smoke_samples_bad"
+        jsonl = corpus / f"{session}.jsonl"
+        meta = corpus / f"{session}.jsonl.meta.json"
+        with open(jsonl, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"t": "session_start", "sessionId": session}) + "\n")
+            f.write(json.dumps(_make_set_event(12, 12, True)) + "\n")
+            for line in _make_sample_lines(0, 100, period_ms=40.0):
+                f.write(json.dumps(line) + "\n")
+            f.write(json.dumps({"t": "session_end", "sessionId": session}) + "\n")
+        with open(meta, "w", encoding="utf-8") as f:
+            json.dump({
+                "recording": f"{session}.jsonl",
+                "exercise_id": "bicep_curl",
+                "scenario": "sample_check",
+                "known_active_reps": [12],
+                "device": "smoke",
+                "samples_recorded": True,
+            }, f, indent=2)
+        result = evaluate_session(jsonl, parse_manifest(meta))
+        issues = result["samples"]["issues"]
+        assert len(issues) == 2, issues
+        assert any("Samples" in i for i in issues), issues
+        assert any("Sample-Abstand" in i for i in issues), issues
+        print("SMOKE TEST: Konsistenzpruefung meldet grobes Raster und zu wenige Samples")
+
+        # Fenster ohne zugehoerigen Satz muss auffallen.
+        session = "smoke_orphan_window"
+        jsonl = corpus / f"{session}.jsonl"
+        meta = corpus / f"{session}.jsonl.meta.json"
+        with open(jsonl, "w", encoding="utf-8") as f:
+            f.write(json.dumps({"t": "session_start", "sessionId": session}) + "\n")
+            f.write(json.dumps(_make_set_event(12, 12, True)) + "\n")
+            for line in _make_sample_lines(3, 200, period_ms=20.0):
+                f.write(json.dumps(line) + "\n")
+            f.write(json.dumps({"t": "session_end", "sessionId": session}) + "\n")
+        with open(meta, "w", encoding="utf-8") as f:
+            json.dump({
+                "recording": f"{session}.jsonl",
+                "exercise_id": "bicep_curl",
+                "scenario": "sample_check",
+                "known_active_reps": [12],
+                "device": "smoke",
+            }, f, indent=2)
+        result = evaluate_session(jsonl, parse_manifest(meta))
+        assert any("zeigt auf keinen Satz" in i for i in result["samples"]["issues"]), result["samples"]
+        print("SMOKE TEST: Fenster ohne zugehoerigen Satz wird gemeldet")
         return ok
 
 

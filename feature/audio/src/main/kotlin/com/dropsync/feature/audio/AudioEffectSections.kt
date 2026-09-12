@@ -148,6 +148,12 @@ internal fun CrossfadeSection(
             steps = CrossfadeCurves.MAX_SECONDS - 1,
             onValueChangeFinished = { v -> viewModel.update { it.copy(crossfadeSeconds = v.toInt()) } },
             valueText = { "${it.toInt()} s" },
+            // B-AUD-5 (Weg b): kein Konsument — Regler ausgegraut.
+            enabled = false,
+        )
+        Text(
+            text = stringResource(R.string.audio_crossfade_no_effect),
+            modifier = Modifier.padding(top = 4.dp),
         )
         Text(
             text = stringResource(R.string.audio_crossfade_desc),

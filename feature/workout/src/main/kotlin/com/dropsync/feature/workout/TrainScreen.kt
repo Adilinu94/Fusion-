@@ -5,6 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -47,8 +48,10 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -79,6 +82,13 @@ fun TrainScreen(
     modifier: Modifier = Modifier,
     onOpenCalibration: (exerciseId: Long, deviceId: String) -> Unit = { _, _ -> },
     onOpenLibrary: () -> Unit = {},
+    /**
+     * B-ARCH-2 (P2-17, Nutzerentscheidung "Verdrahten"): Einstieg in den
+     * standalone Resttimer (`:feature:timer`, Route `timer`). Die App reicht
+     * die Navigation hierher — das Feature importiert kein anderes Feature
+     * (Modulregel 3.2/4, Architekturtest).
+     */
+    onOpenTimer: () -> Unit = {},
     viewModel: TrainViewModel = hiltViewModel(),
 ) {
     val exercises by viewModel.exercises.collectAsStateWithLifecycle()
@@ -98,6 +108,7 @@ fun TrainScreen(
     val setPhase by viewModel.setPhase.collectAsStateWithLifecycle()
     val countdownSeconds by viewModel.countdownSeconds.collectAsStateWithLifecycle()
     val liveCountedReps by viewModel.liveCountedReps.collectAsStateWithLifecycle()
+    val plausibilityHint by viewModel.plausibilityHint.collectAsStateWithLifecycle()
     val hasCalibration by viewModel.hasCalibration.collectAsStateWithLifecycle()
     val signalQuality by viewModel.signalQuality.collectAsStateWithLifecycle()
     // Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): Health-Connect-Zustand.
@@ -163,6 +174,7 @@ fun TrainScreen(
                 onAddTime = { viewModel.addRestTime() },
                 onSkip = { viewModel.skipRest() },
                 onFinish = { viewModel.finishExercise() },
+                onOpenTimer = onOpenTimer,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
         } else {
@@ -201,6 +213,17 @@ fun TrainScreen(
                     reps = repsInput,
                     onRepsChange = { viewModel.setReps(it) },
                 )
+
+                // Umbauplan 2026-09-04 Phase 7: unabhaengige Zweitmeinung aus
+                // der Signalperiodik, direkt unter dem Feld, das sie in Frage
+                // stellt. Bewusst KEIN Gegenstueck fuer "Pruefung bestanden":
+                // die Pruefung ist bei kurzen oder unregelmaessigen Saetzen
+                // stumm, und ein fehlender Hinweis darf nie als Bestaetigung
+                // gelesen werden.
+                plausibilityHint?.let { hint ->
+                    Spacer(Modifier.height(8.dp))
+                    PlausibilityHintRow(hint)
+                }
 
                 Spacer(Modifier.height(28.dp))
 
@@ -437,6 +460,40 @@ private fun WeightInput(
     }
 }
 
+/**
+ * Zweitmeinungs-Hinweis (Umbauplan 2026-09-04 Phase 7).
+ *
+ * Formuliert absichtlich als Frage und nicht als Korrektur: die
+ * Autokorrelation kann die Zahl nicht exakt bestimmen (Randeffekte,
+ * Tempowechsel innerhalb des Satzes), sie erkennt aber gut, ob im Signal
+ * ueberhaupt eine passende Periodik steckt. Die Entscheidung bleibt beim
+ * Nutzer — auch weil nur eine aktive Korrektur als unabhaengige Wahrheit
+ * zaehlt (D3-Regel, ADR-0014).
+ *
+ * `liveRegion` ist Assertive und nicht Polite: der Hinweis ist nur bis zum
+ * Loggen gueltig, eine hoefliche Ansage koennte bis dahin unterdrueckt
+ * bleiben.
+ */
+@Composable
+private fun PlausibilityHintRow(hint: PlausibilityHint) {
+    val text =
+        stringResource(
+            R.string.plausibility_hint,
+            hint.countedReps,
+            hint.estimatedReps,
+        )
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.tertiary,
+        modifier =
+            Modifier.semantics {
+                liveRegion = LiveRegionMode.Assertive
+                contentDescription = text
+            },
+    )
+}
+
 @Composable
 private fun RepInput(
     reps: String,
@@ -501,6 +558,11 @@ private fun RepInput(
  * Rest-timer pill inside the train card (Phase 3 step 4): countdown plus
  * End-rest / finish-exercise controls. Both actions cancel the timer immediately
  * (design rule step 5).
+ *
+ * Tap auf die Countdown-Anzeige oeffnet den standalone Resttimer
+ * (`:feature:timer`): dort gibt es Pause/Weiter und den grossen Ring, die
+ * Pille hier bleibt kompakt. Beide treiben dieselbe geteilte TimerEngine —
+ * der Zustand bleibt konsistent, egal wo gesteuert wird.
  */
 @Composable
 private fun RestConsole(
@@ -508,6 +570,7 @@ private fun RestConsole(
     onAddTime: () -> Unit,
     onSkip: () -> Unit,
     onFinish: () -> Unit,
+    onOpenTimer: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     FlowRepSurface(modifier = modifier.fillMaxWidth()) {
@@ -522,10 +585,17 @@ private fun RestConsole(
                 style = MaterialTheme.typography.displayLarge,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
+                // onClickLabel statt eigener contentDescription: TalkBack
+                // liest weiter die Restzeit vor und nennt zusaetzlich die
+                // Aktion. Eine contentDescription wuerde die Zeit ersetzen.
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .padding(vertical = 16.dp),
+                        .padding(vertical = 16.dp)
+                        .clickable(
+                            role = Role.Button,
+                            onClickLabel = stringResource(R.string.train_rest_open_timer),
+                        ) { onOpenTimer() },
             )
             BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
                 if (maxWidth < 480.dp) {

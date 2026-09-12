@@ -9,8 +9,30 @@ import androidx.room.PrimaryKey
 /**
  * Lokaler Song aus MediaStore (Bauplan 5.1, Abschnitt 6).
  * Primaerschluessel ist die MediaStore-ID; Dateipfade sind nie Schluessel.
+ *
+ * Indizes (Verbesserungsplan B-DB-1): jede Browse-Query in
+ * `LibraryBrowseDaos` filtert `is_available = 1` und gruppiert oder sucht
+ * danach ueber genau eine Spalte. Deshalb zusammengesetzte Indizes mit
+ * `is_available` als erster Spalte statt Einzelspalten-Indizes: derselbe
+ * Index bedient `GROUP BY album` und `WHERE album = ?`, und unverfuegbare
+ * Titel werden gar nicht erst gelesen.
+ *
+ * Bewusst KEIN Index auf `title`: `observeAvailable()` sortiert
+ * `ORDER BY title COLLATE NOCASE`, und ein Room-Index kann keine Kollation
+ * angeben (`@Index` hat dafuer keinen Parameter). Ein BINARY-Index wuerde die
+ * NOCASE-Sortierung nicht bedienen, und die Query liest ohnehin alle
+ * verfuegbaren Zeilen - er waere reine Schreiblast beim Bibliotheksscan.
  */
-@Entity(tableName = "songs")
+@Entity(
+    tableName = "songs",
+    indices = [
+        Index(value = ["is_available", "album"]),
+        Index(value = ["is_available", "artist"]),
+        Index(value = ["is_available", "genre"]),
+        Index(value = ["is_available", "relative_path"]),
+        Index(value = ["is_available", "date_modified_seconds"]),
+    ],
+)
 data class SongEntity(
     @PrimaryKey
     @ColumnInfo(name = "media_store_id")
@@ -48,8 +70,15 @@ data class SongEntity(
 /**
  * Importierter oder manueller Songmarker (Abschnitt 6).
  * Die Zuordnung zu einem Song liegt ausschliesslich in [MarkerSongLinkEntity].
+ *
+ * Index auf `source_fingerprint` (Verbesserungsplan B-DB-1):
+ * `SongMarkerDao.getByFingerprint` sucht exakt darauf, und der Onset-Import
+ * ruft das je Kandidat auf.
  */
-@Entity(tableName = "song_markers")
+@Entity(
+    tableName = "song_markers",
+    indices = [Index(value = ["source_fingerprint"])],
+)
 data class SongMarkerEntity(
     @PrimaryKey(autoGenerate = true)
     @ColumnInfo(name = "id")

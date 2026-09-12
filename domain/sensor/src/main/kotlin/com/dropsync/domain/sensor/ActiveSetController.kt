@@ -246,6 +246,13 @@ class ActiveSetController(
         _phase.value = ActiveSetPhase.IDLE
         _countdownRemaining.value = 0
         _countedReps.value = 0
+        // Umbauplan 2026-09-04 Phase 7: die Zweitmeinung gehoert zum
+        // Zaehlstand. Bleibt sie beim Abbruch stehen, waehrend `_countedReps`
+        // auf 0 faellt, zeigt die UI eine Aussage ueber einen Satz an, den es
+        // nicht mehr gibt. Erst seit die Zweitmeinung sichtbar ist, hat dieser
+        // Zustand eine Wirkung nach draussen — deshalb hier und nicht in
+        // Phase 6.
+        _lastPlausibility.value = null
         bufferedSamples.clear()
         bufferedRepEvents.clear()
         exerciseId = -1L

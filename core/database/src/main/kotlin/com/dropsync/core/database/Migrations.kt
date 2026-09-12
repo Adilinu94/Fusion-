@@ -178,6 +178,49 @@ val MIGRATION_9_10 =
         }
     }
 
+/**
+ * v10 -> v11: legt die fehlenden Indizes auf `songs` und `song_markers` an
+ * (Verbesserungsplan B-DB-1). Rein additiv - keine Spalte, keine Zeile, kein
+ * Datentyp aendert sich; nur Lesezugriffe werden schneller.
+ *
+ * `songs` hatte bis v10 ausser dem Primaerschluessel keinen einzigen Index,
+ * obwohl zehn Browse-Queries darauf gruppieren oder filtern. Bei einer
+ * 5.000-Titel-Bibliothek war jede davon ein Full-Table-Scan.
+ *
+ * Die Namen muessen exakt denen entsprechen, die Room aus den
+ * `@Entity(indices = ...)`-Eintraegen ableitet (`index_<tabelle>_<spalten>`),
+ * sonst schlaegt `runMigrationsAndValidate` fehl.
+ */
+val MIGRATION_10_11 =
+    object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_songs_is_available_album` " +
+                    "ON `songs` (`is_available`, `album`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_songs_is_available_artist` " +
+                    "ON `songs` (`is_available`, `artist`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_songs_is_available_genre` " +
+                    "ON `songs` (`is_available`, `genre`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_songs_is_available_relative_path` " +
+                    "ON `songs` (`is_available`, `relative_path`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_songs_is_available_date_modified_seconds` " +
+                    "ON `songs` (`is_available`, `date_modified_seconds`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_song_markers_source_fingerprint` " +
+                    "ON `song_markers` (`source_fingerprint`)",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
     arrayOf(
@@ -190,4 +233,5 @@ val DROPSYNC_MIGRATIONS: Array<Migration> =
         MIGRATION_7_8,
         MIGRATION_8_9,
         MIGRATION_9_10,
+        MIGRATION_10_11,
     )

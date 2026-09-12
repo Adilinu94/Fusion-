@@ -33,6 +33,7 @@
     <string name="settings_mix_toggle_title">Automatische Übergänge</string>
     <string name="settings_mix_toggle_desc">Titel ineinander überblenden statt hart zu wechseln. Alben und CUE-Titel bleiben immer lückenlos.</string>
     <string name="settings_mix_bit_perfect_hint">Nicht verfügbar, solange Bit-Perfect-Ausgabe aktiv ist.</string>
+    <string name="settings_mix_no_effect">Derzeit ohne Wirkung. Übergänge laufen als harter Wechsel. Stil und Dauer bleiben gespeichert und greifen, sobald der Konsument existiert.</string>
     <string name="settings_mix_preset_title">Übergangsstil</string>
     <string name="settings_mix_preset_fade">Fade</string>
     <string name="settings_mix_preset_rise">Rise</string>

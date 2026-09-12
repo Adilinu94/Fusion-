@@ -77,6 +77,11 @@ jobs:
       - name: Debug-Build (./gradlew assembleDebug)
         run: ./gradlew assembleDebug --stacktrace
 
+      # Benchmark-Modul kompilieren (früherer Fehler: fehlende junit-Abhängigkeiten).
+      # Dieser Schritt ist schnell und würde solche Fehler frühzeitig erkennen.
+      - name: Benchmark-Modul kompilieren (./gradlew compileBenchmarkReleaseKotlin)
+        run: ./gradlew compileBenchmarkReleaseKotlin --stacktrace
+
       # Der Debug-Build laeuft ohne R8. Ein Release-Build ist das einzige
       # Gate, das Minification/Shrinking prueft - genau dort entstehen
       # Fehler, die im Debug-Build unsichtbar bleiben (fehlende Keep-Regeln

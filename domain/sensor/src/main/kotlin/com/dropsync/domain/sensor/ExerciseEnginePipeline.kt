@@ -43,6 +43,18 @@ data class ExerciseEngineConfig(
      * MPU6886) und ein Pending-Rep, der in echte Ruhe hineinragt, verworfen.
      */
     val zuptEnabled: Boolean = true,
+    /**
+     * Umbauplan 2026-09-04 Phase 6.2: Vote-Fenster des Accel-Kanals in ms.
+     * War bisher nur als RepCounter-Default (800) existent und damit fuer
+     * den Offline-Sweep nicht erreichbar. Default unveraendert.
+     */
+    val accelVoteWindowMs: Long = 800L,
+    /**
+     * Umbauplan 2026-09-04 Phase 6.2: Breite des Sakoe-Chiba-Bands des
+     * TemplateMatchers. Default unveraendert (TemplateMatcher.DTW_BAND);
+     * der Sweep variiert ihn gegen die ~12 %-Verzerrungsannahme.
+     */
+    val dtwBand: Int = TemplateMatcher.DTW_BAND,
 ) {
     init {
         require(rotationAxis.size == 3) { "rotationAxis must have 3 components" }
@@ -112,6 +124,7 @@ class ExerciseEnginePipeline(
         TemplateMatcher(
             threshold = config.templateThreshold,
             poolSize = config.templatePoolSize,
+            dtwBand = config.dtwBand,
         )
 
     private val repCounter =
@@ -142,6 +155,7 @@ class ExerciseEnginePipeline(
                 } else {
                     null
                 },
+            accelVoteWindowMs = config.accelVoteWindowMs,
         )
 
     private val _repCount = MutableStateFlow(0)

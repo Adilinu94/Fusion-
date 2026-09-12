@@ -209,7 +209,8 @@ gruen.
 <a name="b-aud-1"></a>
 #### B-AUD-1 — KRITISCH — Allokationen im Audio-Callback
 
-**Status:** `[ ]` offen
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode) — 3 Tests mit
+Gegenbeweis, `:data:audio` 40/40 und `:domain:audio` 90/90 gruen
 
 `MasterDspProcessor.queueInput()` (`data/audio/.../MasterDspProcessor.kt:129`)
 laeuft auf dem Audio-Verarbeitungs-Thread des `DefaultAudioSink`. Sie ruft
@@ -235,24 +236,58 @@ Nutzer, der Presets durchprobiert, trifft es zuverlaessig.
 Zusaetzlich: `onFlush()` (Zeile 122) ruft `rebuildStages()` bei **jedem Seek
 und Titelwechsel** — auf einem Waveform-Drag also in dichter Folge.
 
-**Fix:**
-1. Stufen einmal in `onConfigure` fuer die Maximalkonfiguration (32 Baender)
-   allokieren; danach nur Koeffizienten tauschen und ein `activeBandCount`
-   fuehren.
-2. `Freeverb` um ein `reset()` erweitern, das die Puffer nullt statt sie neu
-   zu allokieren. `BiquadFilter.reset()` existiert bereits
-   (`Biquad.kt:132`) und wird — verifiziert — **nirgends aufgerufen**.
-3. `onFlush` ruft nur noch `reset()`, nie `rebuildStages()`.
+**Fix (umgesetzt):**
+1. Stufen einmal in `onConfigure` fuer die Maximalkonfiguration
+   (`EqSettings.MAX_BANDS` = 32) allokiert; `activeBandCount` sagt, wie viele
+   davon rechnen. `rebuildStages()` wird nur noch aus `onConfigure` gerufen —
+   Media3 ruft das beim Aufbau der Kette, nicht im Audiothread.
+2. `Freeverb.reset()` ergaenzt: nullt Comb-/Allpass-Puffer und die
+   Leseindizes statt neu zu allokieren. `StreamingResampler.reset()` ebenso
+   fuer Historie und Leseposition.
+3. `onFlush` ruft nur noch `resetStageState()` — die vorhandenen, nie
+   aufgerufenen `BiquadFilter.reset()` plus die beiden neuen.
+4. `DitherGenerator.mode` ist jetzt `var` (verwirft beim Wechsel die
+   SHAPED-Fehlerrueckfuehrung, wie ein frischer Generator). Ein
+   Dither-Umschalten allokiert damit nichts mehr.
 
-**Verifikation:** `MasterDspProcessorTest` um einen Fall erweitern, der nach
-`onConfigure` einen Preset-Wechsel mit anderer Bandanzahl einspielt und
-prueft, dass die Filterobjekte identisch bleiben (Referenzvergleich).
-`DspPerformanceTest` bleibt der Durchsatz-Waechter.
+**Zusaetzlich mit erledigt: [B-AUD-2](#b-aud-2).** `StreamingResampler.process`
+allokierte pro Block ein `Array(channelCount) { DoubleArray(totalFrames) }` —
+bei 48 kHz mehrere Hundert Allokationen pro Sekunde, direkt im Audiothread.
+Der Arbeitspuffer wird jetzt wiederverwendet und nur bei Bedarf vergroessert
+(eigenes `workFrames`-Feld statt `work[0].size`, weil `channelCount` 0 sein
+kann).
+
+**Verifikation (umgesetzt):** drei Faelle in `MasterDspProcessorTest`, alle
+ueber Referenzidentitaet der Stufenobjekte (`stageIdentitiesForTest()`) —
+bleibt dieselbe Instanz aktiv, hat niemand allokiert:
+
+- `preset wechsel mit anderer bandanzahl allokiert keine filter` (10 -> 31
+  Baender, der Hauptausloeser), prueft zusaetzlich, dass die neue Bandanzahl
+  wirksam ist.
+- `dither umschaltung allokiert keinen neuen generator` (TPDF -> SHAPED).
+- `flush setzt zustand zurueck ohne neu zu allokieren` — plus die
+  Wirkungspruefung: nach `flush` Stille rein, Spitze < 1e-6 raus.
+
+**Drei Gegenbeweise gefahren** (alle zurueckgerollt): `onFlush` wieder auf
+`rebuildStages` → Flush-Test rot. Bandwechsel wieder auf `rebuildStages` →
+Preset-Test rot. `Freeverb.reset()` als No-op → Flush-Test rot mit Spitze
+0,084 statt 0.
+
+**Dabei einen zu schwachen Test korrigiert.** Der Flush-Test lief zuerst mit
+480 Frames — und blieb mit dem No-op-Reverb **gruen**. Grund: der laengste
+Freeverb-Kammfilter ist auf 48 kHz rund 1.760 Samples lang; bei 480 Frames
+laeuft der Leseindex nie ueber die beschriebenen Stellen, der Nachhall ist
+also noch gar nicht hoerbar. Erst mit 4.000 Frames greift der Test. Ein
+Reset-Test, der kuerzer als die Verzoegerungsleitung ist, prueft nichts.
+
+`DspPerformanceTest` (32 Baender, > 2x Echtzeit, keine NaN/Inf) bleibt gruen
+und ist weiter der Durchsatz-Waechter.
 
 <a name="b-aud-2"></a>
 #### B-AUD-2 — HOCH — Resampler allokiert pro Block
 
-**Status:** `[ ]` offen
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode) — gemeinsam mit
+[B-AUD-1](#b-aud-1) umgesetzt, `:domain:audio` 90/90 gruen
 
 `StreamingResampler.process()` (`domain/audio/.../StreamingResampler.kt:60`):
 `val work = Array(channelCount) { DoubleArray(totalFrames) }`. Bei 48 kHz und
@@ -263,14 +298,20 @@ im Audio-Pfad.
 (Zeilen 73-74, 133-135, 159-161): Feld halten, bei Bedarf wachsen lassen.
 Dasselbe Muster hier anwenden.
 
-**Verifikation:** Bestehende Resampler-Tests muessen bitidentische Ausgaben
-liefern (die Werte duerfen sich nicht aendern — dieselbe Regel wie im
-Waveform-Umbauplan, Grundregeln Zeile 87-91).
+**Verifikation (umgesetzt):** Die bestehenden `StreamingResamplerTest`-Faelle
+liefern unveraenderte Ausgaben — 90/90 in `:domain:audio` gruen, keine
+Toleranz angepasst. Genau das war die Bedingung: der Puffer wird
+wiederverwendet, aber vor jedem Block vollstaendig mit Historie und neuem
+Eingang ueberschrieben, also kann kein Rest des Vorblocks einfliessen.
+
+Ergaenzt wurde ausserdem `reset()` (fuer [B-AUD-1](#b-aud-1)): nullt Historie
+und Leseposition ohne Neuallokation, damit `onFlush` keinen Kontext des alten
+Titels in die Interpolation traegt.
 
 <a name="b-aud-3"></a>
 #### B-AUD-3 — MITTEL — Race auf `restDuckCurrent`
 
-**Status:** `[ ]` offen
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode)
 
 Die Thread-Uebergabe im `MasterDspProcessor` ist ueberwiegend korrekt
 durchdacht: `duckingGain` und `restDuckingGain` sind `@Volatile` (Zeilen 50,
@@ -281,13 +322,34 @@ Der Rest-Zweifel liegt in `AudioPipeline`: `restDuckCurrent` (Zeile 125) ist
 ein nicht-synchronisiertes `var`, das `setRestDuckDb` liest und `rampDuck`
 (Zeile 152) aus einer Coroutine auf `Dispatchers.Default` schreibt. Bei zwei
 schnell folgenden `setRestDuckDb`-Aufrufen kann `from` ein halb
-geschriebener Wert sein. Praktisch harmlos (eine Ducking-Rampe), aber es ist
-eine Race und sollte `@Volatile` oder ein `MutableStateFlow` sein.
+geschriebener Wert sein.
+
+**Fix (umgesetzt, weiter als geplant).** Der Plan nannte `@Volatile` als
+ausreichend — das ist es nicht. `@Volatile` macht den Wert sichtbar, loest
+aber nicht das eigentliche Problem: `restDuckJob?.cancel()` **wartet nicht**
+auf das Ende der alten Rampe. Die gekuendigte Coroutine kann noch einen
+Zwischenwert schreiben, nachdem die neue ihren Startwert gelesen hat; der
+Endwert haengt dann am Scheduling. Umgesetzt sind deshalb drei Dinge:
+
+- `restDuckCurrent` ist eine `AtomicReference<Double>`,
+- `setRestDuckDb` haelt die vorige `Job`-Referenz und ruft
+  `previous?.cancelAndJoin()` **in** der neuen Coroutine, wartet also
+  wirklich ab,
+- ein `Mutex` um die Rampe, damit sich zwei Rampen nicht ueberlappen koennen.
+
+Praktisch harmlos bleibt es (eine Ducking-Rampe von 40-160 ms), aber die
+Reihenfolge ist jetzt definiert statt wahrscheinlich.
+
+**Verifikation:** `:data:audio` 40/40 gruen. Ein Test, der die Race
+zuverlaessig ausloest, fehlt — `AudioPipeline` hat keine Testabdeckung
+(`git ls-files` findet keinen `AudioPipelineTest`), und ein Timing-Test auf
+`Dispatchers.Default` waere flaky. Das ist eine bewusste Luecke: der Fix ist
+durch Konstruktion korrekt, nicht durch Messung belegt.
 
 <a name="b-aud-4"></a>
 #### B-AUD-4 — HOCH — Bit-Perfect erreicht den Mixer nie
 
-**Status:** `[ ]` offen
+**Status:** `[x]` erledigt (Weg b, Nutzerentscheidung 2026-09-11)
 
 README Schritt 19 und ADR-0009 fuehren Bit-Perfect als "Abgeschlossen".
 Verifiziert (auch nach `a69c535`):
@@ -316,10 +378,15 @@ Systemmixer. Fuer einen Audiophilen-Anspruch ist das die Haelfte.
 
 Nicht zulaessig: den Status so stehen lassen.
 
+**Umgesetzt (Weg b):** `audio_bitperfect_desc` (DE/EN) verspricht keine
+Mixer-Ausgabe mehr ("umgeht derzeit nur die DSP-Kette; bitgenaue
+Mixer-Ausgabe ist noch nicht umgesetzt"). Der Schalter bleibt funktional —
+er schaltet den funktionierenden DSP-Bypass — aber ohne falsche Zusage.
+
 <a name="b-aud-5"></a>
 #### B-AUD-5 — HOCH — Sechs Mix-Presets ohne Konsument
 
-**Status:** `[ ]` offen
+**Status:** `[x]` erledigt (Weg b, Nutzerentscheidung 2026-09-11)
 
 `MixPreset` liefert sechs mathematisch gepruefte Volume-Kurven
 (`MixPresetTest`, `CrossfadeCurvesTest`), `DspConfig.crossfadeSeconds` und
@@ -344,6 +411,13 @@ und tut **nichts**. Gegenueber dem Nutzer ist das eine Falschaussage.
   Dual-Player und braucht keinen neuen ADR, nur einen Nachtrag zu ADR-0007.
 - (b) Panel ausgrauen mit sichtbarem Hinweis "derzeit ohne Wirkung", README
   korrigieren.
+
+**Umgesetzt (Weg b):** beide Bedienflaechen ausgegraut —
+`MixTransitionsSection` (Schalter, 6 Chips, Regler) in `:feature:settings`
+und `CrossfadeSection` (Regler) in `:feature:audio` — jeweils mit sichtbarem
+Hinweis (`settings_mix_no_effect`, `audio_crossfade_no_effect`, DE/EN).
+Stil und Dauer bleiben persistiert, damit sie greifen, sobald der Konsument
+existiert. README Schritt 18 + Mix Phase 2/3 entsprechend korrigiert.
 
 <a name="b-aud-7"></a>
 #### B-AUD-7 — MITTEL — Analyse haelt Fensterlisten fuer den ganzen Track
@@ -519,7 +593,8 @@ Status richtig.
 <a name="b-db-1"></a>
 #### B-DB-1 — HOCH — `songs` hat keinen einzigen Index
 
-**Status:** `[ ]` offen (verifiziert: DB weiter v10, keine Indizes ergaenzt)
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode) — Migration v10 -> v11,
+6 Indizes, 2 Tests mit Gegenbeweis, 17/17 in `:core:database` gruen
 
 Aus `10.json` verifiziert: `songs PK=media_store_id, Indizes=-`. Gegen diese
 Tabelle laufen:
@@ -544,25 +619,57 @@ Zusaetzlich: `song_markers` hat keinen Index auf `source_fingerprint`,
 obwohl `LibraryDaos.kt:75` genau darauf sucht und der Onset-Import je
 Kandidat schreibt (`TrackAnalysisWorker.writeOnsetCandidates`).
 
-**Fix:** Migration v10 -> v11, rein additiv:
+**Fix (umgesetzt, Indexschnitt gegenueber der Erstfassung geaendert):**
+Migration v10 -> v11, rein additiv. Die Erstfassung schlug sieben
+Einzelspalten-Indizes vor; umgesetzt sind sechs **zusammengesetzte** mit
+`is_available` als erster Spalte:
 
 ```
-CREATE INDEX IF NOT EXISTS index_songs_album ON songs(album)
-CREATE INDEX IF NOT EXISTS index_songs_artist ON songs(artist)
-CREATE INDEX IF NOT EXISTS index_songs_genre ON songs(genre)
-CREATE INDEX IF NOT EXISTS index_songs_relative_path ON songs(relative_path)
-CREATE INDEX IF NOT EXISTS index_songs_is_available_title ON songs(is_available, title)
-CREATE INDEX IF NOT EXISTS index_songs_date_modified_seconds ON songs(date_modified_seconds)
-CREATE INDEX IF NOT EXISTS index_song_markers_source_fingerprint ON song_markers(source_fingerprint)
+CREATE INDEX index_songs_is_available_album ON songs(is_available, album)
+CREATE INDEX index_songs_is_available_artist ON songs(is_available, artist)
+CREATE INDEX index_songs_is_available_genre ON songs(is_available, genre)
+CREATE INDEX index_songs_is_available_relative_path ON songs(is_available, relative_path)
+CREATE INDEX index_songs_is_available_date_modified_seconds ON songs(is_available, date_modified_seconds)
+CREATE INDEX index_song_markers_source_fingerprint ON song_markers(source_fingerprint)
 ```
 
-Die `@Entity`-Annotationen brauchen dieselben `indices`-Eintraege, sonst
-schlaegt `MigrationTest` fehl (Room vergleicht gegen `11.json`).
+**Warum anders als geplant.** Jede der zehn Browse-Queries filtert
+`is_available = 1` **und** gruppiert oder sucht dann ueber genau eine Spalte
+(`LibraryBrowseDaos.kt:64-113`). Ein Index nur auf `album` haette SQLite
+gezwungen, jede gefundene Zeile zusaetzlich auf `is_available` zu pruefen; der
+zusammengesetzte Index bedient `GROUP BY album` und `WHERE album = ?` mit
+demselben Eintrag und liest unverfuegbare Titel gar nicht.
 
-**Verifikation:** `MigrationTest`-Fall v10 -> v11 mit Nutzdaten, wie es
-`migration 8 auf 9 erhaelt vorhandene daten` vormacht. Danach in `:app` gegen
-eine grosse Bibliothek pruefen; `EXPLAIN QUERY PLAN` per Robolectric-Test ist
-optional, aber es waere der ehrliche Nachweis.
+Der geplante `index_songs_is_available_title` ist **weggelassen**:
+`observeAvailable()` sortiert `ORDER BY title COLLATE NOCASE`, und Rooms
+`@Index` kennt keinen Kollations-Parameter. Ein BINARY-Index bedient eine
+NOCASE-Sortierung nicht — er waere reine Schreiblast bei jedem
+Bibliotheksscan. Der Grund steht als Kommentar an `SongEntity`, damit ihn
+niemand "vergessen" nachtraegt.
+
+Die `@Entity`-Annotationen tragen dieselben `indices`-Eintraege; `11.json`
+wurde von Room generiert und ist eingecheckt.
+
+**Verifikation (umgesetzt):** zwei Tests in `MigrationTest`.
+
+1. `migration 10 auf 11 erhaelt die bibliothek und legt indizes an` schreibt
+   einen Song und einen Marker in v10, migriert und prueft beide Zeilen plus
+   alle sechs Indexnamen in `sqlite_master`.
+2. `browse-queries benutzen die neuen indizes statt zu scannen` fuellt 500
+   Titel per rekursiver CTE, faehrt `ANALYZE` und prueft per
+   `EXPLAIN QUERY PLAN`, dass fuenf Queries und das `GROUP BY album`-Aggregat
+   den jeweiligen Index nennen. Der Test enthaelt eine **Gegenprobe** auf
+   `known_sha256` (nicht indexiert, muss `SCAN` ergeben) — ohne die koennte er
+   gruen sein, weil `EXPLAIN` in Robolectric gar nicht unterscheidet.
+
+**Gegenbeweis gefahren** (beide danach zurueckgerollt): Index auf `album`
+statt `(is_available, album)` — `runMigrationsAndValidate` bricht mit
+"Migration didn't properly handle: songs" ab. Index nach der Migration
+gedroppt — der Plan-Test meldet `SCAN TABLE songs`. Die Tests haengen also
+wirklich am Index, nicht am Zufall.
+
+Offen bleibt die Messung auf einer echten 5.000-Titel-Bibliothek; der
+Query-Plan ist der Nachweis, dass der Index greift, nicht wie viel er bringt.
 
 Gedeckt und **nicht** betroffen (Primaerschluessel ist die Suchspalte):
 `play_stats`, `favorites`, `track_analysis`, `exercise_targets`,
@@ -610,7 +717,8 @@ Entscheidung fuer FTS4 ist damit vertretbar, steht aber nirgends.
 <a name="b-arch-1"></a>
 #### B-ARCH-1 — HOCH — Der Architekturtest prueft Build-Dateien, nicht Code
 
-**Status:** `[ ]` offen
+**Status:** `[~]` Importpruefung erledigt (04.09.2026, Session: OpenCode),
+Konsumententest **abgelehnt** — Begruendung unten
 
 `core/testing/.../ModuleDependencyRulesTest.kt:30-42` liest
 `build.gradle.kts` als **Text** und sucht verbotene Tokens. Das findet nur,
@@ -629,23 +737,57 @@ Der Test ist ein Deklarations-Linter und verkauft sich als Architekturtest.
 Die Regeln, die er schuetzen soll, sind heute eingehalten — das habe ich per
 Grep bestaetigt. Der Punkt ist die fehlende Absicherung fuer morgen.
 
-**Fix:** Den Test um eine Import-Pruefung erweitern: alle
-`src/main/**/*.kt` je Modul einlesen, `^import`-Zeilen gegen die
-Verbotsliste pruefen. Ca. 40 Zeilen, kein neues Werkzeug. Bytecode-Pruefung
-waere gruendlicher, braucht aber eine Bibliothek — bei einem Projekt mit
-Alpha-Vermeidungsregel ist die Import-Variante der bessere Schnitt.
+**Fix (umgesetzt):** Der Test prueft jetzt **zwei** Ebenen. Neu sind fuenf
+Faelle, die alle `src/main/**/*.kt` je Modul einlesen und die
+`import`-Zeilen gegen die Verbotsliste halten:
+`core model importiert kein anderes app modul`,
+`domain module importieren kein android room oder media3`,
+`feature module importieren weder room noch media3 noch andere features`,
+`data module importieren keine feature module` — plus
+`die importpruefung liest wirklich quelldateien`. 10/10 gruen.
 
-**Zusatz (loest den Fehlermodus aus Abschnitt "Der wiederkehrende
-Fehlermodus"):** Ein zweiter Test, der prueft, dass jeder oeffentliche
-Vertrag in `:domain:*` mindestens einen Aufrufer ausserhalb von
-`src/test`/`src/androidTest` hat. Damit waeren `MixPreset.fadeInGain`
-([B-AUD-5](#b-aud-5)) und `:feature:timer` ([B-ARCH-2](#b-arch-2)) beim
-Einchecken aufgefallen.
+Der Selbsttest ist kein Beiwerk: ohne ihn waeren alle vier Regeltests auch
+dann gruen, wenn `productionImports()` nichts liefert — etwa nach einer
+geaenderten Pfadkonvention. Er verlangt >20 Imports in `domain/audio`, die
+Pruefung muss also nachweislich Dateien gelesen haben.
+
+Beim Feature-Test ist das eigene Paket erlaubt (`allow`-Praedikat); verboten
+sind nur fremde `com.dropsync.feature.*`-Importe.
+
+**Gegenbeweise** (beide zurueckgerollt): `import androidx.room.Entity` in
+`domain/audio` → neuer Test rot **und der alte Deklarationstest gruen**. Das
+ist der blinde Fleck, schwarz auf weiss. Cross-Feature-Import
+`progress → workout` → neuer Test rot mit Datei und Importzeile.
+
+**Zusatz aus der Erstfassung — abgelehnt.** Der geplante zweite Test ("jeder
+oeffentliche Vertrag in `:domain:*` hat mindestens einen Aufrufer ausserhalb
+der Tests") wurde gemessen, bevor er gebaut wurde: **67 von 227**
+oeffentlichen Domain-Funktionen haetten ihn sofort rot gemacht. Ein Test, der
+beim Einschalten 67 Treffer liefert, landet in einer Baseline und ist damit
+Dekoration.
+
+Entscheidend ist aber nicht die Zahl, sondern dass die Treffer ueberwiegend
+**korrekt** sind. `domain/sensor` liefert allein 41, weil
+`ExerciseEnginePipeline` von `ActiveSetController` benutzt wird — beide in
+`domain/sensor`. Ein Kriterium "Aufrufer ausserhalb des Moduls" meldet jede
+saubere Innenstruktur als Leiche. Verschaerft man es auf "ausserhalb der
+eigenen Datei", bleiben 30 Treffer — dann faellt aber genau der Zielfall
+`MixPreset.fadeInGain` heraus, weil `CrossfadeCurves` ihn aufruft. Beide
+Zuschnitte treffen also nicht, was sie treffen sollen.
+
+Die Befundidee bleibt richtig, das Kriterium taugt nicht. Wer es spaeter
+nochmal versucht, braucht Aufrufgraph-Analyse (Bytecode), nicht Textsuche —
+und muss dann gegen die Alpha-Vermeidungsregel abwaegen.
+
+**Nebenbefund der Messung:** `feature/timer` hat **null** Code-Konsumenten.
+`app/build.gradle.kts:93` deklariert das Modul, aber kein `app`-Quelltext
+importiert daraus. Damit ist [B-ARCH-2](#b-arch-2) auf Import-Ebene belegt,
+nicht nur ueber die Gradle-Deklaration.
 
 <a name="b-arch-2"></a>
 #### B-ARCH-2 — MITTEL — `:feature:timer` ist toter Code
 
-**Status:** `[ ]` offen (verifiziert gegen `a69c535`)
+**Status:** `[x]` erledigt (Verdrahten, Nutzerentscheidung 2026-09-11)
 
 `feature/timer/` (367 Zeilen: `TimerSection.kt` 283, `TimerViewModel.kt` 84)
 wird von **niemandem** referenziert. Grep ueber alle `.kt` ausserhalb des
@@ -667,10 +809,20 @@ auch aus `settings.gradle.kts`, `:app` und dem Architekturtest) oder eine
 Route dafuer vorsehen. Ein Modul, das seit Monaten kompiliert wird und
 niemanden erreicht, ist die dritte Instanz desselben Musters.
 
+**Umgesetzt (Verdrahten):** neuer `TimerScreen` (TopAppBar + `TimerSection`)
+in `:feature:timer`, Route `timer` im App-NavHost (kein fuenfter Haupt-Tab),
+Einstieg per Tap auf die Countdown-Anzeige der Train-Pausenkonsole
+(`TrainScreen.onOpenTimer`, `train_rest_open_timer` DE/EN, TalkBack nennt die
+Aktion per `onClickLabel`, die Zeitansage bleibt). Beide Oberflaechen
+treiben dieselbe geteilte `TimerEngine` — der Zustand bleibt konsistent,
+egal wo gesteuert wird. Der hartcodierte `"TIMER STARTEN"`-Teil des Befunds
+war bereits durch B-UI-3 erledigt (`timer_start` in DE/EN).
+
 <a name="b-arch-3"></a>
 #### B-ARCH-3 — HOCH — Windows-Pfad einer Entwicklermaschine im Produktivmodul
 
-**Status:** `[ ]` offen
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode) — Block entfernt,
+32/32 Tests in `:feature:workout` gruen, auch mit `--rerun-tasks`
 
 `feature/workout/build.gradle.kts:44-55`:
 
@@ -691,11 +843,21 @@ keine native Bibliothek laedt. Das ist Glueck, nicht Korrektheit.
 `settings.gradle.kts:8-11` loest dasselbe Problem sauber: plattformbedingt
 und mit `System.getenv("SystemRoot")` statt hartem Pfad.
 
-**Fix:** Block entfernen und pruefen, ob `settings.gradle.kts` allein
-genuegt (die Ursache — `java.library.path` mit Leerzeichen — ist dort schon
-adressiert). Falls nicht: in `settings.gradle.kts` verschieben, hinter
-`if (os == Windows)`, mit Wert aus `System.getenv` oder
-`providers.gradleProperty` statt hartem Pfad.
+**Fix (umgesetzt):** Block ersatzlos entfernt. `settings.gradle.kts` genuegt
+allein — das war die zu pruefende Annahme, und sie stimmt: 32/32 Tests in
+`:feature:workout` gruen, auch mit `--rerun-tasks` (also mit echten
+Test-Worker-JVMs statt Cache). Der lokale `PATH` dieser Maschine enthaelt
+Leerzeichen, der Fall ist also nicht wegdefiniert, sondern trifft real ein.
+
+**Gegenbeweis:** `settings.gradle.kts` Zeile 8 auf `if (false)` gesetzt, um zu
+sehen, ob der Workaround dort ueberhaupt traegt — der Testlauf brach nicht
+sofort ab, sondern lief in die 15-Minuten-Grenze dieser Sitzung. Damit ist
+nicht bewiesen, dass die Deaktivierung harmlos waere; die Datei wurde
+unveraendert zurueckgesetzt (`git diff` leer). Was bewiesen ist: der
+**modulspezifische** Block ist entbehrlich.
+
+Der Block war zusaetzlich als einziger im Repo — kein anderes Modul braucht
+ihn, was gegen eine echte Notwendigkeit sprach.
 
 <a name="b-arch-4"></a>
 #### B-ARCH-4 — MITTEL — 29x dasselbe Build-Boilerplate, kein Convention-Plugin
@@ -794,16 +956,16 @@ als CI-Schritt.
 <a name="b-ui-1"></a>
 #### B-UI-1 — HOCH — Vier Module ohne einen einzigen Test
 
-**Status:** `[ ]` offen
+**Status:** `[x]` alle vier Module haben Tests (Session: OpenCode)
 
 Gezaehlt ueber `@Test`-Vorkommen in `src/test` und `src/androidTest`:
 
 | Modul | Produktivzeilen | Tests |
 |---|---:|---:|
-| `feature/settings` | 1.327 | **0** |
-| `feature/audio` | 910 | **0** |
-| `feature/timer` | 367 | **0** |
-| `data/settings` | 110 | **0** |
+| `feature/settings` | 1.327 | **6** (war 0) |
+| `feature/audio` | 910 | **6** (war 0) |
+| `feature/timer` | 367 | **6** (war 0) |
+| `data/settings` | 110 | **7** (war 0) |
 
 `feature/settings` und `feature/audio` haben beide ein ViewModel mit
 Zustandslogik (`SettingsViewModel` 451 Zeilen, `AudioSettingsViewModel`) —
@@ -814,10 +976,62 @@ Zum Vergleich, damit klar ist, dass die Testkultur existiert und diese vier
 Module nur nicht erreicht hat: `domain/sensor` 115 Tests, `domain/audio` 90,
 `domain/timer` 56, `data/sensor` 53, `training-core` 46, `feature/progress` 42.
 
-**Fix:** Fuer `SettingsViewModel` und `AudioSettingsViewModel` je eine
-Testklasse gegen Fakes — das Muster steht in `PlayerViewModelTest` (610
-Zeilen) und `TrainViewModelTest` (683 Zeilen) fertig da. Prioritaet auf
-`SettingsViewModel`, weil dort DSP-Konfiguration geschrieben wird.
+**Fix (`feature/settings` umgesetzt):** `SettingsViewModelTest` mit sechs
+Faellen plus `SettingsFakes.kt` (acht Fakes). Geprueft wird, was hier wirklich
+Logik ist: die Mix-Setter lesen die aktuelle Konfiguration und rechnen —
+Einschalten setzt `DEFAULT_MIX_SECONDS`, Ausschalten 0, die Dauer wird auf
+`1..CrossfadeCurves.MAX_SECONDS` geklemmt, das Preset aendert die Dauer
+**nicht** mit, Ducking wird auf `REST_DUCK_MIN_DB..MAX_DB` geklemmt. Ein
+sechster Fall prueft, dass jeder Weiterleitungs-Setter in **sein eigenes**
+Repository schreibt.
+
+Zwei Entscheidungen dabei:
+
+- **Fakes modul-lokal**, nicht in `:core:testing`. Sonst muesste
+  `:core:testing` `:domain:library` und `:domain:audio` allein wegen der Fakes
+  kennen. Ausnahme waere sinnvoll, wenn ein zweites Modul sie braucht — heute
+  keins.
+- **Eigener `RecordingWorkoutGoalRepository`** statt
+  `core.testing.FakeWorkoutGoalRepository`: der dortige verwirft den
+  geschriebenen Wert (`= Unit`), damit waere "Setter schreibt ins richtige
+  Repository" nicht pruefbar. `:core:testing` blieb unangetastet, weil dort
+  parallel gearbeitet wird.
+
+**Gegenbeweise** (beide zurueckgerollt): Klemmung `coerceIn(1, MAX_SECONDS)`
+entfernt → Klemm-Test rot. `setThemeMode` schreibt nichts mehr → Setter-Test
+rot. Die Tests haengen also an der Logik, nicht am Zufall.
+
+**Bewusste Luecke:** `importFrom`/`exportTo` sind nicht abgedeckt. Sie lesen
+und schreiben echte SAF-Dokumente ueber den `ContentResolver`; das ist ein
+eigenes Paket mit eigenen Fixtures, kein Nebenprodukt dieses Tests. Damit
+bleiben von 1.327 Zeilen die beiden I/O-Pfade ungetestet — der Rest der
+Zustandslogik ist es nicht mehr.
+
+**`AudioSettingsViewModel`** (6 Tests plus modul-lokale Fakes, ohne
+Robolectric): DSP-Setter schreiben die gelesene Konfiguration zurueck,
+31-gegen-10-Baender beweist den Bandvertrag. Dabei zwei echte Bugs gefixt:
+`update()` las `dspConfig.value` (WhileSubscribed-Falle — Gegenbeweis: alte
+Lesart 2 Tests rot), und eine parallele Aenderung hatte `setGraphicBandCount`
+auf 10 Baender festgenagelt (Test rot, zweimal wiederhergestellt).
+
+**`feature/timer`** (`TimerViewModelTest`, 6 Tests gegen die echte
+`TimerEngine`): Start/Dauer, Zweitstart-Ignoranz, Pause/Resume,
+Cancel-mit-`stopAll`-Nachweis plus Neustart, Ticker-Abschluss mit
+`acknowledgeFinished`. Dabei ein Produktionsbug gefixt: `getReady` lief mit
+`WhileSubscribed` ohne jeden Abonnenten — `startRest` las ewig den Startwert,
+der B9-Vorlauf war tot (Gegenbeweis: Get-Ready-Test rot vor dem Fix auf
+`Eagerly`).
+
+**`data/settings`** (7 Robolectric-Tests nach dem
+`DataStoreCalibrationProfileRepositoryTest`-Muster, sdk=33): Roundtrip,
+Ueberschreiben, Defaults (SYSTEM/LIME) und der dokumentierte Fallback
+unbekannter Rohwerte — gesetzt ueber denselben DataStore-Namen, daher ohne
+zweite Datei sichtbar.
+
+`feature/player` (PlayerViewModelTest u. a.) und `feature/workout`
+(TrainViewModelTest, PlausibilityTest, CalibrationViewModelTest) waren bereits
+abgedeckt und laufen gruen (35 bzw. 34 Tests). Damit ist B-UI-1 erledigt;
+offen bleibt nur die bewusste I/O-Luecke bei Settings-Im-/Export.
 
 <a name="b-ui-2"></a>
 #### B-UI-2 — MITTEL — Fuenf Composables ueber der Groessengrenze
@@ -828,9 +1042,9 @@ Groesste Dateien: `ProgressDashboardScreen.kt` 1.026, `TrainScreen.kt` 945,
 `Waveform.kt` 935, `NowPlayingScreen.kt` 888, `SettingsScreen.kt` 876.
 Die Baseline haelt den Ist-Zustand fest (`detekt.yml:6-10`, begruendet).
 
-Das ist vertretbar, solange die Baseline nicht waechst. Zusammen mit
-[B-UI-1](#b-ui-1) ist es aber bei `feature/settings` doppelt unguenstig: 1.327
-Zeilen in zwei Dateien, ohne Tests.
+Das ist vertretbar, solange die Baseline nicht waechst. Seit
+[B-UI-1](#b-ui-1) erledigt ist, bleibt bei `feature/settings` nur noch die
+Groesse (1.327 Zeilen in zwei Dateien) — die Tests (6) sind da.
 
 **Fix:** Kein Big-Bang. Beim naechsten Anlass an diesen Screens jeweils einen
 Abschnitt in eine eigene `internal`-Composable ziehen und den
@@ -906,7 +1120,8 @@ Plurale in einem eigenen Commit je Modul. Danach fuer die reparierten Regeln
 <a name="b-ui-5"></a>
 #### B-UI-5 — MITTEL — Baseline-Profile-Task ohne Generator
 
-**Status:** `[ ]` offen
+**Status:** `[x]` umgesetzt (04.09.2026, Session: OpenCode) — der Befund
+nannte zwei Ursachen, es waren fuenf. Alle behoben, siehe Nachtrag unten.
 
 `:app` und `:benchmarks` haben beide das `androidx.baselineprofile`-Plugin,
 `:app:generateBaselineProfile` existiert (verifiziert per `--dry-run`:
@@ -935,6 +1150,49 @@ Musik-UI-Abschnitt: "material3 1.5.0-alpha verworfen"). Beide sind begruendet
 `packageName` im Benchmark korrigieren, und die Alpha-Ausnahmen im README als
 solche benennen.
 
+**Nachtrag 04.09.2026 — der Befund nannte zwei Ursachen, es waren fuenf.**
+Beim Umsetzen kam heraus, dass `:benchmarks` seit `cb7efda`
+**gar nicht kompilierte**. Der Reihe nach, weil jede Ursache die naechste
+verdeckte:
+
+1. **Producer nie verdrahtet.** `baselineProfile(project(":benchmarks"))`
+   fehlte in `app/build.gradle.kts`. Ohne diese Zeile kennt
+   `:app:generateBaselineProfile` das erzeugende Modul nicht; `merge` und
+   `copy` liefen auf leerer Eingabe. Das war der eigentliche Grund fuer die
+   zwei `SKIPPED`-Tasks im `--dry-run` des Befunds — nicht der fehlende
+   Generator.
+2. **Generator fehlte** (wie im Befund) — `BaselineProfileGenerator.kt`
+   angelegt, mit `includeInStartupProfile = true`.
+3. **`junit4` und `androidx.test.ext.junit` fehlten** in
+   `benchmarks/build.gradle.kts`. Beide wurden in `cb7efda` beim Modulumbau
+   entfernt; seither schlug jeder Kompilierversuch mit `Unresolved reference
+   'AndroidJUnit4'` fehl.
+4. **`CompilationMode.BaselineProfile()` existiert nicht mehr.** Die API gab
+   es in benchmark 1.0; mit `1.5.0-alpha01` ist der Ersatz
+   `CompilationMode.Partial(baselineProfileMode = ...)`. `StartupBenchmark.kt`
+   hat mit der aktuellen Version also nie kompiliert.
+5. **`kotlin.compose` lag auf `:benchmarks`**, obwohl das Modul keine
+   Composables enthaelt. Der Compose-Compiler verlangt die Compose-Runtime
+   auf dem Classpath, die dort nicht ankommt — Abbruch mit "requires the
+   Compose Runtime to be on the class path".
+
+**Warum es niemand gemerkt hat, und das ist der eigentliche Befund:** die CI
+baut `com.android.test`-Module nicht. `test`, `assembleDebug` und
+`assembleRelease` fassen `:benchmarks` nicht an. Ein Modul ohne
+Compiler-Abdeckung verrottet still — hier ueber mindestens zwei Commits.
+Gegenmittel waere `:benchmarks:assembleBenchmarkRelease` als CI-Schritt
+(baut nur, laeuft nicht — braucht kein Geraet). Als eigener Punkt in P2
+gefuehrt, weil es die CI-Datei anfasst.
+
+**Verifiziert:** alle drei Varianten kompilieren
+(`compileNonMinifiedBenchmarkKotlin`, `compileBenchmarkBenchmarkKotlin`,
+`compileBenchmarkReleaseKotlin`), und die Taskkette enthaelt jetzt
+`:benchmarks:collectNonMinifiedReleaseBaselineProfile` plus
+`:benchmarks:connectedNonMinifiedReleaseAndroidTest` vor
+`:app:mergeReleaseBaselineProfile`. Der Generatorlauf selbst braucht ein
+Geraet (Root oder API 33+, Emulator mit `aosp`-Abbild) und bleibt
+Geraeteabnahme.
+
 <a name="b-ui-6"></a>
 #### B-UI-6 — MITTEL — Kein Instrumentierungs-Gate in der CI
 
@@ -958,7 +1216,7 @@ eine Woche, danach als Pflicht-Gate. Das loest nicht die TalkBack-Abnahme
 <a name="b-doc-1"></a>
 #### B-DOC-1 — HOCH — Der verbindliche Bauplan existiert nicht im Repo
 
-**Status:** `[ ]` offen
+**Status:** `[x]` erledigt (Weg b, Nutzerentscheidung "Regeln extrahieren", 2026-09-11)
 
 `README.md:9-11`: "Grundlage ist der verbindliche technische Bauplan
 (`DropSync-Technischer-Bauplan.md`, Stand 27.07.2026). Abweichungen vom
@@ -982,6 +1240,13 @@ kann "Regel 3.2/2" nicht nachlesen, nur aus Zitaten rekonstruieren.
   einzeln — er ist die beste vorhandene Rekonstruktionsquelle.
 
 Nicht zulaessig: den Verweis stehen lassen.
+
+**Umgesetzt (Weg b):** `docs/ARCHITEKTURREGELN.md` — alle tatsaechlich
+zitierten Regeln mit Original-Nummerierung (3.2/1–3.2/4 aus dem
+Architekturtest als normativer Anker, Bauplan-Schritte aus den Code-Zitaten
+mit Belegstelle; was nur dem Namen nach zitiert wird, steht auch nur dem
+Namen nach). README-Kopf verweist jetzt auf die Rekonstruktion statt auf das
+fehlende Original.
 
 <a name="b-doc-2"></a>
 #### B-DOC-2 — MITTEL — `Kritische Befunde.md` bleibt zweideutig
@@ -1020,40 +1285,73 @@ ist.
 <a name="b-doc-4"></a>
 #### B-DOC-4 — HOCH — README-Statustabellen widersprechen dem Code
 
-**Status:** `[ ]` offen
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode) — alle fuenf Zeilen
+korrigiert, jede vorher am Code nachgeprueft statt aus diesem Plan uebernommen
 
 | README sagt | Code sagt | Befund |
 |---|---|---|
-| Schritt 19 Bit-Perfect "Abgeschlossen" | kein `setPreferredMixerAttributes`, `floatOutput` hart `false` | [B-AUD-4](#b-aud-4) |
-| Mix-Uebergaenge Phase 2/3 "Abgeschlossen" | `MixPreset.fadeInGain` ohne Produktivkonsument | [B-AUD-5](#b-aud-5) |
-| Herzfrequenz Phase 2 "Abgeschlossen (Train-Tab)" | ~~Manifest-Permission fehlt vollstaendig~~ — behoben 03.09.2026, README-Zeile nennt jetzt den Manifest-Nachtrag und die offene Geraeteabnahme | [B-SEC-1](#b-sec-1) |
-| Mix Phase 1 "Entwurf" | umgesetzt (DB v7) | [B-DOC-3](#b-doc-3) |
-| Schritt 21: Baseline-Profile-Infrastruktur "vorhanden" | Task ohne Generator | [B-UI-5](#b-ui-5) |
+| ~~Schritt 19 Bit-Perfect "Abgeschlossen"~~ | kein `setPreferredMixerAttributes` (null Treffer), `floatOutput` hart `false` in `PlaybackService.kt:114` | [B-AUD-4](#b-aud-4) |
+| ~~Mix-Uebergaenge Phase 2/3 "Abgeschlossen"~~ | `fadeInGain()` nur in Tests aufgerufen — es gibt gar keinen Crossfade im Audiopfad | [B-AUD-5](#b-aud-5) |
+| ~~Herzfrequenz Phase 2 "Abgeschlossen (Train-Tab)"~~ | Manifest-Permission fehlte — behoben 03.09.2026 (`1b33309`) | [B-SEC-1](#b-sec-1) |
+| ~~Mix Phase 1 "Entwurf"~~ | umgesetzt: Migration v6->v7, `TempoAccumulator`/`ChromaAccumulator` in `TrackAnalyzerImpl:99-100`, ADR-0019 | [B-DOC-3](#b-doc-3) |
+| ~~Schritt 21 Baseline-Profile "vorhanden"~~ | Plugin angewandt, aber `BaselineProfileRule` kommt im Repo nicht vor | [B-UI-5](#b-ui-5) |
 
 Bei einem Projekt, dessen Statustabellen die primaere Fortschrittsquelle sind,
 ist jede Zeile eine Falle fuer die naechste Session — genau das Problem, das
 `Kritische Befunde.md` fuer sich schon geloest hat.
 
-**Fix:** Diese fuenf Zeilen korrigieren. Regel fuer die Zukunft: "Abgeschlossen"
-setzt voraus, dass ein Produktivkonsument existiert. Der Test aus
-[B-ARCH-1](#b-arch-1) macht das pruefbar statt disziplinabhaengig.
+**Was die Nachpruefung zusaetzlich ergab.** Zwei der fuenf Zeilen waren
+schlimmer als hier notiert:
+
+- **Bit-Perfect** ist nicht "unvollstaendig", sondern **nicht einschaltbar**.
+  `BitPerfectGateway` liest `getSupportedMixerAttributes` und meldet
+  Faehigkeiten ans UI — der Gegenaufruf `setPreferredMixerAttributes` fehlt
+  vollstaendig. Der Ausgang wird also nie umgestellt. Was existiert, ist
+  Erkennung plus DSP-Bypass; der bitgenaue Pfad nicht.
+- **Mix-Uebergaenge** haben nicht nur "`fadeInGain` ohne Produktivkonsument".
+  Es gibt **ueberhaupt keinen Crossfade** mehr: der `CrossfadeController`
+  (Dual-Player) wurde bei der ADR-Konsolidierung entfernt, Uebergaenge laufen
+  als harter Wechsel via `playSongAt`. Damit hat auch keine Kurve einen Ort,
+  an dem sie wirken koennte. Die sechs Stil-Chips in den Einstellungen
+  steuern eine Wirkung, die es nicht gibt.
+
+**Neuer Befund bei der Baseline-Profile-Zeile** (nicht in der Erstfassung):
+`StartupBenchmark` zielt auf `packageName = "com.dropsync.app.debug"`,
+waehrend die `benchmark`-Variante per `matchingFallbacks = ["release"]` auf
+den Release-Build faellt — dessen `applicationId` ist `com.dropsync.app`
+**ohne** Suffix (`app/build.gradle.kts:19,45`). Der Benchmark wuerde also die
+falsche Anwendung suchen. Als Warnung im Klassenkommentar hinterlegt, damit
+es vor der ersten Geraetemessung auffaellt.
+
+**Regel fuer die Zukunft:** "Abgeschlossen" setzt voraus, dass ein
+Produktivkonsument existiert. Der Test aus [B-ARCH-1](#b-arch-1) macht das
+pruefbar statt disziplinabhaengig.
 
 <a name="b-doc-5"></a>
 #### B-DOC-5 — MITTEL — Verweise auf einen "Verbesserungsplan", den es nicht gab
 
-**Status:** `[x]` mit diesem Dokument teilweise geloest
+**Status:** `[x]` behoben (04.09.2026, Session: OpenCode)
 
-`README.md` verweist an drei Stellen auf "Verbesserungsplan Phase 4"
+`README.md` verwies an drei Stellen auf "Verbesserungsplan Phase 4"
 (Zeilen 42, 141: Baseline Profiles) und "Verbesserungsplan Phase 5"
 (Zeile 92: Health-Connect-Berechtigungs-UI). Ein solches Dokument existierte
 nicht.
 
 Dieses Dokument uebernimmt den Namen, aber **nicht** die Phasennummern: seine
-Phasen heissen P0-P4. Die alten Verweise bleiben damit ohne Ziel.
+Phasen heissen P0-P4. Die alten Verweise waren damit ohne Ziel.
 
-**Restfix:** Die drei README-Verweise auf die tatsaechliche Quelle umbiegen
-(`docs/STATUS_FORTSCHRITT.md` Abschnitte, in denen die Arbeit protokolliert
-ist) oder auf die Befund-IDs hier ([B-UI-5](#b-ui-5), [B-SEC-1](#b-sec-1)).
+**Erledigt:** Alle drei README-Verweise umgebogen — der Baseline-Profile-Verweis
+auf Schritt 21 derselben Tabelle plus die Befund-ID [B-UI-5](#b-ui-5), der
+Health-Connect-Verweis auf `docs/STATUS_FORTSCHRITT.md`, wo die Arbeit vom
+21.08.2026 protokolliert ist.
+
+**Der Befund war unvollstaendig:** die drei README-Stellen waren nicht alle.
+`git grep 'Verbesserungsplan Phase'` ueber `*.md` und `*.kt` fand drei
+weitere in **Codekommentaren** — `StartupBenchmark.kt:13` ("Phase 4"),
+`WorkoutExporter.kt:7` und `SettingsViewModel.kt:199` (beide "Phase 3").
+Die Erstfassung hat nur den README durchsucht. Alle sechs sind jetzt weg;
+ausserhalb dieses Dokuments nennt kein Verweis mehr eine Phasennummer, die
+es nie gab.
 
 <a name="b-doc-6"></a>
 #### B-DOC-6 — NIEDRIG — `STATUS_FORTSCHRITT.md` hat das Alphabet aufgebraucht
@@ -1101,16 +1399,24 @@ Ziel: kein Laufzeitdefekt, keine falsche Zusage im aktuellen Stand.
 | 1 | `ensureActive()` am Schleifenkopf in `drainDecoder` + Abbruchtest | [B-AUD-6](#b-aud-6) | **erledigt** (Fix im Baum, Test 45-vs-5, 37/37 gruen) |
 | 2 | ADR-0015 committen, 14 ausstehende Commits pushen | Abschnitt 0/1 | **halb erledigt** (`27aa314` committet; Push-Entscheidung beim Nutzer) |
 | 3 | Health-Connect-Manifest + Rationale, oder Badge deaktivieren | [B-SEC-1](#b-sec-1) | **erledigt** (Stufe 1: Manifest gebaut, nicht Badge abgeschaltet; Geraeteabnahme offen) |
-| 4 | README-Statustabellen korrigieren (5 Zeilen) | [B-DOC-4](#b-doc-4) | 1 Stunde (1 von 5 Zeilen erledigt: Herzfrequenz Phase 2) |
+| 4 | README-Statustabellen korrigieren (5 Zeilen) + Phasenverweise umbiegen | [B-DOC-4](#b-doc-4), [B-DOC-5](#b-doc-5) | **erledigt** (5/5 Zeilen, 6 Verweise, 2 Befunde untertrieben) |
 | 5 | 7 Lint-Typos in `values-de` + 3 hartcodierte Strings | [B-UI-4](#b-ui-4), [B-UI-3](#b-ui-3) | **erledigt** (117 Zeilen Umlaute, 3 Strings extrahiert; 43 Lint-Warnungen bleiben) |
 | 6 | `feature/progress/src` + `benchmarks/src` in die Detekt-Liste, Findings sichten | [B-ARCH-4](#b-arch-4) | **erledigt** (2 Findings behoben, nicht baselined) |
 
-Punkt 1, 3, 5, 6 und der Commit-Teil von Punkt 2 sind erledigt. Offen aus
-Punkt 2: der Push der ausstehenden Commits — Entscheidung beim Nutzer,
-siehe Abschnitt 0. Naechstes Paket: der Rest von Punkt 4 (vier
-README-Zeilen, die an [B-AUD-4](#b-aud-4), [B-AUD-5](#b-aud-5),
-[B-DOC-3](#b-doc-3) und [B-UI-5](#b-ui-5) haengen — jede braucht erst die
-Entscheidung "implementieren oder Status ehrlich machen").
+**P0 ist abgeschlossen** ausser dem Push (Punkt 2) — der bleibt eine
+Nutzerentscheidung, siehe Abschnitt 0.
+
+Punkt 4 hat den Status ehrlich gemacht, nicht die Funktion gebaut. Die vier
+Zeilen nennen jetzt beim Namen, was fehlt: der Bit-Perfect-Modus ist nicht
+einschaltbar ([B-AUD-4](#b-aud-4)), es gibt keinen Crossfade
+([B-AUD-5](#b-aud-5)), Mix Phase 1 ist laengst umgesetzt
+([B-DOC-3](#b-doc-3)), Baseline Profiles haben keinen Generator
+([B-UI-5](#b-ui-5)). Die Entscheidung "implementieren oder streichen" steht
+damit sichtbar an, statt hinter einem "Abgeschlossen" zu verschwinden — das
+war der Zweck des Pakets.
+
+Naechstes Paket: P1 Punkt 8 ([B-AUD-1](#b-aud-1), `MasterDspProcessor`) —
+Punkt 7 ist erledigt.
 
 ### P1 — Kurzfristig: Performance im Zielszenario
 
@@ -1118,16 +1424,22 @@ Ziel: die App bleibt bei 5.000 Titeln und aktivem DSP fluessig.
 
 | # | Paket | Befund | Aufwand |
 |---|---|---|---|
-| 7 | Migration v10 -> v11: 7 Indizes + `MigrationTest` mit Nutzdaten | [B-DB-1](#b-db-1) | 1 Tag |
-| 8 | `MasterDspProcessor`: Stufen einmalig, `Freeverb.reset()`, `onFlush` ohne Rebuild | [B-AUD-1](#b-aud-1) | 1-2 Tage |
-| 9 | `StreamingResampler`: Arbeitspuffer wiederverwenden | [B-AUD-2](#b-aud-2) | halber Tag |
-| 10 | Windows-Pfad aus `feature/workout/build.gradle.kts` | [B-ARCH-3](#b-arch-3) | 1 Stunde + CI-Lauf |
-| 11 | `restDuckCurrent` als `@Volatile` | [B-AUD-3](#b-aud-3) | Minuten |
+| 7 | Migration v10 -> v11: 6 Indizes + `MigrationTest` mit Nutzdaten und Query-Plan | [B-DB-1](#b-db-1) | **erledigt** (Indexschnitt geaendert, 1 geplanter Index bewusst weggelassen) |
+| 8 | `MasterDspProcessor`: Stufen einmalig, `Freeverb.reset()`, `onFlush` ohne Rebuild | [B-AUD-1](#b-aud-1) | **erledigt** (3 Tests, 3 Gegenbeweise) |
+| 9 | `StreamingResampler`: Arbeitspuffer wiederverwenden | [B-AUD-2](#b-aud-2) | **erledigt** (mit Paket 8) |
+| 10 | Windows-Pfad aus `feature/workout/build.gradle.kts` | [B-ARCH-3](#b-arch-3) | **erledigt** (Block entfernt, 32/32 mit --rerun-tasks) |
+| 11 | `restDuckCurrent` absichern | [B-AUD-3](#b-aud-3) | **erledigt** (AtomicReference + cancelAndJoin + Mutex; `@Volatile` allein reichte nicht) |
 | 12 | Emulator-Job in der CI (`continue-on-error` zuerst) | [B-UI-6](#b-ui-6) | halber Tag |
 
-Punkt 8 braucht Sorgfalt: die Ausgabewerte duerfen sich nicht aendern, sonst
-ist der Waveform-/DSP-Vergleich gegen die Baseline wertlos. Dieselbe Regel wie
-im Waveform-Umbauplan (Grundregeln Zeile 87-91).
+Punkt 8 brauchte Sorgfalt, weil die Ausgabewerte sich nicht aendern durften —
+sonst waere der Waveform-/DSP-Vergleich gegen die Baseline wertlos (dieselbe
+Regel wie im Waveform-Umbauplan, Grundregeln Zeile 87-91). Nachweis:
+`:domain:audio` 90/90 und `:data:audio` 40/40 gruen, keine Toleranz
+angepasst, `DspPerformanceTest` unveraendert gruen.
+
+Naechstes Paket: **P1 ist bis auf Punkt 12 erledigt.** Der Emulator-Job
+([B-UI-6](#b-ui-6)) braucht einen CI-Lauf und damit eine Entscheidung
+ausserhalb dieses Arbeitsbaums.
 
 ### P2 — Mittelfristig: Struktur und Absicherung
 
@@ -1136,14 +1448,15 @@ strukturell verhindert, nicht einzeln gefunden.
 
 | # | Paket | Befund | Aufwand |
 |---|---|---|---|
-| 13 | Architekturtest auf Import-Ebene + "jeder Domain-Vertrag hat Konsumenten" | [B-ARCH-1](#b-arch-1) | 1 Tag |
+| 13 | Architekturtest auf Import-Ebene | [B-ARCH-1](#b-arch-1) | **erledigt** (5 Tests, 2 Gegenbeweise; Konsumententest abgelehnt, 67/227 Fehlalarme) |
 | 14 | `build-logic`-Convention-Plugins (loest B-ARCH-4 dauerhaft) | [B-ARCH-4](#b-arch-4) | 2-3 Tage |
-| 15 | Tests fuer `SettingsViewModel` + `AudioSettingsViewModel` | [B-UI-1](#b-ui-1) | 2 Tage |
-| 16 | `DropSync-Technischer-Bauplan.md` einchecken oder Regeln extrahieren | [B-DOC-1](#b-doc-1) | 1 Tag |
-| 17 | Entscheidung `:feature:timer`: verdrahten oder entfernen | [B-ARCH-2](#b-arch-2) | Entscheidung + 1 Stunde |
-| 18 | Bit-Perfect: implementieren oder Status ehrlich machen | [B-AUD-4](#b-aud-4) | 1 Tag bzw. 1 Stunde |
-| 19 | Crossfade-Presets: Konsument bauen oder Panel ausgrauen | [B-AUD-5](#b-aud-5) | 1-2 Tage bzw. 1 Stunde |
-| 20 | `BaselineProfileGenerator` + `packageName` im Benchmark | [B-UI-5](#b-ui-5) | halber Tag |
+| 15 | Tests fuer `SettingsViewModel` + `AudioSettingsViewModel` + Timer/Stores | [B-UI-1](#b-ui-1) | **erledigt** (settings 6, audio 6, timer 6, data/settings 7; je mind. 1 Gegenbeweis; player/workout waren abgedeckt) |
+| 16 | `DropSync-Technischer-Bauplan.md` einchecken oder Regeln extrahieren | [B-DOC-1](#b-doc-1) | **erledigt** (Weg b: `docs/ARCHITEKTURREGELN.md`, README umgebogen) |
+| 17 | Entscheidung `:feature:timer`: verdrahten oder entfernen | [B-ARCH-2](#b-arch-2) | **erledigt** (Verdrahten: Route `timer` ab Train-Pause, gleiche Engine) |
+| 18 | Bit-Perfect: implementieren oder Status ehrlich machen | [B-AUD-4](#b-aud-4) | **erledigt** (Weg b: UI-Text nennt die Grenze; Schalter = DSP-Bypass) |
+| 19 | Crossfade-Presets: Konsument bauen oder Panel ausgrauen | [B-AUD-5](#b-aud-5) | **erledigt** (Weg b: beide Panels ausgegraut + Hinweis, Werte persistiert) |
+| 20 | `BaselineProfileGenerator` + `packageName` im Benchmark | [B-UI-5](#b-ui-5) | **erledigt** (fuenf Ursachen statt zwei; Generatorlauf braucht Geraet) |
+| 20b | `:benchmarks:assembleBenchmarkRelease` als CI-Schritt | [B-UI-5](#b-ui-5) | 15 Minuten — ohne diesen Schritt verrottet das Modul weiter still |
 
 Punkt 13 vor 17-19: mit dem Konsumententest sind die drei Entscheidungen
 belegt statt vermutet.
@@ -1216,10 +1529,10 @@ Damit der Fortschritt messbar ist und nicht behauptet:
 | Rote Tests | 0 | 0 |
 | Lint-Warnungen (SARIF, 18 Module) | 50 | < 10 |
 | Detekt-Baseline-Eintraege | 23 | < 15 |
-| Module ohne Tests | 4 | 0 |
+| Module ohne Tests | 0 (war 4) | 0 |
 | Module ohne Detekt-Abdeckung | 0 (war 3) | 0 |
-| Indizes auf `songs` | 0 | 6 |
-| Allokationen im Audio-Callback | ja | nein |
-| README-Statuszeilen mit Codewiderspruch | 5 | 0 |
+| Indizes auf `songs` | 5 (war 0), plus 1 auf `song_markers` | erreicht |
+| Allokationen im Audio-Callback | nein (war ja) | nein |
+| README-Statuszeilen mit Codewiderspruch | 0 (war 5) | 0 |
 | Doku-Verweise auf fehlende Dateien | 4 | 0 |
-| Nicht gepushte Commits | 14 | 0 |
+| Nicht gepushte Commits | 17 | 0 |

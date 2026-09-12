@@ -41,6 +41,7 @@ import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.WorkoutRepository
+import com.dropsync.feature.workout.shadow.SampleWindow
 import com.dropsync.feature.workout.shadow.ShadowDiffEvent
 import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -290,6 +291,25 @@ class TrainViewModel
                         )
                         // Paket D: Lernpfad ueber den unveraenderlichen Trace.
                         if (trace != null) {
+                            // Umbauplan 2026-09-04 Phase 0: die Rohsamples
+                            // gehoeren zum eben geschriebenen set-Event. Muss
+                            // NACH recordSet stehen (der Recorder leitet den
+                            // setIndex daraus ab) und VOR learnFromTrace, damit
+                            // ein Fehler im Lernpfad die Aufnahme nicht
+                            // verhindert.
+                            shadowSessionRecorder.recordSamples(
+                                SampleWindow(
+                                    exerciseId = exercise.id,
+                                    measuredSampleRateHz = trace.measuredSampleRateHz,
+                                    samples = trace.samples,
+                                    // Nachtrag Phase 0.7: ohne Achse und Bias
+                                    // ist ein Offline-Replay sinnlos, denn sie
+                                    // bestimmen, WELCHES Signal die Pipeline
+                                    // sieht - und sie sind kalibriert, also aus
+                                    // keiner anderen Quelle rekonstruierbar.
+                                    profile = activeProfile,
+                                ),
+                            )
                             learnFromTrace(trace, reps)
                         }
                         // Keep weight, reset reps for the next set.
@@ -569,6 +589,37 @@ class TrainViewModel
 
         /** Reps counted live in the active set (0 unless COUNTING/finished). */
         val liveCountedReps: StateFlow<Int> = activeSetController.countedReps
+
+        /**
+         * Umbauplan 2026-09-04 Phase 7: die Autokorrelations-Zweitmeinung des
+         * letzten abgeschlossenen Sets, sofern sie dem Zaehlerstand deutlich
+         * widerspricht. null bedeutet **keine Aussage** — nicht "bestaetigt".
+         *
+         * Sichtbar ist der Hinweis genau im Fenster zwischen [stopCountedSet]
+         * und [logSet]: also solange der Nutzer die Zahl noch korrigieren kann.
+         * Danach raeumt [ActiveSetController.abort] die Zweitmeinung ab.
+         *
+         * Er verschwindet, sobald der Nutzer das Rep-Feld angefasst hat
+         * ([repsInputEdited]). Das ist Absicht und nicht nur Kosmetik: der
+         * Zweck des Hinweises ist, eine *aktive* Bestaetigung oder Korrektur
+         * auszuloesen (D3-Regel, ADR-0014 — nur editierte Werte zaehlen als
+         * unabhaengige Wahrheit). Ist die Editierung passiert, hat er seine
+         * Aufgabe erfuellt.
+         *
+         * `Eagerly` und nicht `WhileSubscribed`: ohne Abonnenten liefert ein
+         * lazy geteilter Flow nur seinen Initialwert — `.value` waere dann
+         * `null`, obwohl eine Aussage vorliegt. Bei einem Zustand, dessen
+         * ganzer Sinn ein kurzes Zeitfenster ist, ist ein `.value`, der luegt,
+         * eine Falle. Die Kosten sind vernachlaessigbar: der Flow verknuepft
+         * zwei StateFlows ohne eigene Arbeit.
+         */
+        val plausibilityHint: StateFlow<PlausibilityHint?> =
+            combine(
+                activeSetController.lastPlausibility,
+                _repsInputEdited,
+            ) { result, edited ->
+                if (edited) null else result?.toHintOrNull()
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
         /** True once a calibration profile exists for the selected exercise. */
         private val _hasCalibration = MutableStateFlow(false)

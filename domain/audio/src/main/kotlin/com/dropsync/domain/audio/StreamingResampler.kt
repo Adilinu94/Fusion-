@@ -42,6 +42,28 @@ class StreamingResampler(
 
     private var framesBuffered = 0
 
+    /**
+     * Arbeitspuffer je Kanal, ueber Bloecke hinweg wiederverwendet
+     * (Verbesserungsplan B-AUD-2). `process` lief auf dem Audiothread und
+     * allokierte pro Block ein `Array(channelCount) { DoubleArray(...) }` —
+     * bei 48 kHz sind das mehrere Hundert Allokationen pro Sekunde.
+     */
+    private var work: Array<DoubleArray> = Array(channelCount) { DoubleArray(0) }
+
+    /** Nutzbare Framezahl in [work]; nicht `work[0].size` (channelCount kann 0 sein). */
+    private var workFrames = 0
+
+    /**
+     * Verwirft die Historie, ohne neu zu allokieren
+     * (Verbesserungsplan B-AUD-1). Nach Seek/Titelwechsel darf kein
+     * Kontext des alten Materials in die Interpolation einfliessen.
+     */
+    fun reset() {
+        for (channel in history) channel.fill(0.0)
+        position = halfTaps.toDouble()
+        framesBuffered = 0
+    }
+
     /** Maximale Ausgabeframes fuer [inputFrames] Eingabeframes. */
     fun maxOutputFrames(inputFrames: Int): Int = (inputFrames / step).toInt() + 2
 
@@ -57,7 +79,12 @@ class StreamingResampler(
         val historyFrames = 2 * halfTaps
         val totalFrames = framesBuffered.coerceAtMost(historyFrames) + inputFrames
         // Arbeitspuffer: Historie plus neuer Block, je Kanal fortlaufend.
-        val work = Array(channelCount) { DoubleArray(totalFrames) }
+        // Wiederverwendet und nur bei Bedarf vergroessert - dieser Pfad
+        // laeuft im Audiothread (B-AUD-2).
+        if (workFrames < totalFrames) {
+            work = Array(channelCount) { DoubleArray(totalFrames) }
+            workFrames = totalFrames
+        }
         for (channel in 0 until channelCount) {
             val kept = framesBuffered.coerceAtMost(historyFrames)
             System.arraycopy(history[channel], historyFrames - kept, work[channel], 0, kept)

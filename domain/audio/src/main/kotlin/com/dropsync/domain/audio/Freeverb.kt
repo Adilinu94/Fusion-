@@ -33,6 +33,12 @@ class Freeverb(
         var index = 0
         var filterStore = 0.0
 
+        fun reset() {
+            buffer.fill(0.0)
+            index = 0
+            filterStore = 0.0
+        }
+
         fun process(
             input: Double,
             feedback: Double,
@@ -51,6 +57,11 @@ class Freeverb(
     ) {
         val buffer = DoubleArray(size)
         var index = 0
+
+        fun reset() {
+            buffer.fill(0.0)
+            index = 0
+        }
 
         fun process(input: Double): Double {
             val buffered = buffer[index]
@@ -92,6 +103,22 @@ class Freeverb(
 
     fun updateSettings(newSettings: Settings) {
         settings = Settings.sanitized(newSettings)
+    }
+
+    /**
+     * Nullt alle Verzoegerungspuffer, ohne sie neu zu allokieren
+     * (Verbesserungsplan B-AUD-1). Fuer Seek und Titelwechsel: der Nachhall
+     * des alten Materials darf nicht in das neue hineinklingen, aber ein
+     * `Freeverb`-Neubau auf dem Audiothread allokiert bei Stereo rund
+     * 300 KB und riskiert einen GC-Stall, also einen hoerbaren Underrun.
+     */
+    fun reset() {
+        for (lane in combs) {
+            for (comb in lane) comb.reset()
+        }
+        for (lane in allpasses) {
+            for (allpass in lane) allpass.reset()
+        }
     }
 
     /** Verarbeitet interleaved Samples in-place. */

@@ -114,6 +114,7 @@
 
     <!-- Pausen-Konsole -->
     <string name="train_rest_label">PAUSE</string>
+    <string name="train_rest_open_timer">Timer öffnen</string>
     <string name="train_rest_add_long">+15 SEKUNDEN</string>
     <string name="train_rest_add_short">+15 S</string>
     <string name="train_rest_end">PAUSE BEENDEN</string>
@@ -140,6 +141,11 @@
     <string name="live_count_weak_signal">Signal schwach — Zahl bitte prüfen</string>
     <string name="live_count_countdown">Start in %1$d …</string>
     <string name="live_count_stop">Stopp</string>
+
+    <!-- Autokorrelations-Zweitmeinung (Umbauplan 2026-09-04 Phase 7).
+         Eine Frage, keine Korrektur: die Prüfung kann die Zahl nicht exakt
+         bestimmen, sie merkt nur, wenn die Signalperiodik widerspricht. -->
+    <string name="plausibility_hint">Gezählt %1$d — der Bewegungsrhythmus sagt %2$d. Stimmt die Zahl?</string>
 
     <!-- Kalibrierungs-Wizard (#26) -->
     <string name="calibration_title">Kalibrierung</string>

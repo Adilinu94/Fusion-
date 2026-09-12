@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="timer_rest_title">Resttimer</string>
+    <string name="timer_back">Zurück</string>
     <!-- Start-Schaltflaeche (B-UI-3): stand hartcodiert in TimerSection.kt. -->
     <string name="timer_start">TIMER STARTEN</string>
     <string name="timer_preset_seconds">%1$d s</string>

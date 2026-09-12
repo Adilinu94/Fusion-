@@ -6,8 +6,8 @@ import java.io.File
 
 /**
  * Modulabhaengigkeitstest (Bauplan Schritt 2.6): prueft die Regeln aus
- * Abschnitt 3.2 auf Ebene der Gradle-Build-Dateien. Ein Verstoss muss den
- * Testlauf — und damit CI — fehlschlagen lassen.
+ * Abschnitt 3.2 auf **zwei** Ebenen — Gradle-Deklaration und Kotlin-Import.
+ * Ein Verstoss muss den Testlauf — und damit CI — fehlschlagen lassen.
  *
  * Regeln:
  * 1. `:core:model` haengt von keinem anderen App-Modul ab.
@@ -16,6 +16,13 @@ import java.io.File
  * 3. `:feature:*` kennt weder Room noch Media3 noch `:core:database`
  *    und importiert kein anderes Feature.
  * 4. `:data:*` kennt keine Feature-Module.
+ *
+ * Warum zwei Ebenen (Verbesserungsplan B-ARCH-1): Die Deklarationspruefung
+ * findet nur, was ein Modul selbst als Abhaengigkeit auffuehrt. Sie ist blind
+ * fuer **transitive Sichtbarkeit** — `core/database` gibt Room per `api(...)`
+ * weiter, `core/designsystem` ebenso Compose. Ein `import androidx.room.*`
+ * in einem Modul, das Room dadurch sieht, kompiliert und lief bisher durch
+ * jeden Test. Die Importpruefung schliesst genau diese Luecke.
  */
 class ModuleDependencyRulesTest {
     private val repoRoot: File by lazy {
@@ -167,6 +174,132 @@ class ModuleDependencyRulesTest {
             assertTrue(
                 "Bauplan-Modul fehlt: $module",
                 File(repoRoot, "$module/build.gradle.kts").exists(),
+            )
+        }
+    }
+
+    // --- Importpruefung (B-ARCH-1) ------------------------------------------
+
+    /** Alle `import`-Zeilen im Produktivcode eines Moduls, mit Fundort. */
+    private fun productionImports(modulePath: String): List<Pair<File, String>> {
+        val sourceRoot = File(repoRoot, "$modulePath/src/main")
+        if (!sourceRoot.isDirectory) return emptyList()
+        return sourceRoot
+            .walkTopDown()
+            .filter { it.isFile && it.extension == "kt" }
+            .flatMap { file ->
+                file
+                    .readLines()
+                    .map(String::trim)
+                    .filter { it.startsWith("import ") }
+                    .map { file to it.removePrefix("import ").removeSuffix(";") }
+            }.toList()
+    }
+
+    private fun assertNoImportMatching(
+        modulePath: String,
+        forbiddenPrefixes: List<String>,
+        reason: String,
+        allow: (String) -> Boolean = { false },
+    ) {
+        val violations =
+            productionImports(modulePath)
+                .filter { (_, import) ->
+                    forbiddenPrefixes.any { import.startsWith(it) } && !allow(import)
+                }.map { (file, import) ->
+                    "${file.relativeTo(repoRoot).path}: import $import"
+                }
+        assertTrue(
+            "Regelverstoss in $modulePath ($reason):\n" + violations.joinToString("\n"),
+            violations.isEmpty(),
+        )
+    }
+
+    /**
+     * Selbsttest: findet die Pruefung ueberhaupt Imports? Ohne diesen Fall
+     * waeren alle Importtests auch dann gruen, wenn `productionImports` nichts
+     * liefert — etwa weil sich eine Pfadkonvention geaendert hat.
+     */
+    @Test
+    fun `die importpruefung liest wirklich quelldateien`() {
+        val imports = productionImports("domain/audio")
+        assertTrue(
+            "Keine Imports in domain/audio gefunden - die Pruefung greift ins Leere",
+            imports.size > 20,
+        )
+        assertTrue(
+            "Erwartet mindestens eine Kotlin-Datei mit kotlin.math-Import",
+            imports.any { it.second.startsWith("kotlin.") },
+        )
+    }
+
+    @Test
+    fun `core model importiert kein anderes app modul`() {
+        assertNoImportMatching(
+            "core/model",
+            listOf(
+                "com.dropsync.domain.",
+                "com.dropsync.data.",
+                "com.dropsync.feature.",
+                "com.dropsync.core.database.",
+                "com.dropsync.core.designsystem.",
+                "androidx.room.",
+                "androidx.media3.",
+            ),
+            "Regel 3.2/1: core:model ist das Fundament und importiert nichts aus der App",
+        )
+    }
+
+    @Test
+    fun `domain module importieren kein android room oder media3`() {
+        for ((module, _) in modulesUnder("domain")) {
+            assertNoImportMatching(
+                module,
+                listOf(
+                    "android.",
+                    "androidx.",
+                    "com.google.android.exoplayer",
+                    "com.dropsync.core.database.",
+                    "com.dropsync.data.",
+                    "com.dropsync.feature.",
+                ),
+                "Regel 3.2/2: Domain ist reines JVM ohne Android, Room oder ExoPlayer",
+                // javax.inject und jakarta sind JVM-Standard, keine
+                // Android-Abhaengigkeit - sie beginnen ohnehin nicht mit den
+                // Praefixen oben und sind hier nur der Vollstaendigkeit wegen
+                // erwaehnt.
+            )
+        }
+    }
+
+    @Test
+    fun `feature module importieren weder room noch media3 noch andere features`() {
+        for ((module, _) in modulesUnder("feature")) {
+            val ownFeature = module.substringAfterLast('/')
+            assertNoImportMatching(
+                module,
+                listOf(
+                    "androidx.room.",
+                    "androidx.media3.",
+                    "com.google.android.exoplayer",
+                    "com.dropsync.core.database.",
+                    "com.dropsync.data.",
+                    "com.dropsync.feature.",
+                ),
+                "Regel 3.2/4: Features nutzen nur Domain, UI-State und Designsystem",
+                // Das eigene Feature-Paket ist erlaubt; verboten sind fremde.
+                allow = { import -> import.startsWith("com.dropsync.feature.$ownFeature") },
+            )
+        }
+    }
+
+    @Test
+    fun `data module importieren keine feature module`() {
+        for ((module, _) in modulesUnder("data")) {
+            assertNoImportMatching(
+                module,
+                listOf("com.dropsync.feature.", "com.dropsync.app."),
+                "Regel 3.2/3: Data implementiert Domain-Schnittstellen, keine UI",
             )
         }
     }

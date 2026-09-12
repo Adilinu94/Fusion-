@@ -31,6 +31,16 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests {
+            // Robolectric: SettingsViewModel bekommt einen Context per
+            // Konstruktor (SAF-Import/Export). Die Zustandslogik selbst
+            // braucht ihn nicht, aber ohne Android-Ressourcen laesst sich das
+            // ViewModel gar nicht bauen.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -59,6 +69,10 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(project(":core:testing"))
+    testImplementation(libs.junit4)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

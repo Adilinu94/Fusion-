@@ -196,6 +196,151 @@ class MigrationTest {
         }
     }
 
+    /**
+     * v10 -> v11 legt nur Indizes an (Verbesserungsplan B-DB-1). Rein additive
+     * Migrationen gelten leicht als risikofrei, deshalb pruefen beide Faelle
+     * unten das, was wirklich schiefgehen kann: Zeilen verlieren, und Indizes
+     * anlegen, die die Queries dann nicht benutzen.
+     */
+    @Test
+    fun `migration 10 auf 11 erhaelt die bibliothek und legt indizes an`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V11).absolutePath
+
+        helper.createDatabase(dbPath, 10).use { db ->
+            db.execSQL(
+                "INSERT INTO songs (media_store_id, content_uri, display_name, relative_path, " +
+                    "duration_ms, size_bytes, date_modified_seconds, title, artist, album, genre, " +
+                    "is_available) VALUES " +
+                    "(1, 'content://1', 'a.mp3', 'Music/Rock/', 200000, 5000000, 1700000000, " +
+                    "'Erster Titel', 'Interpret A', 'Album A', 'Rock', 1)",
+            )
+            db.execSQL(
+                "INSERT INTO song_markers (id, source_fingerprint, label, position_ms, source, " +
+                    "is_enabled, created_at_epoch_ms) " +
+                    "VALUES (1, 'fp-abc', 'Drop', 45000, 'IMPORTED', 1, 1700000000000)",
+            )
+        }
+
+        helper.runMigrationsAndValidate(dbPath, 11, true, *DROPSYNC_MIGRATIONS).use { db ->
+            // 1. Die Bibliothek ist noch da.
+            db
+                .query("SELECT title, album, genre FROM songs WHERE media_store_id = 1")
+                .use { cursor ->
+                    assertTrue("Song aus v10 fehlt nach der Migration", cursor.moveToFirst())
+                    assertEquals("Erster Titel", cursor.getString(0))
+                    assertEquals("Album A", cursor.getString(1))
+                    assertEquals("Rock", cursor.getString(2))
+                }
+            db.query("SELECT source_fingerprint FROM song_markers WHERE id = 1").use { cursor ->
+                assertTrue("Marker aus v10 fehlt nach der Migration", cursor.moveToFirst())
+                assertEquals("fp-abc", cursor.getString(0))
+            }
+
+            // 2. Die Indizes existieren unter genau den Namen, die Room aus den
+            //    Entities ableitet - sonst haette runMigrationsAndValidate schon
+            //    geworfen, aber der Name ist auch der Vertrag fuer 11.json.
+            val indexNames = mutableSetOf<String>()
+            db
+                .query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name IN ('songs', 'song_markers')")
+                .use { cursor ->
+                    while (cursor.moveToNext()) {
+                        cursor.getString(0)?.let(indexNames::add)
+                    }
+                }
+            listOf(
+                "index_songs_is_available_album",
+                "index_songs_is_available_artist",
+                "index_songs_is_available_genre",
+                "index_songs_is_available_relative_path",
+                "index_songs_is_available_date_modified_seconds",
+                "index_song_markers_source_fingerprint",
+            ).forEach { expected ->
+                assertTrue("Index $expected fehlt, vorhanden: $indexNames", expected in indexNames)
+            }
+        }
+    }
+
+    /**
+     * Der ehrliche Nachweis: ein Index, den der Planer nicht benutzt, ist nur
+     * Schreiblast. `EXPLAIN QUERY PLAN` nennt entweder `SCAN songs` oder
+     * `SEARCH songs USING INDEX ...` - der Unterschied ist genau der Befund
+     * aus B-DB-1.
+     */
+    @Test
+    fun `browse-queries benutzen die neuen indizes statt zu scannen`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V11_PLAN).absolutePath
+
+        helper.createDatabase(dbPath, 10).close()
+        helper.runMigrationsAndValidate(dbPath, 11, true, *DROPSYNC_MIGRATIONS).use { db ->
+            // Ohne Statistiken waehlt SQLite bei leerer Tabelle gern den Scan;
+            // ANALYZE gibt dem Planer die Grundlage, die er im Betrieb hat.
+            // Rekursive CTE statt generate_series - das Modul ist in
+            // Robolectrics SQLite-Build nicht eingebaut.
+            db.execSQL(
+                "WITH RECURSIVE seq(value) AS (" +
+                    "SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 500) " +
+                    "INSERT INTO songs (media_store_id, content_uri, display_name, relative_path, " +
+                    "duration_ms, size_bytes, date_modified_seconds, title, artist, album, genre, " +
+                    "is_available) SELECT value, 'content://' || value, value || '.mp3', " +
+                    "'Music/Ordner' || (value % 20) || '/', 200000, 5000000, 1700000000 + value, " +
+                    "'Titel ' || value, 'Interpret ' || (value % 50), 'Album ' || (value % 100), " +
+                    "'Genre ' || (value % 8), 1 FROM seq",
+            )
+            db.execSQL("ANALYZE")
+
+            fun plan(sql: String): String {
+                val steps = StringBuilder()
+                db.query("EXPLAIN QUERY PLAN $sql").use { cursor ->
+                    while (cursor.moveToNext()) {
+                        steps.append(cursor.getString(cursor.columnCount - 1)).append(" | ")
+                    }
+                }
+                return steps.toString()
+            }
+
+            // Gegenprobe: eine Spalte ohne Index muss als SCAN erscheinen.
+            // Ohne diese Zeile koennte der Test gruen sein, weil EXPLAIN in
+            // dieser Umgebung gar nicht zwischen SCAN und SEARCH trennt.
+            val unindexedPlan = plan("SELECT * FROM songs WHERE known_sha256 = 'abc'")
+            assertTrue(
+                "EXPLAIN unterscheidet SCAN nicht - der Test beweist nichts. Plan war: $unindexedPlan",
+                unindexedPlan.contains("SCAN"),
+            )
+
+            mapOf(
+                "index_songs_is_available_album" to
+                    "SELECT * FROM songs WHERE is_available = 1 AND album = 'Album 7'",
+                "index_songs_is_available_artist" to
+                    "SELECT * FROM songs WHERE is_available = 1 AND artist = 'Interpret 7'",
+                "index_songs_is_available_genre" to
+                    "SELECT * FROM songs WHERE is_available = 1 AND genre = 'Genre 3'",
+                "index_songs_is_available_relative_path" to
+                    "SELECT * FROM songs WHERE is_available = 1 AND relative_path = 'Music/Ordner3/'",
+                "index_songs_is_available_date_modified_seconds" to
+                    "SELECT * FROM songs WHERE is_available = 1 ORDER BY date_modified_seconds DESC LIMIT 25",
+            ).forEach { (index, sql) ->
+                val queryPlan = plan(sql)
+                assertTrue(
+                    "Query nutzt $index nicht. Plan war: $queryPlan",
+                    queryPlan.contains(index),
+                )
+            }
+
+            // Das Alben-Aggregat darf fuer GROUP BY nicht sortieren muessen.
+            val albumPlan =
+                plan(
+                    "SELECT album, COUNT(*) FROM songs WHERE is_available = 1 " +
+                        "AND album IS NOT NULL AND album != '' GROUP BY album",
+                )
+            assertTrue(
+                "GROUP BY album nutzt den Index nicht. Plan war: $albumPlan",
+                albumPlan.contains("index_songs_is_available_album"),
+            )
+        }
+    }
+
     private companion object {
         const val TEST_DB = "migration-test.db"
         const val TEST_DB_V2 = "migration-test-v2.db"
@@ -208,5 +353,7 @@ class MigrationTest {
         const val TEST_DB_V9 = "migration-test-v9.db"
         const val TEST_DB_V9_DATA = "migration-test-v9-data.db"
         const val TEST_DB_V10 = "migration-test-v10.db"
+        const val TEST_DB_V11 = "migration-test-v11.db"
+        const val TEST_DB_V11_PLAN = "migration-test-v11-plan.db"
     }
 }

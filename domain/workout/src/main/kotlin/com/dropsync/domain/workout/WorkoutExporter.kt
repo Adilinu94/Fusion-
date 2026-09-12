@@ -4,7 +4,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
 /**
- * Trainingsdaten-Export (Verbesserungsplan Phase 3): das flache Satz-Log
+ * Trainingsdaten-Export: das flache Satz-Log
  * und die Uebungsliste als portables Dokument. Die App ist offline; der
  * Export ist der einzige Weg, das Tagebuch bei einem Geraetewechsel zu
  * retten.

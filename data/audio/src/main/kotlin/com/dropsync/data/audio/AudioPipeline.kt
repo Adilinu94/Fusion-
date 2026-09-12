@@ -12,12 +12,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -121,21 +125,35 @@ class AudioPipeline
         // Phase 7: Rest-Ducking (dB -> Gain) mit linearer Rampe. Der
         // Ticker (100 ms) setzt den Zielwert im Audiothread; der
         // MasterDspProcessor kombiniert ihn per min() mit dem Cue-Ducking.
+        //
+        // B-AUD-3: Zwei schnell folgende setRestDuckDb-Aufrufe laufen auf
+        // verschiedenen Threads - der Aufrufer liest restDuckCurrent, die
+        // gekuendigte Rampe schreibt es noch aus Dispatchers.Default. Ohne
+        // Synchronisation ist der gelesene Startwert nicht definiert.
+        // AtomicReference statt @Volatile, weil der Wert nicht nur sichtbar,
+        // sondern beim Lesen-und-Weiterschreiben konsistent sein muss.
+        private val restDuckMutex = Mutex()
         private var restDuckJob: Job? = null
-        private var restDuckCurrent: Double = 1.0
+        private val restDuckCurrent = AtomicReference(1.0)
 
         /** Ducking der Pausenmusik in dB (Phase 7); 0 = aus. */
         fun setRestDuckDb(db: Double) {
             val sanitized = db.coerceIn(REST_DUCK_MIN_DB, REST_DUCK_MAX_DB)
             val target = if (sanitized >= 0.0) 1.0 else AudioMath.dbToLinear(sanitized)
-            restDuckJob?.cancel()
+            val previous = restDuckJob
             restDuckJob =
                 scope.launch {
-                    rampDuck(
-                        from = restDuckCurrent,
-                        target = target,
-                        attack = sanitized < 0.0,
-                    )
+                    // Erst warten, bis die vorige Rampe wirklich beendet ist:
+                    // sonst ueberschreiben sich zwei Rampen gegenseitig und
+                    // der Endwert haengt vom Scheduling ab.
+                    previous?.cancelAndJoin()
+                    restDuckMutex.withLock {
+                        rampDuck(
+                            from = restDuckCurrent.get(),
+                            target = target,
+                            attack = sanitized < 0.0,
+                        )
+                    }
                 }
         }
 
@@ -149,11 +167,11 @@ class AudioPipeline
             for (i in 1..steps) {
                 val t = i.toDouble() / steps
                 val value = from + (target - from) * t
-                restDuckCurrent = value
+                restDuckCurrent.set(value)
                 masterProcessor.setRestDuckingGain(value)
                 kotlinx.coroutines.delay(stepMs)
             }
-            restDuckCurrent = target
+            restDuckCurrent.set(target)
             masterProcessor.setRestDuckingGain(target)
         }
 

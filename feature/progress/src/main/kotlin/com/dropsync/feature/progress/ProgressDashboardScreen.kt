@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.AnimationVector1D
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.tween
@@ -323,48 +324,10 @@ private fun StatementTile(
     val missing = progress.weeklyGoal - progress.trainingDaysThisWeek
     val newWeek = progress.firstWeekDayWithoutSets && progress.trainingDaysThisWeek == 0
     // A11y-Punkt 3: TalkBack liest den Zustand, nicht die Grafik.
-    val ringState =
-        when {
-            newWeek -> {
-                stringResource(R.string.progress_ring_a11y_new_week, progress.weeklyGoal)
-            }
-
-            progress.weeklyGoalExceeded -> {
-                stringResource(R.string.progress_ring_a11y_exceeded, progress.trainingDaysThisWeek, progress.weeklyGoal)
-            }
-
-            progress.weeklyGoalReached -> {
-                stringResource(R.string.progress_ring_a11y_reached, progress.trainingDaysThisWeek, progress.weeklyGoal)
-            }
-
-            missing == 1 -> {
-                stringResource(
-                    R.string.progress_ring_a11y_missing_one,
-                    progress.trainingDaysThisWeek,
-                    progress.weeklyGoal,
-                )
-            }
-
-            else -> {
-                stringResource(
-                    R.string.progress_ring_a11y_missing_many,
-                    progress.trainingDaysThisWeek,
-                    progress.weeklyGoal,
-                    missing,
-                )
-            }
-        }
+    val ringState = statementRingState(progress = progress, missing = missing, newWeek = newWeek)
     // Der einzige Feiermoment des Screens (UI-Vertrag Bewegung): kurzes
     // Violett-Aufblitzen des Randes, einmalig, wenn der erste Tile erscheint.
-    var celebrated by rememberSaveable { mutableStateOf(false) }
-    val flash = remember { Animatable(0f) }
-    LaunchedEffect(Unit) {
-        if (!celebrated && !reducedMotion) {
-            flash.animateTo(1f, tween(durationMillis = 150, easing = LinearEasing))
-            flash.animateTo(0f, tween(durationMillis = 150, easing = LinearEasing))
-            celebrated = true
-        }
-    }
+    val flash = rememberCelebrationFlash(reducedMotion = reducedMotion)
     val heroShape = RoundedCornerShape(Spacing.radiusHero)
     val ringSize = if (singleColumn) 120.dp else 220.dp
 
@@ -421,30 +384,7 @@ private fun StatementTile(
                     },
                 style = MaterialTheme.typography.titleMedium,
             )
-            val distanceText =
-                when {
-                    newWeek -> {
-                        stringResource(R.string.progress_ring_planned, progress.weeklyGoal)
-                    }
-
-                    missing <= 0 -> {
-                        stringResource(
-                            if (progress.weeklyGoalExceeded) {
-                                R.string.progress_ring_exceeded
-                            } else {
-                                R.string.progress_ring_reached
-                            },
-                        )
-                    }
-
-                    missing == 1 -> {
-                        stringResource(R.string.progress_ring_missing_one)
-                    }
-
-                    else -> {
-                        stringResource(R.string.progress_ring_missing_many, missing)
-                    }
-                }
+            val distanceText = statementDistanceText(progress = progress, missing = missing, newWeek = newWeek)
             // R1: Auf dem hellen Tile ist Lime unlesbar — der Goal-Gradient-
             // Moment „genau ein Training fehlt" traegt Gewicht statt Farbe.
             Text(
@@ -465,6 +405,97 @@ private fun StatementTile(
             }
         }
     }
+}
+
+/** TalkBack-Zustand des Rings (A11y-Punkt 3): nennt den Zustand, nicht die
+ * Grafik. Aus `StatementTile` gezogen (Detekt: CyclomaticComplexMethod). */
+@Composable
+private fun statementRingState(
+    progress: ProgressUiState,
+    missing: Int,
+    newWeek: Boolean,
+): String =
+    when {
+        newWeek -> {
+            stringResource(R.string.progress_ring_a11y_new_week, progress.weeklyGoal)
+        }
+
+        progress.weeklyGoalExceeded -> {
+            stringResource(R.string.progress_ring_a11y_exceeded, progress.trainingDaysThisWeek, progress.weeklyGoal)
+        }
+
+        progress.weeklyGoalReached -> {
+            stringResource(R.string.progress_ring_a11y_reached, progress.trainingDaysThisWeek, progress.weeklyGoal)
+        }
+
+        missing == 1 -> {
+            stringResource(
+                R.string.progress_ring_a11y_missing_one,
+                progress.trainingDaysThisWeek,
+                progress.weeklyGoal,
+            )
+        }
+
+        else -> {
+            stringResource(
+                R.string.progress_ring_a11y_missing_many,
+                progress.trainingDaysThisWeek,
+                progress.weeklyGoal,
+                missing,
+            )
+        }
+    }
+
+/**
+ * Distanz-Sprache unter dem Ring (R2/R3): nennt die Handlung, nicht den
+ * Stand. Aus `StatementTile` gezogen (Detekt: LongMethod).
+ */
+@Composable
+private fun statementDistanceText(
+    progress: ProgressUiState,
+    missing: Int,
+    newWeek: Boolean,
+): String =
+    when {
+        newWeek -> {
+            stringResource(R.string.progress_ring_planned, progress.weeklyGoal)
+        }
+
+        missing <= 0 -> {
+            stringResource(
+                if (progress.weeklyGoalExceeded) {
+                    R.string.progress_ring_exceeded
+                } else {
+                    R.string.progress_ring_reached
+                },
+            )
+        }
+
+        missing == 1 -> {
+            stringResource(R.string.progress_ring_missing_one)
+        }
+
+        else -> {
+            stringResource(R.string.progress_ring_missing_many, missing)
+        }
+    }
+
+/**
+ * Einmaliges Violett-Aufblitzen des Tile-Randes beim ersten Erscheinen
+ * (UI-Vertrag Bewegung); bei reduzierter Bewegung kein Effekt.
+ */
+@Composable
+private fun rememberCelebrationFlash(reducedMotion: Boolean): Animatable<Float, AnimationVector1D> {
+    var celebrated by rememberSaveable { mutableStateOf(false) }
+    val flash = remember { Animatable(0f) }
+    LaunchedEffect(Unit) {
+        if (!celebrated && !reducedMotion) {
+            flash.animateTo(1f, tween(durationMillis = 150, easing = LinearEasing))
+            flash.animateTo(0f, tween(durationMillis = 150, easing = LinearEasing))
+            celebrated = true
+        }
+    }
+    return flash
 }
 
 /** TILE 2 — Streak: Trainingstage in Folge, erst ab 2 sichtbar (keine Serie). */

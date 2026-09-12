@@ -19,11 +19,26 @@ enum class DitherMode {
  * fehler per Fehlerrueckfuehrung erster Ordnung nach oben.
  */
 class DitherGenerator(
-    private val mode: DitherMode,
+    mode: DitherMode,
     seed: Long = 0x5EED,
 ) {
     private val random = Random(seed)
     private var lastError = 0.0
+
+    /**
+     * Betriebsart; zur Laufzeit umschaltbar, damit der Audiothread beim
+     * Moduswechsel keinen neuen Generator allokieren muss
+     * (Verbesserungsplan B-AUD-1). Der Wechsel verwirft die
+     * Fehlerrueckfuehrung - ein alter SHAPED-Fehler darf nicht in den neuen
+     * Modus hineinwirken, genau wie bei einem frischen Generator.
+     */
+    var mode: DitherMode = mode
+        set(value) {
+            if (field != value) {
+                field = value
+                lastError = 0.0
+            }
+        }
 
     /** Rauschwert in LSB, zum skalierten Sample zu addieren. */
     fun next(): Double =

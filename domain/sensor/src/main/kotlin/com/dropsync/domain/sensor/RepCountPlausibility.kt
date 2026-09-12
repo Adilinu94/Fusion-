@@ -35,6 +35,16 @@ object RepCountPlausibility {
         val periodicityStrength: Double,
         /** Einschaetzung des uebergebenen Zaehlerstands. */
         val verdict: Verdict,
+        /**
+         * Der Zaehlerstand, gegen den geprueft wurde (Umbauplan 2026-09-04
+         * Phase 7). Gehoert ins Ergebnis, damit ein Verbraucher — insbesondere
+         * die UI — die getroffene Aussage vollstaendig aus dem [Result] lesen
+         * kann. Sonst muesste er sich die Zahl aus einer zweiten Quelle holen,
+         * die sich inzwischen geaendert haben kann (der Nutzer darf die
+         * Rep-Zahl vor dem Loggen korrigieren) — und wuerde dann eine
+         * Aussage anzeigen, die die Pruefung nie gemacht hat.
+         */
+        val countedReps: Int,
     )
 
     /** Bewertung des Peak-Zaehlers gegen die Autokorrelations-Schaetzung. */
@@ -65,16 +75,16 @@ object RepCountPlausibility {
         countedReps: Int,
     ): Result {
         if (signal.size < MIN_SAMPLES || sampleRateHz <= 0.0) {
-            return Result(null, null, 0.0, Verdict.INCONCLUSIVE)
+            return inconclusive(countedReps)
         }
 
         val minLag = (sampleRateHz * MIN_REP_SECONDS).toInt().coerceAtLeast(2)
         val maxLag = min((sampleRateHz * MAX_REP_SECONDS).toInt(), signal.size / 2)
-        if (maxLag <= minLag) return Result(null, null, 0.0, Verdict.INCONCLUSIVE)
+        if (maxLag <= minLag) return inconclusive(countedReps)
 
         val centered = centered(signal)
         val zeroLag = dot(centered, centered, 0)
-        if (zeroLag <= 1e-12) return Result(null, null, 0.0, Verdict.INCONCLUSIVE)
+        if (zeroLag <= 1e-12) return inconclusive(countedReps)
 
         var bestLag = -1
         var bestValue = 0.0
@@ -86,7 +96,7 @@ object RepCountPlausibility {
             }
         }
         if (bestLag < 0 || bestValue < MIN_PERIODICITY) {
-            return Result(null, null, max(0.0, bestValue), Verdict.INCONCLUSIVE)
+            return inconclusive(countedReps, strength = max(0.0, bestValue))
         }
 
         val periodSeconds = bestLag / sampleRateHz
@@ -102,8 +112,18 @@ object RepCountPlausibility {
                 diff == 1 -> Verdict.BORDERLINE
                 else -> Verdict.SUSPICIOUS
             }
-        return Result(periodSeconds, estimated, bestValue, verdict)
+        return Result(periodSeconds, estimated, bestValue, verdict, countedReps)
     }
+
+    /**
+     * "Keine Aussage" — bewusst mit [countedReps], damit ein Verbraucher am
+     * Ergebnis erkennt, worauf sich das Schweigen bezieht. INCONCLUSIVE heisst
+     * "keine Aussage", nicht "bestaetigt".
+     */
+    private fun inconclusive(
+        countedReps: Int,
+        strength: Double = 0.0,
+    ) = Result(null, null, strength, Verdict.INCONCLUSIVE, countedReps)
 
     /** Signal um seinen Mittelwert zentriert (Autokorrelation braucht das). */
     private fun centered(signal: DoubleArray): DoubleArray {

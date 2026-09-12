@@ -33,6 +33,7 @@
     <string name="settings_mix_toggle_title">Automatic transitions</string>
     <string name="settings_mix_toggle_desc">Blend tracks into each other instead of cutting hard. Albums and CUE tracks always stay gapless.</string>
     <string name="settings_mix_bit_perfect_hint">Not available while bit-perfect output is active.</string>
+    <string name="settings_mix_no_effect">Currently without effect. Transitions play as a hard cut. Style and duration are kept and will apply once the consumer exists.</string>
     <string name="settings_mix_preset_title">Transition style</string>
     <string name="settings_mix_preset_fade">Fade</string>
     <string name="settings_mix_preset_rise">Rise</string>

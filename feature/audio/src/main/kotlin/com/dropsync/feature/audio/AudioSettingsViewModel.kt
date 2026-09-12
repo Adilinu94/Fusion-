@@ -12,6 +12,7 @@ import com.dropsync.domain.audio.EqSettings
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -63,10 +64,21 @@ class AudioSettingsViewModel
                 BitPerfectSupport.UNAVAILABLE,
             )
 
-        /** Wendet [transform] auf die aktuelle Konfiguration an und speichert. */
+        /**
+         * Wendet [transform] auf die aktuell persistierte Konfiguration an und
+         * speichert. Gelesen wird der Repository-Stand, nicht `dspConfig.value`:
+         * der StateFlow laeuft mit WhileSubscribed und liefert ohne Abonnenten
+         * — und bis die Emission eines gerade geschriebenen Werts angekommen
+         * ist — einen veralteten Wert. Zwei schnelle Aenderungen wuerden sich
+         * sonst still uebereinanderschreiben. Dasselbe Muster wie
+         * `SettingsViewModel` (dort `.first()` pro Setter); dieselbe Falle wie
+         * die `.value`-Falle aus dem Repcount-Umbauplan (Abschnitt 7.7,
+         * Abweichung 4).
+         */
         fun update(transform: (DspConfig) -> DspConfig) {
-            val next = transform(dspConfig.value)
-            viewModelScope.launch { repository.updateDspConfig(next) }
+            viewModelScope.launch {
+                repository.updateDspConfig(transform(repository.dspConfig.first()))
+            }
         }
 
         /** Setzt den Grafik-EQ auf [count] neutrale ISO-Baender (10/15/31). */

@@ -279,4 +279,72 @@ class ActiveSetControllerTest {
             val trace = c.finishAndTakeTrace()
             assertEquals(SignalQuality.DEGRADED, trace?.signalQuality)
         }
+
+    // --- Zweitmeinung (Umbauplan 2026-09-04 Phase 7) ----------------------
+    //
+    // Seit die Zweitmeinung in der UI sichtbar ist, hat ihr Lebenszyklus eine
+    // Wirkung nach draussen: bleibt sie beim Abbruch stehen, waehrend der
+    // Zaehlstand auf 0 faellt, zeigt die App eine Aussage ueber einen Satz an,
+    // den es nicht mehr gibt.
+
+    @Test
+    fun `stop setzt die Zweitmeinung und abort raeumt sie ab`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            assertEquals(2, c.stop())
+            assertNotNull("stop muss die Pruefung rechnen", c.lastPlausibility.value)
+
+            c.abort(SetAbortReason.EXERCISE_CHANGED)
+            assertEquals(0, c.countedReps.value)
+            assertNull(
+                "Zweitmeinung darf einen abgebrochenen Satz nicht ueberleben",
+                c.lastPlausibility.value,
+            )
+        }
+
+    @Test
+    fun `finishAndTakeTrace raeumt die Zweitmeinung mit ab`() =
+        runTest {
+            // finishAndTakeTrace ruft intern abort(CLEARED): der Trace traegt
+            // die Zweitmeinung, der Controller darf sie danach nicht mehr
+            // anzeigen - sonst haengt der Hinweis nach dem Loggen fest.
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            val trace = c.finishAndTakeTrace()
+            assertNotNull("Trace muss die Zweitmeinung tragen", trace?.plausibility)
+            assertNull(c.lastPlausibility.value)
+        }
+
+    @Test
+    fun `Zweitmeinung eines Vorgaenger-Sets ragt nicht in ein neues Set`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            assertNotNull(c.lastPlausibility.value)
+
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertNull(c.lastPlausibility.value)
+            c.close()
+        }
 }

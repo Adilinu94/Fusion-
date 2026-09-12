@@ -114,6 +114,7 @@
 
     <!-- Rest console -->
     <string name="train_rest_label">REST</string>
+    <string name="train_rest_open_timer">Open timer</string>
     <string name="train_rest_add_long">+15 SECONDS</string>
     <string name="train_rest_add_short">+15 S</string>
     <string name="train_rest_end">END REST</string>
@@ -140,6 +141,11 @@
     <string name="live_count_weak_signal">Weak signal — please check the count</string>
     <string name="live_count_countdown">Starting in %1$d …</string>
     <string name="live_count_stop">Stop</string>
+
+    <!-- Autocorrelation second opinion (Umbauplan 2026-09-04 Phase 7).
+         A question, not a correction: the check cannot determine the exact
+         count, it only notices when the signal periodicity disagrees. -->
+    <string name="plausibility_hint">Counted %1$d — the movement rhythm suggests %2$d. Is the number right?</string>
 
     <!-- Calibration wizard (#26) -->
     <string name="calibration_title">Calibration</string>

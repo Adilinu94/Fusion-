@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="timer_rest_title">Rest timer</string>
+    <string name="timer_back">Back</string>
     <!-- Start button (B-UI-3): was hardcoded German in TimerSection.kt. -->
     <string name="timer_start">START TIMER</string>
     <string name="timer_preset_seconds">%1$d s</string>
