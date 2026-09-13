@@ -1407,3 +1407,48 @@ angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
 - [ ] Bewusst abweichend: Screenshots der Komponenten statt der "5 groessten
   Screens" (Feature-Module braeuchten eigene Roborazzi-Infrastruktur; die
   Breakpoint-Abnahme kommt in C2). 200-%-Abnahme bleibt Geraeteschritt 13.
+
+## AM. Ausbauplan Tranche C2-C5: Adaptiv, System-Media, Gates, Modernisierung (Session: OpenCode)
+
+- [x] C2 Adaptiv: `LocalWindowSizeClass` in `:core:designsystem` (einmal von
+  der Shell bereitgestellt, `rememberWindowWidthSizeClass()` in den Screens).
+  Now-Playing begrenzt das kreisrunde Cover auf Tablet/Landscape auf 440 dp
+  (vorher full-width) und ersetzt die festen 30/18 sp durch Typo-Tokens;
+  Train bekommt auf breiten Fenstern mehr Aussenrand; das Dashboard
+  generalisiert die Spaltenwahl (gross > 1.5 -> 1, Expanded >= 840 dp -> 3,
+  sonst 2) mit purem `DashboardColumnCountTest` (4).
+- [ ] C2-Abnahme "Screenshot je Breakpoint" bewusst nicht als Pixel-Gate:
+  dafuer braeuchten die Feature-Module eigene Roborazzi-Infrastruktur mit
+  Screen-Fixtures. Die Breakpoint-Logik ist per Test abgedeckt, das
+  Gesamtbild bleibt Geraeteschritt 13 (200 %).
+- [x] C3 System-Media: Timer-/Rest-Notification traegt einen
+  Fortschrittsbalken (`setProgress`, Prozent aus Sitzungsdauer), Test in
+  `TimerServiceForegroundTest` (15/60 s -> 25 %). ADR-0020: media3-ui-compose
+  wird bewusst NICHT genutzt (Regel 3.2/4 verbietet media3 in Features, der
+  eigene Mini-Player ist designsystem-konform nach ADR-0018); System-Media
+  laeuft ueber die MediaSession, der Output-Switcher ist System-UI und bleibt
+  Geraeteabnahme.
+- [x] C4 Gates: neuer CI-Job `instrumented` (Emulator API 33,
+  `connectedCheck`) mit `continue-on-error: true`; das Screenshot-Gate ist seit
+  C1 als `verifyRoborazziDebug` in der CI (Paparazzi ersetzt). `src/test`
+  nachgeholt: `core:model` (`DuckingPercentTest`, `EnumPersistenceNamesTest`
+  pinnt die als String persistierten Enum-Namen als Migrationsvertrag),
+  `domain:settings` (`SettingsContractTest`). Kennzahl "Module ohne Tests" 0.
+- [x] C5-Teil 1 Backup: ADR-0021 haelt fest, dass V1 bewusst weder
+  Auto-Backup noch Geraetetransfer noch verschluesselten Export baut
+  (`allowBackup=false`, `dataExtractionRules` und `fullBackupContent=false`
+  waren bereits gesetzt). Ein lokaler Export bleibt Folge-Option mit eigener
+  ADR (Format/Schluessel).
+- [x] C5-Teil 2 Detekt: Die manuell gepflegte `source.setFrom`-Liste ist durch
+  eine Ableitung aller Modul-`src`-Verzeichnisse ersetzt (B-ARCH-4). Sie
+  konnte vorher still Module auslassen; `training-core`/`libs` bleiben raus.
+  Verifikation ueber den Bericht: 423 kt-Dateien, 0 Findings.
+- [x] Gates: `test`, `spotlessCheck`, `lintDebug`, `detekt`, `assembleDebug`,
+  `assembleRelease`, `verifyRoborazziDebug`, `doku_links_check.py`,
+  `design_check.py` - alle gruen.
+- [ ] C5 offen (bewusst nicht in dieser Session): vollstaendige
+  `build-logic`-Convention-Plugins (Duplikat-`build.gradle.kts` ueber ~20
+  Module, eigener Modul-Schnitt); I18n-Reste + Top-Bars (U8);
+  Dependency-Bumps (coroutines/datastore/Detekt-Alphas) erst bei stabilen
+  Releases; Rest aus `VERBESSERUNGSPLAN.md` (B-SEC/B-DB/B-ARCH/B-UI/B-DOC);
+  Geraeteabnahmen (P4/Schritt 13).

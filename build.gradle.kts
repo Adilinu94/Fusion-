@@ -43,46 +43,34 @@ spotless {
 // (Build-Outputs sind nicht enthalten, damit keine Task-Kollisionen mit
 // process*-Tasks entstehen). Lizenz: detekt (Apache-2.0), siehe
 // THIRD_PARTY_NOTICES.md.
+//
+// C5 (B-ARCH-4): Die Quelle wird ABGELEITET statt manuell aufgezaehlt.
+// Vorher fehlten Module still (Befund: benchmarks/progress), weil die Liste
+// per Hand gepflegt wurde. Hier werden alle `src`-Verzeichnisse der App-Module
+// eingesammelt; neue Module laufen automatisch mit. Bewusst NICHT dabei:
+// training-core (Git-Submodul, Fremdcode) und libs/media3-ffmpeg (kein Kotlin).
+private val detektSourceDirs: List<File> =
+    rootDir
+        .listFiles()
+        .orEmpty()
+        .filter {
+            it.isDirectory &&
+                it.name !in setOf("build", "training-core", "libs", "gradle", "docs", "config", "tools", "scripts")
+        }.flatMap { top ->
+            buildList {
+                File(top, "src").takeIf { it.isDirectory }?.let(::add)
+                top
+                    .listFiles()
+                    .orEmpty()
+                    .filter { it.isDirectory }
+                    .map { File(it, "src") }
+                    .filter { it.isDirectory }
+                    .forEach(::add)
+            }
+        }
+
 detekt {
-    source.setFrom(
-        files(
-            "app/src",
-            // benchmarks fehlte neben feature/progress (Befund B-ARCH-4):
-            // die Liste wird manuell gepflegt, jede Auslassung bleibt still.
-            // Bewusst NICHT hier: training-core (Git-Submodul, gepinnt auf
-            // v1.0.0 - Fremdcode, dessen Findings nur im eigenen Repo
-            // behebbar sind) und libs/media3-ffmpeg (kein Kotlin-Code).
-            "benchmarks/src",
-            "core/common/src",
-            "core/model/src",
-            "core/database/src",
-            "core/designsystem/src",
-            "core/testing/src",
-            "data/audio/src",
-            "data/health/src",
-            "data/library/src",
-            "data/playback/src",
-            "data/sensor/src",
-            "data/settings/src",
-            "data/timer/src",
-            "data/workout/src",
-            "domain/audio/src",
-            "domain/health/src",
-            "domain/library/src",
-            "domain/playback/src",
-            "domain/sensor/src",
-            "domain/settings/src",
-            "domain/timer/src",
-            "domain/workout/src",
-            "feature/library/src",
-            "feature/audio/src",
-            "feature/player/src",
-            "feature/progress/src",
-            "feature/timer/src",
-            "feature/workout/src",
-            "feature/settings/src",
-        ),
-    )
+    source.setFrom(detektSourceDirs)
     config.setFrom(files("config/detekt/detekt.yml"))
     baseline.set(file("config/detekt/baseline.xml"))
     buildUponDefaultConfig.set(true)

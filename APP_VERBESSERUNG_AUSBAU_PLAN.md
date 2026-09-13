@@ -153,10 +153,13 @@ B1-Generatorlauf + Messzahlen brauchen ein Geraet (Runbook + CI-Gate liegen).
 
 ## 5. Tranche C — Modernisierung (laufend)
 
-**Status:** C1 `[x]` erledigt (Session: OpenCode, STATUS AL). Expressive-Umstieg
-bewusst nicht: material3 1.4.0 hat kein stabiles `ButtonGroup`/`LoadingIndicator`
-und `MaterialExpressiveTheme` ist internal, Projektregel verbietet Alphas —
-stattdessen Token-Konsolidierung + Roborazzi-Screenshot-Gate. C2-C5 offen.
+**Status:** C1 `[x]`, C2 `[x]`, C3 `[x]` (ADR-0020 statt media3-ui-compose),
+C4 `[x]` (Emulator-Job `continue-on-error`, Roborazzi-Gate, src/test-Luecken).
+C5 `[~]`: Backup-ADR (ADR-0021) und Detekt-Quellen-Ableitung erledigt;
+build-logic-Convention-Plugins, I18n-Reste und Dependency-Bumps bleiben offen
+(Session: OpenCode, STATUS AL/AM). Expressive-Umstieg bewusst nicht:
+material3 1.4.0 hat kein stabiles `ButtonGroup`/`LoadingIndicator` und
+`MaterialExpressiveTheme` ist internal, Projektregel verbietet Alphas.
 
 ### C1. M3 Expressive + Designsystem-Konsolidierung (U5)
 
