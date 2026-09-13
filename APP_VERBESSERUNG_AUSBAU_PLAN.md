@@ -153,6 +153,11 @@ B1-Generatorlauf + Messzahlen brauchen ein Geraet (Runbook + CI-Gate liegen).
 
 ## 5. Tranche C — Modernisierung (laufend)
 
+**Status:** C1 `[x]` erledigt (Session: OpenCode, STATUS AL). Expressive-Umstieg
+bewusst nicht: material3 1.4.0 hat kein stabiles `ButtonGroup`/`LoadingIndicator`
+und `MaterialExpressiveTheme` ist internal, Projektregel verbietet Alphas —
+stattdessen Token-Konsolidierung + Roborazzi-Screenshot-Gate. C2-C5 offen.
+
 ### C1. M3 Expressive + Designsystem-Konsolidierung (U5)
 
 - Ziel: Ein Radien-/Typo-/Farb-System, Expressive-Komponenten.
@@ -219,6 +224,7 @@ jedem Backup-Code. Nicht-Ziele: Wear/Auto als Pflicht, Cloud-Sync, Fit-Import
 
 Tranche gilt als fertig, wenn: alle Paket-Abnahmen erfuellt, `./gradlew test
 spotlessCheck lintDebug detekt`, `assembleDebug` + `assembleRelease`,
-`tools/doku_links_check.py` gruen sind, `VERBESSERUNGSPLAN.md`-Statuszeilen und
+`tools/doku_links_check.py` + `tools/design_check.py` gruen sind,
+`VERBESSERUNGSPLAN.md`-Statuszeilen und
 `docs/STATUS_FORTSCHRITT.md` nachgezogen wurden und der Commit die Gates nennt.
 Geraeteabnahmen landen in `docs/HARDWARE_TESTPLAN.md`.

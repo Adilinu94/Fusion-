@@ -74,6 +74,7 @@ import com.dropsync.core.designsystem.chart.WaveformMapping
 import com.dropsync.core.designsystem.chart.WaveformPlaceholder
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.OverlayTokens
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
@@ -513,8 +514,8 @@ private fun PowerampCover(
                             elevation = 12.dp,
                             shape = CircleShape,
                             clip = false,
-                            ambientColor = Color.Black.copy(alpha = 0.12f),
-                            spotColor = Color.Black.copy(alpha = 0.12f),
+                            ambientColor = OverlayTokens.scrim.copy(alpha = 0.12f),
+                            spotColor = OverlayTokens.scrim.copy(alpha = 0.12f),
                         ).clip(CircleShape)
                         .background(MaterialTheme.colorScheme.surfaceContainerHigh),
             ) {

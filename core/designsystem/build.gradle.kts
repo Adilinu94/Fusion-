@@ -3,6 +3,13 @@
 plugins {
     alias(libs.plugins.android.library)
     alias(libs.plugins.kotlin.compose)
+    // C1: Screenshot-Tests ohne Geraet (Roborazzi-Gate).
+    alias(libs.plugins.roborazzi)
+}
+
+// C1: Referenzbilder versioniert unter src/test/screenshots (CI vergleicht).
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 android {
@@ -33,6 +40,10 @@ android {
         unitTests.all {
             it.maxHeapSize = "2g"
         }
+        unitTests {
+            // Roborazzi braucht die gemergten Ressourcen/Manifest.
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -54,4 +65,10 @@ dependencies {
 
     // JVM-Test der Waveform-Koordinaten (WaveformBucketMappingTest).
     testImplementation(libs.junit4)
+    // C1: Screenshot-Tests der Designsystem-Komponenten (+ Robolectric-Basis).
+    testImplementation(libs.roborazzi)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

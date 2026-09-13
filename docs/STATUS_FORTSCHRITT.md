@@ -1375,3 +1375,35 @@ angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
   `assembleRelease`, Link-Check — alle gruen.
 - [ ] Offen (Geraet/Store): B1-Generatorlauf + Messzahlen, Geraeteabnahmen
   (P4/Schritt 13), Push-Entscheidung.
+
+## AL. Ausbauplan Tranche C1: Designsystem-Konsolidierung (Session: OpenCode)
+
+- [x] Expressive-Befund verifiziert und dokumentiert: material3 1.4.0
+  (BOM 2026.06.01) hat weder stabiles `ButtonGroup` noch `LoadingIndicator`,
+  `MaterialExpressiveTheme` ist internal. Projektregel "nur stabile Versionen"
+  -> **kein** Expressive-Umstieg; Wiedervorlage bei 1.5.0 stable. Kommentar in
+  `Theme.kt` bleibt bestehen.
+- [x] Radien: `Spacing.radiusMedium = 16.dp` ergaenzt; Literale ersetzt in
+  `FlowRepComponents`, `BrandCard` (jetzt `MaterialTheme.shapes.medium = 24`),
+  `MiniPlayer`, `LibraryHomeScreen`, `LibraryLists`, `DetailScreens`. Skala
+  bleibt `radiusSmall/Medium/Card/Hero` (Pills/Kreise sind Sonderformen).
+- [x] Typografie: `bodyLarge != bodyMedium` und `labelLarge/Medium/Small`
+  eindeutig (vorher waren `bodyLarge==bodyMedium` und alle drei Labels 12 sp).
+  Groessen/Proportionen nach M3, Poppins bleibt Markenschrift.
+- [x] Farben: Kategorie-Palette -> Token `CategoryTints` (im Theme, statt 12
+  Hex-Literalen im Feature), Akzent-Schwaerze -> `accentSwatchColor()`,
+  Cover-Overlays -> `OverlayTokens` (`scrim`/`onScrim`, bewusst absolut).
+- [x] Grep-Gate `tools/design_check.py`: scannt `*/src/main/**/*.kt` ausserhalb
+  `core/designsystem`; ALLOWLIST nur `PlayerArtworkColors.kt` (aus dem Cover
+  berechnet). Gegenbeweis: Probe-Literal -> rot, nach Entfernen -> gruen.
+  CI-Schritt nach dem Doku-Link-Check eingehaengt.
+- [x] Screenshot-Gate: Roborazzi 1.74.0 (Paparazzi 1.x kennt AGP 9 `BaseExtension`
+  nicht mehr), `ComponentScreenshotsTest` (6 Faelle: Buttons, BrandCard,
+  FlowRepSurface je hell/dunkel), Referenzen versioniert unter
+  `core/designsystem/src/test/screenshots/`, CI `:core:designsystem:verifyRoborazziDebug`.
+- [x] Gates: `test`, `spotlessCheck`, `lintDebug`, `detekt`, `assembleDebug`,
+  `assembleRelease`, `verifyRoborazziDebug`, `doku_links_check.py`,
+  `design_check.py` - alle gruen.
+- [ ] Bewusst abweichend: Screenshots der Komponenten statt der "5 groessten
+  Screens" (Feature-Module braeuchten eigene Roborazzi-Infrastruktur; die
+  Breakpoint-Abnahme kommt in C2). 200-%-Abnahme bleibt Geraeteschritt 13.

@@ -62,6 +62,12 @@ jobs:
       - name: Doku-Link-Check (tools/doku_links_check.py)
         run: python3 tools/doku_links_check.py
 
+      # C1 (Ausbauplan): Farben gehoeren als Tokens ins Designsystem. Das Gate
+      # faengt neue Hex-Literale/Color.White|Black in Features ab, bevor sie
+      # sich in Screens verteilen.
+      - name: Design-Gate (tools/design_check.py)
+        run: python3 tools/design_check.py
+
       - name: Formatierung/Lint (./gradlew spotlessCheck)
         run: ./gradlew spotlessCheck --stacktrace
 
@@ -81,6 +87,13 @@ jobs:
       # Dieser Schritt ist schnell und würde solche Fehler frühzeitig erkennen.
       - name: Benchmark-Modul kompilieren (./gradlew compileBenchmarkReleaseKotlin)
         run: ./gradlew compileBenchmarkReleaseKotlin --stacktrace
+
+      # C1 (Ausbauplan): Screenshot-Gate — Referenzbilder liegen versioniert
+      # unter core/designsystem/src/test/screenshots. Record und Verify
+      # brauchen getrennte Aufrufe (sonst vergleicht Verify gegen frisch
+      # geschriebene Dateien im selben Lauf).
+      - name: Screenshot-Gate (./gradlew :core:designsystem:verifyRoborazziDebug)
+        run: ./gradlew :core:designsystem:verifyRoborazziDebug --stacktrace
 
       # B1 (Ausbauplan): Das Baseline Profile muss eingecheckt sein — ohne
       # Datei ist die gesamte B-UI-5-Verdrahtung wirkungslos und wuerde wieder

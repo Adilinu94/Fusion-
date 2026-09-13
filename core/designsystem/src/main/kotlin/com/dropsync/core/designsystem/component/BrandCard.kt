@@ -6,7 +6,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
@@ -29,7 +28,8 @@ fun BrandCard(
     val clickModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     Card(
         modifier = modifier.then(clickModifier),
-        shape = RoundedCornerShape(24.dp),
+        // C1: System-Radius (BrandShapes.medium = 24) statt Literal.
+        shape = MaterialTheme.shapes.medium,
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surface,

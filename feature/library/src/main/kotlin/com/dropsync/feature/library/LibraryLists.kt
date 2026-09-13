@@ -54,6 +54,7 @@ import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.Spacing
 import com.dropsync.core.model.Song
 import kotlinx.coroutines.launch
 
@@ -226,7 +227,7 @@ private fun SongRow(
                 modifier =
                     Modifier
                         .size(coverSize)
-                        .clip(RoundedCornerShape(12.dp))
+                        .clip(RoundedCornerShape(Spacing.radiusSmall))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 Icon(
@@ -404,7 +405,7 @@ internal fun BucketColumn(
                             modifier =
                                 Modifier
                                     .size(44.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(Spacing.radiusSmall))
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                         ) {
                             Icon(
@@ -418,7 +419,7 @@ internal fun BucketColumn(
                             modifier =
                                 Modifier
                                     .size(44.dp)
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(Spacing.radiusSmall))
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -517,7 +518,7 @@ private fun CoverTile(
                     Modifier
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .clip(RoundedCornerShape(16.dp))
+                        .clip(RoundedCornerShape(Spacing.radiusMedium))
                         .background(MaterialTheme.colorScheme.surfaceVariant),
             ) {
                 Icon(

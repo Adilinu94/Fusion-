@@ -55,6 +55,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
+import com.dropsync.core.designsystem.theme.accentSwatchColor
 import com.dropsync.core.model.AccentColor
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
@@ -926,9 +927,10 @@ private fun ThemeMode.descRes(): Int =
         ThemeMode.DARK -> R.string.settings_theme_dark_desc
     }
 
-// Auswaehlbare Akzentfarben als Farbkreise (muessen zu Theme.kt passen).
-private val AccentLimeSwatch = Color(0xFFDFFF2F)
-private val AccentBlueSwatch = Color(0xFF4564F9)
+// Auswaehlbare Akzentfarben als Farbkreise (C1: Tokens aus dem Theme, keine
+// eigenen Hex-Werte).
+private val AccentLimeSwatch = accentSwatchColor(AccentColor.LIME)
+private val AccentBlueSwatch = accentSwatchColor(AccentColor.BLUE)
 
 /**
  * Akzentfarb-Auswahl (Darstellung): Farbkreise fuer Marken-Lime und Blau.

@@ -45,6 +45,13 @@ private fun accentPair(accent: AccentColor): Pair<Color, Color> =
         AccentColor.BLUE -> AccentBlue to BrandWhite
     }
 
+/**
+ * C1-Token: Anzeigefarbe eines waehlbaren Akzents (identisch zur
+ * Primary-Farbe des Themes). UI, die den Akzent als Farbkreis zeigt, nutzt
+ * diesen Zugang statt eigener Hex-Literale.
+ */
+fun accentSwatchColor(accent: AccentColor): Color = accentPair(accent).first
+
 // Dunkler Grund: 141414 (E4d) als Basis unter allen Tiles. Erhoehte Flaechen
 // (Karten, Sheets, Auswahlleiste, Mini-Player) liegen als hellere Stufen
 // darueber (1,09:1 bewusst subtil); Vertiefungen etwas darunter.

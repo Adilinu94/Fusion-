@@ -23,7 +23,11 @@ object Spacing {
     val space120 = 120.dp
     val touchTarget = 48.dp
     val primaryControlHeight = 56.dp
+
+    // Radien-Skala (C1-konsolidiert): genau diese vier, keine Literale in
+    // Features — Pills (50 %) und Kreise bleiben Sonderformen.
     val radiusSmall = 12.dp
+    val radiusMedium = 16.dp
     val radiusCard = 20.dp
     val radiusHero = 28.dp
 }

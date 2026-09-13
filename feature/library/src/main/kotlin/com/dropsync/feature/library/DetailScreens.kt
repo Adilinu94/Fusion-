@@ -36,6 +36,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.OverlayTokens
+import com.dropsync.core.designsystem.theme.Spacing
 import com.dropsync.core.model.Song
 
 /**
@@ -189,7 +191,7 @@ private fun AlbumHero(
                     .background(
                         Brush.verticalGradient(
                             0f to Color.Transparent,
-                            1f to Color.Black.copy(alpha = 0.7f),
+                            1f to OverlayTokens.scrim.copy(alpha = 0.7f),
                         ),
                     ),
         )
@@ -200,7 +202,7 @@ private fun AlbumHero(
             Icon(
                 painterResource(BrandIcons.Back),
                 contentDescription = stringResource(R.string.library_back),
-                tint = Color.White,
+                tint = OverlayTokens.onScrim,
             )
         }
         Column(
@@ -212,7 +214,7 @@ private fun AlbumHero(
             Text(
                 text = title,
                 style = MaterialTheme.typography.headlineSmall,
-                color = Color.White,
+                color = OverlayTokens.onScrim,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -220,7 +222,7 @@ private fun AlbumHero(
                 Text(
                     text = artist,
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = OverlayTokens.onScrim.copy(alpha = 0.85f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -228,7 +230,7 @@ private fun AlbumHero(
             Text(
                 text = meta,
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
+                color = OverlayTokens.onScrim.copy(alpha = 0.7f),
             )
         }
     }
@@ -325,7 +327,7 @@ internal fun FolderTreeScreen(
                         Box(
                             modifier =
                                 Modifier
-                                    .clip(RoundedCornerShape(12.dp))
+                                    .clip(RoundedCornerShape(Spacing.radiusSmall))
                                     .background(MaterialTheme.colorScheme.surfaceVariant)
                                     .padding(10.dp),
                         ) {

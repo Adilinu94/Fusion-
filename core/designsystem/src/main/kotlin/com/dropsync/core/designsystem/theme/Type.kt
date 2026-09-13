@@ -106,7 +106,9 @@ val DropSyncTypography: Typography =
                 lineHeight = 20.sp,
                 letterSpacing = 0.1.sp,
             ),
-        // Body und Metadaten.
+        // Body und Metadaten. C1: jede Stufe ist eindeutig (vorher waren
+        // bodyLarge/bodyMedium sowie alle drei Labels identisch) — Proportionen
+        // nach M3, Groessen und Poppins aus dem Markensystem.
         bodyLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
@@ -119,9 +121,9 @@ val DropSyncTypography: Typography =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.Normal,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                letterSpacing = 0.15.sp,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.25.sp,
             ),
         bodySmall =
             TextStyle(
@@ -131,14 +133,14 @@ val DropSyncTypography: Typography =
                 lineHeight = 20.sp,
                 letterSpacing = 0.2.sp,
             ),
-        // Labels fuer Buttons, Navigation und Status.
+        // Labels fuer Buttons, Navigation und Status (C1-differenziert).
         labelLarge =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
-                lineHeight = 16.sp,
-                letterSpacing = 0.5.sp,
+                fontSize = 14.sp,
+                lineHeight = 20.sp,
+                letterSpacing = 0.1.sp,
             ),
         labelMedium =
             TextStyle(
@@ -152,7 +154,7 @@ val DropSyncTypography: Typography =
             TextStyle(
                 fontFamily = BrandFontFamily,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 lineHeight = 16.sp,
                 letterSpacing = 0.5.sp,
             ),

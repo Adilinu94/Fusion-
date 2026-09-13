@@ -44,6 +44,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.Spacing
 import kotlinx.coroutines.launch
 
 /**
@@ -70,7 +71,8 @@ fun MiniPlayer(
 
     Surface(
         modifier = modifier.fillMaxWidth().padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
+        // C1: System-Radius statt Literal.
+        shape = RoundedCornerShape(Spacing.radiusCard),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
     ) {
@@ -86,7 +88,7 @@ fun MiniPlayer(
                     modifier =
                         Modifier
                             .size(44.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .clip(RoundedCornerShape(Spacing.radiusSmall))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                 ) {
                     Icon(

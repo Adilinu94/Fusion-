@@ -2,6 +2,7 @@ package com.dropsync.feature.library
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.CategoryTints
+import com.dropsync.core.designsystem.theme.Spacing
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.playback.PlaybackState
@@ -236,7 +239,8 @@ private fun NowPlayingCard(
     Surface(
         onClick = onClick,
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        // C1: System-Radius statt Literal.
+        shape = RoundedCornerShape(Spacing.radiusCard),
         color = MaterialTheme.colorScheme.primaryContainer,
     ) {
         Row(
@@ -343,7 +347,8 @@ private fun FeaturedMusicCard(
     Surface(
         onClick = onClick,
         modifier = modifier.aspectRatio(1.08f),
-        shape = RoundedCornerShape(16.dp),
+        // C1: System-Radius statt Literal.
+        shape = RoundedCornerShape(Spacing.radiusMedium),
         color =
             if (category ==
                 LibraryCategory.PLAYLISTS
@@ -398,7 +403,8 @@ private fun CategoryRow(
             modifier =
                 Modifier
                     .size(48.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    // C1: System-Radius statt Literal.
+                    .clip(RoundedCornerShape(Spacing.radiusSmall))
                     .background(tint.copy(alpha = 0.18f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -442,38 +448,40 @@ internal fun categoryIcon(category: LibraryCategory): Int =
         LibraryCategory.MOST_PLAYED -> BrandIcons.Progress
     }
 
-/** Feste, gut unterscheidbare Kategorien-Farben (Poweramp-artig, Dark-first). */
-private object CategoryPalette {
-    val Lime = Color(0xFFDFFF2F)
-    val Orange = Color(0xFFFFB74D)
-    val Amber = Color(0xFFFFD54F)
-    val Blue = Color(0xFF64B5F6)
-    val Purple = Color(0xFFBA68C8)
-    val Pink = Color(0xFFF06292)
-    val Green = Color(0xFF81C784)
-    val Cyan = Color(0xFF4DD0E1)
-    val Red = Color(0xFFFF6B6B)
-    val Teal = Color(0xFF4DB6AC)
-    val DeepOrange = Color(0xFFFF8A65)
-    val Indigo = Color(0xFF7986CB)
+/** Semantischer Farbton des Kategorie-Icons; jede Kategorie hat eine eigene Farbe. */
+@Composable
+private fun categoryTint(category: LibraryCategory): Color {
+    val base =
+        when (category) {
+            LibraryCategory.ALL_SONGS -> CategoryTints.lime
+            LibraryCategory.FOLDERS -> CategoryTints.orange
+            LibraryCategory.FOLDERS_HIERARCHY -> CategoryTints.amber
+            LibraryCategory.ALBUMS -> CategoryTints.blue
+            LibraryCategory.ARTISTS -> CategoryTints.purple
+            LibraryCategory.GENRES -> CategoryTints.pink
+            LibraryCategory.PLAYLISTS -> CategoryTints.green
+            LibraryCategory.QUEUE -> CategoryTints.cyan
+            LibraryCategory.FAVORITES -> CategoryTints.red
+            LibraryCategory.RECENTLY_ADDED -> CategoryTints.teal
+            LibraryCategory.RECENTLY_PLAYED -> CategoryTints.deepOrange
+            LibraryCategory.MOST_PLAYED -> CategoryTints.indigo
+        }
+    // C1: Die Pastell-Palette ist Dark-first — im hellen Modus zum Schwarz
+    // hin skalieren, damit der Kontrast auf hellen Tiles erhalten bleibt.
+    // Der Farbton bleibt erkennbar, nur die Helligkeit sinkt.
+    return if (isSystemInDarkTheme()) {
+        base
+    } else {
+        base.copy(
+            red = base.red * LIGHT_TINT_SCALE,
+            green = base.green * LIGHT_TINT_SCALE,
+            blue = base.blue * LIGHT_TINT_SCALE,
+        )
+    }
 }
 
-/** Semantischer Farbton des Kategorie-Icons; jede Kategorie hat eine eigene Farbe. */
-private fun categoryTint(category: LibraryCategory): Color =
-    when (category) {
-        LibraryCategory.ALL_SONGS -> CategoryPalette.Lime
-        LibraryCategory.FOLDERS -> CategoryPalette.Orange
-        LibraryCategory.FOLDERS_HIERARCHY -> CategoryPalette.Amber
-        LibraryCategory.ALBUMS -> CategoryPalette.Blue
-        LibraryCategory.ARTISTS -> CategoryPalette.Purple
-        LibraryCategory.GENRES -> CategoryPalette.Pink
-        LibraryCategory.PLAYLISTS -> CategoryPalette.Green
-        LibraryCategory.QUEUE -> CategoryPalette.Cyan
-        LibraryCategory.FAVORITES -> CategoryPalette.Red
-        LibraryCategory.RECENTLY_ADDED -> CategoryPalette.Teal
-        LibraryCategory.RECENTLY_PLAYED -> CategoryPalette.DeepOrange
-        LibraryCategory.MOST_PLAYED -> CategoryPalette.Indigo
-    }
+/** Abdunklungsfaktor der Kategorie-Farben im hellen Modus (C1). */
+private const val LIGHT_TINT_SCALE: Float = 0.72f
 
 /** Angezeigter Kategorie-Name. */
 internal fun LibraryCategory.titleRes(): Int =
