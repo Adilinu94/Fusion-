@@ -40,6 +40,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +74,7 @@ import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.component.ProgressRing
 import com.dropsync.core.designsystem.theme.Spacing
+import com.dropsync.core.designsystem.theme.rememberWindowWidthSizeClass
 import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.TargetRepository
 import com.dropsync.domain.workout.WorkoutGoalRepository
@@ -179,13 +181,19 @@ private fun ProgressDashboardContent(
     val progress = state.progress
     val feed = state.feed
 
-    // A11y-Punkt 1 und 2: Ab doppelter Systemschrift wird das Grid einspaltig
-    // und der Ring schrumpft auf 120 dp mit der Zahl darunter.
-    val singleColumn = LocalDensity.current.fontScale > 1.5f
+    // A11y-Punkt 1 und 2 / C2: Ab doppelter Systemschrift wird das Grid
+    // einspaltig (Ring + Text brauchen Platz) und der Ring schrumpft auf
+    // 120 dp; breite Fenster (Tablet) nutzen drei Spalten. Alles andere zwei.
+    val columns =
+        dashboardColumnCount(
+            isExpanded = rememberWindowWidthSizeClass() == WindowWidthSizeClass.Expanded,
+            fontScale = LocalDensity.current.fontScale,
+        )
+    val singleColumn = columns != 2
     val reducedMotion = LocalContext.current.isReducedMotion()
 
     LazyVerticalStaggeredGrid(
-        columns = StaggeredGridCells.Fixed(if (singleColumn) 1 else 2),
+        columns = StaggeredGridCells.Fixed(columns),
         modifier = modifier.fillMaxSize(),
         contentPadding =
             PaddingValues(
@@ -1065,3 +1073,19 @@ private fun Context.isReducedMotion(): Boolean =
 
 /** Zehnerteilung des Ziel-Fortschritts (UI-Vertrag R5). */
 private const val GOAL_DOTS = 10
+
+/**
+ * C2: Spalten des Dashboard-Grids. Doppelte Systemschrift erzwingt eine
+ * Spalte (Ring und Beleg brauchen nebeneinander zu viel Platz), breite
+ * Fenster (>= 840 dp) nutzen drei; alles andere zwei. Pure Funktion, damit
+ * die Entscheidung ohne Compose testbar ist.
+ */
+internal fun dashboardColumnCount(
+    isExpanded: Boolean,
+    fontScale: Float,
+): Int =
+    when {
+        fontScale > 1.5f -> 1
+        isExpanded -> 3
+        else -> 2
+    }

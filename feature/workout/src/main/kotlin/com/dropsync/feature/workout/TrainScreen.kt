@@ -64,6 +64,8 @@ import com.dropsync.core.designsystem.component.BrandButtonGhost
 import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.designsystem.component.FlowRepSurface
+import com.dropsync.core.designsystem.theme.isWide
+import com.dropsync.core.designsystem.theme.rememberWindowWidthSizeClass
 import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorErrorReason
@@ -144,12 +146,18 @@ fun TrainScreen(
             notificationsAllowed = granted
         }
 
+    // C2: Auf Tablet/Landscape bekommt der Inhalt mehr Rand, damit die
+    // Eingabe-Karten nicht ueber die ganze Breite laufen (die Sektionen
+    // bringen selbst 16 dp mit).
+    val wide = rememberWindowWidthSizeClass().isWide
     Column(
         modifier =
             modifier
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState())
                 .padding(
+                    start = if (wide) 24.dp else 0.dp,
+                    end = if (wide) 24.dp else 0.dp,
                     top = contentPadding.calculateTopPadding() + 8.dp,
                     bottom = contentPadding.calculateBottomPadding() + 24.dp,
                 ),

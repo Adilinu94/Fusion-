@@ -40,6 +40,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -70,6 +71,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.LocalWindowSizeClass
 import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
 import com.dropsync.feature.player.MiniPlayer
@@ -144,23 +146,27 @@ fun DropSyncApp(windowSizeClass: WindowSizeClass) {
     // fuer bestehende Nutzer), danach genau einmal bis zum Abschluss.
     val onboardingViewModel: OnboardingViewModel = hiltViewModel()
     val onboardingSeen by onboardingViewModel.seen.collectAsStateWithLifecycle()
-    when (onboardingSeen) {
-        null -> {
-            Box(modifier = Modifier.fillMaxSize())
-        }
+    // C2: Breakpoint fuer alle Screens bereitstellen (Now-Playing, Train,
+    // Dashboard lesen ihn ueber `rememberWindowWidthSizeClass`).
+    CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+        when (onboardingSeen) {
+            null -> {
+                Box(modifier = Modifier.fillMaxSize())
+            }
 
-        false -> {
-            OnboardingScreen(onFinish = onboardingViewModel::markSeen)
-        }
+            false -> {
+                OnboardingScreen(onFinish = onboardingViewModel::markSeen)
+            }
 
-        true -> {
-            if (useRail) {
-                Row(modifier = Modifier.fillMaxSize()) {
-                    DropSyncNavigationRail(navController)
-                    DropSyncContent(navController, showBottomBar = false)
+            true -> {
+                if (useRail) {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        DropSyncNavigationRail(navController)
+                        DropSyncContent(navController, showBottomBar = false)
+                    }
+                } else {
+                    DropSyncContent(navController, showBottomBar = true)
                 }
-            } else {
-                DropSyncContent(navController, showBottomBar = true)
             }
         }
     }

@@ -75,6 +75,8 @@ import com.dropsync.core.designsystem.chart.WaveformPlaceholder
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.designsystem.theme.OverlayTokens
+import com.dropsync.core.designsystem.theme.isWide
+import com.dropsync.core.designsystem.theme.rememberWindowWidthSizeClass
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
@@ -194,6 +196,9 @@ fun NowPlayingScreen(
     val currentSongIndex = queue.currentIndex
     val hasNext = currentSongIndex in 0 until queue.items.lastIndex
     val hasPrevious = currentSongIndex > 0
+    // C2: Auf Tablet/Landscape das kreisrunde Cover begrenzen — sonst fuellt
+    // der Kreis die ganze Breite und verdraengt Titel/Transport.
+    val wide = rememberWindowWidthSizeClass().isWide
 
     LaunchedEffect(state.songId) { viewModel.requestAnalysis(state.songId) }
 
@@ -310,7 +315,7 @@ fun NowPlayingScreen(
                     coverResolver = viewModel::coverUriFor,
                     onSelectPage = viewModel::playQueueItem,
                     palette = palette,
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = if (wide) Modifier.widthIn(max = 440.dp) else Modifier.fillMaxWidth(),
                 )
                 Spacer(Modifier.height(20.dp))
                 PowerampTitleRow(
@@ -551,10 +556,8 @@ private fun PowerampTitleRow(
         ) {
             Text(
                 text = title,
-                color = palette.accent,
-                fontSize = 30.sp,
-                lineHeight = 38.sp,
-                fontWeight = FontWeight.Normal,
+                // C2: feste 30 sp -> Typo-Token (skaliert mit Systemschrift).
+                style = MaterialTheme.typography.headlineMedium.copy(color = palette.accent),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -562,10 +565,8 @@ private fun PowerampTitleRow(
             Spacer(Modifier.height(8.dp))
             Text(
                 text = artist.orEmpty(),
-                color = palette.contentMuted,
-                fontSize = 18.sp,
-                lineHeight = 24.sp,
-                fontWeight = FontWeight.Normal,
+                // C2: feste 18 sp -> Typo-Token.
+                style = MaterialTheme.typography.titleMedium.copy(color = palette.contentMuted),
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
