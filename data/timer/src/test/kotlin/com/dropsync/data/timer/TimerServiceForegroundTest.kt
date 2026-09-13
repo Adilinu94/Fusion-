@@ -120,6 +120,23 @@ class TimerServiceForegroundTest : HiltRobolectricTestCase() {
     }
 
     @Test
+    fun `laufender timer traegt einen fortschrittsbalken`() {
+        grantNotificationsPermission()
+        timerEngine.start(TimerMode.REST, 60_000)
+        startService()
+
+        (clock as FakeClock).advanceBy(15_000)
+        idleMainLooper(durationMs = 250)
+
+        val notification =
+            shadowOf(notificationManager()).getNotification(TimerService.NOTIFICATION_ID)
+        assertNotNull(notification)
+        assertEquals(100, notification!!.extras.getInt(Notification.EXTRA_PROGRESS_MAX))
+        // 15 von 60 s sind um: ein Viertel ist gefuellt.
+        assertEquals(25, notification.extras.getInt(Notification.EXTRA_PROGRESS))
+    }
+
+    @Test
     fun `xiaomi fallback ohne permission crasht nicht und timer laeuft weiter`() {
         // POST_NOTIFICATIONS nicht erteilt (Default in Robolectric, SDK 34):
         // kein Crash, Engine laeuft weiter. Robolectric enforct die

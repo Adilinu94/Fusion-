@@ -235,20 +235,33 @@ class TimerService : Service() {
                 TimerStatus.COMPLETED -> getString(R.string.timer_notification_completed)
                 else -> formatRemaining(state.remainingMs)
             }
-        return NotificationCompat
-            .Builder(this, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.ic_media_play)
-            .setContentTitle(getString(R.string.timer_notification_title))
-            .setContentText(contentText)
-            .setContentIntent(openAppIntent())
-            .setOngoing(state.status in VISIBLE_STATUSES)
-            .setOnlyAlertOnce(true)
-            .setSilent(true)
-            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .addAction(0, getString(R.string.timer_action_skip), actionIntent(ACTION_SKIP, REQUEST_SKIP))
-            .addAction(0, getString(R.string.timer_action_plus15), actionIntent(ACTION_PLUS_15, REQUEST_PLUS_15))
-            .addAction(0, getString(R.string.timer_action_finish), actionIntent(ACTION_FINISH, REQUEST_FINISH))
-            .build()
+        val builder =
+            NotificationCompat
+                .Builder(this, CHANNEL_ID)
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentTitle(getString(R.string.timer_notification_title))
+                .setContentText(contentText)
+                .setContentIntent(openAppIntent())
+                .setOngoing(state.status in VISIBLE_STATUSES)
+                .setOnlyAlertOnce(true)
+                .setSilent(true)
+                .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+                .addAction(0, getString(R.string.timer_action_skip), actionIntent(ACTION_SKIP, REQUEST_SKIP))
+                .addAction(0, getString(R.string.timer_action_plus15), actionIntent(ACTION_PLUS_15, REQUEST_PLUS_15))
+                .addAction(0, getString(R.string.timer_action_finish), actionIntent(ACTION_FINISH, REQUEST_FINISH))
+        // C3: Fortschrittszentrierte Notification (Android 16): der
+        // verbleibende Anteil ist ohne Oeffnen der App sichtbar. Gesamt kommt
+        // aus der Sitzung; ohne Sitzung (z. B. COMPLETED) bleibt der Balken aus.
+        val totalMs = state.session?.durationMs ?: 0L
+        if (totalMs > 0 && state.status in VISIBLE_STATUSES) {
+            val elapsedMs = (totalMs - state.remainingMs).coerceIn(0L, totalMs)
+            builder.setProgress(
+                PROGRESS_MAX,
+                ((elapsedMs * PROGRESS_MAX) / totalMs).toInt(),
+                false,
+            )
+        }
+        return builder.build()
     }
 
     private fun openAppIntent(): PendingIntent {
@@ -306,6 +319,9 @@ class TimerService : Service() {
         private const val REQUEST_PLUS_15 = 2
         private const val REQUEST_FINISH = 3
         private const val REQUEST_OPEN_APP = 4
+
+        /** Skala des C3-Fortschrittsbalkens in der Notification (Prozent). */
+        private const val PROGRESS_MAX = 100
 
         private val VISIBLE_STATUSES =
             setOf(TimerStatus.PREPARING, TimerStatus.RUNNING, TimerStatus.PAUSED)
