@@ -126,3 +126,66 @@ jobs:
           name: test-reports
           path: "**/build/reports/tests/"
           retention-days: 7
+
+  # C4 (Ausbauplan): Instrumentierte Tests laufen ab jetzt in der CI, aber
+  # zunaechst NICHT blockierend (`continue-on-error`): der Emulator-Job soll
+  # erst Vertrauen aufbauen, bevor er den Master rot faerbt. Der
+  # Macrobenchmark-Lauf (B1) teilt sich denselben Emulator, braucht aber ein
+  # eingechecktes Baseline-Profil und ist im Runbook dokumentiert
+  # (docs/HARDWARE_TESTPLAN.md, Abschnitt B1).
+  instrumented:
+    name: Instrumentierte Tests (Emulator, vorlaeufig nicht blockierend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: JDK 17 einrichten
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gradlew ausfuehrbar machen
+        run: chmod +x ./gradlew
+
+      - name: Gradle einrichten (Cache)
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Benoetigte Android-SDK-Pakete sicherstellen
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -r | head -n1)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="sdkmanager"
+          fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools" "emulator" "system-images;android-33;google_apis;x86_64"
+
+      - name: KVM fuer den Emulator freigeben
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Instrumentierte Tests (./gradlew connectedCheck)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 33
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: ./gradlew connectedCheck --stacktrace
+
+      - name: Instrumentierte Berichte hochladen (bei Fehlschlag)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: androidtest-reports
+          path: "**/build/reports/androidTests/"
+          retention-days: 7
