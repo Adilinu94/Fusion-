@@ -4,11 +4,17 @@ import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.dropsync.core.testing.FakeCalibrationProfileRepository
 import com.dropsync.core.testing.FakeClock
+import com.dropsync.core.testing.FakeDropRestRequestBus
+import com.dropsync.core.testing.FakeDropSyncStateSource
 import com.dropsync.core.testing.FakeFlatSetRepository
 import com.dropsync.core.testing.FakeHeartRateSource
+import com.dropsync.core.testing.FakeLibraryBrowseRepository
+import com.dropsync.core.testing.FakeRestMusicSettingsRepository
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
 import com.dropsync.core.testing.FakeSensorProvider
+import com.dropsync.core.testing.FakeSetDiagnosticsLog
 import com.dropsync.core.testing.FakeWorkoutRepository
+import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.RepCountPlausibility
 import com.dropsync.domain.sensor.SensorConnectionState
@@ -16,6 +22,7 @@ import com.dropsync.domain.sensor.SensorSample
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.workout.ExerciseInfo
+import com.dropsync.domain.workout.SetLogHaptics
 import com.dropsync.feature.workout.shadow.NoOpShadowSessionRecorder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -74,15 +81,23 @@ class TrainViewModelPlausibilityTest {
         TrainViewModel(
             workoutRepository = workoutRepository,
             flatSetRepository = flatSetRepository,
+            setLogHaptics = SetLogHaptics { },
             timerEngine = timerEngine,
             restTimerServiceStarter = RestTimerServiceStarter { },
             sensorProvider = sensorProvider,
             calibrationProfileRepository = calibrationProfileRepository,
+            setDiagnosticsLog = FakeSetDiagnosticsLog(),
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
+            restMusicSettings = FakeRestMusicSettingsRepository(),
+            dropSyncStateSource = FakeDropSyncStateSource(),
             shadowSessionRecorder = NoOpShadowSessionRecorder(),
             heartRateSource = heartRateSource,
+            dropRestRequestBus = FakeDropRestRequestBus(),
+            browseRepository = FakeLibraryBrowseRepository(),
+            audioEngine = FakeAudioEngineRepository(),
             healthPermissionContract = TestHealthPermissionContract(),
             clock = FakeClock(),
+            dispatchers = TestDispatcherProvider(dispatcher),
         )
 
     private suspend fun kotlinx.coroutines.test.TestScope.withViewModel(block: suspend (TrainViewModel) -> Unit) {

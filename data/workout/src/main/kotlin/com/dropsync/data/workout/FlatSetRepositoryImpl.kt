@@ -4,6 +4,7 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
+import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.entity.FlatSetEntity
 import com.dropsync.domain.workout.FlatSet
@@ -15,12 +16,17 @@ import kotlinx.coroutines.withContext
 
 /**
  * Flat set log implementation (FlowRep Phase 2).
- * Uses FlatSetDao; no session logic.
+ *
+ * A1/5.7: Speichern und Loeschen berechnen die PRs der Uebung in DERSELBEN
+ * Transaktion neu ([PersonalRecordRecomputer]) — der flache Pfad ist damit
+ * eine echte PR-Quelle, und ein Undo laesst keinen Rekord stehen.
  */
 class FlatSetRepositoryImpl(
     private val flatSetDao: FlatSetDao,
     private val clock: Clock,
     private val dispatchers: DispatcherProvider,
+    private val transactionRunner: TransactionRunner,
+    private val recomputer: PersonalRecordRecomputer,
 ) : FlatSetRepository {
     override fun observeSetsForExercise(exerciseId: Long): Flow<List<FlatSet>> =
         flatSetDao.observeForExercise(exerciseId).map { list ->
@@ -62,16 +68,23 @@ class FlatSetRepositoryImpl(
         }
         return withContext(dispatchers.io) {
             try {
-                AppResult.success(
-                    flatSetDao.insert(
-                        FlatSetEntity(
-                            exerciseId = exerciseId,
-                            weightMilliKg = weightMilliKg,
-                            reps = reps,
-                            loggedAtEpochMs = clock.epochMillis(),
-                        ),
-                    ),
-                )
+                val setId =
+                    transactionRunner {
+                        val id =
+                            flatSetDao.insert(
+                                FlatSetEntity(
+                                    exerciseId = exerciseId,
+                                    weightMilliKg = weightMilliKg,
+                                    reps = reps,
+                                    loggedAtEpochMs = clock.epochMillis(),
+                                ),
+                            )
+                        // A1/5.7: der flache Satz ist eine PR-Quelle; die
+                        // Neuberechnung gehoert in dieselbe Transaktion.
+                        recomputer.recompute(exerciseId)
+                        id
+                    }
+                AppResult.success(setId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -83,7 +96,13 @@ class FlatSetRepositoryImpl(
     override suspend fun deleteSet(setId: Long): AppResult<Unit> =
         withContext(dispatchers.io) {
             try {
-                flatSetDao.delete(setId)
+                transactionRunner {
+                    val set = flatSetDao.getById(setId)
+                    flatSetDao.delete(setId)
+                    // A1/5.7: Undo entfernt auch den zugehoerigen Rekord —
+                    // die PRs entstehen immer aus der Resthistorie.
+                    set?.let { recomputer.recompute(it.exerciseId) }
+                }
                 AppResult.success(Unit)
             } catch (e: CancellationException) {
                 throw e

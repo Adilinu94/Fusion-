@@ -4,11 +4,19 @@ import android.content.Context
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import com.dropsync.core.common.AppResult
 import com.dropsync.core.database.DropSyncDatabase
 import com.dropsync.core.database.RoomTransactionRunner
 import com.dropsync.core.database.entity.ExerciseEntity
+import com.dropsync.core.database.entity.ExerciseMuscleEntity
+import com.dropsync.core.database.entity.ExerciseNameEntity
+import com.dropsync.core.database.entity.MuscleGroupEntity
+import com.dropsync.core.database.entity.PlaybackSnapshotEntity
 import com.dropsync.core.database.entity.SetRoleEntity
 import com.dropsync.core.database.entity.SongEntity
+import com.dropsync.core.model.Equipment
+import com.dropsync.core.model.ExerciseKind
+import com.dropsync.core.model.MuscleGroup
 import com.dropsync.core.model.PrType
 import com.dropsync.core.model.RestMode
 import com.dropsync.core.model.SessionStatus
@@ -16,12 +24,16 @@ import com.dropsync.core.model.SetRole
 import com.dropsync.core.model.Song
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.TestDispatcherProvider
+import com.dropsync.domain.playback.DropLandingEvent
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.RepeatMode
+import com.dropsync.domain.workout.CustomExerciseInput
+import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.SegmentInput
+import com.dropsync.domain.workout.Slugs
 import com.dropsync.domain.workout.SwapStrategy
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -42,6 +54,17 @@ private class FakePlaybackRepository : PlaybackRepository {
     var snapshot: PlaybackState = PlaybackState()
 
     override val state: Flow<PlaybackState> = flowOf(PlaybackState())
+
+    override val landingEvents: Flow<DropLandingEvent> = flowOf()
+
+    override suspend fun armLanding(
+        song: Song,
+        startPositionMs: Long,
+        delayMs: Long,
+        fadeMs: Long,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun cancelLanding(): AppResult<Unit> = AppResult.success(Unit)
 
     override suspend fun setQueue(
         songs: List<Song>,
@@ -154,6 +177,7 @@ class WorkoutRepositoryImplTest {
                     clock = clock,
                     dispatchers = TestDispatcherProvider(),
                     playbackRepository = playback,
+                    recomputer = PersonalRecordRecomputer(db.workoutDao(), db.flatSetDao()),
                 )
             // Lookup-Tabelle fuellen, die produktiv der ExerciseSeeder liefert
             // (FK set_clusters.set_role -> set_roles.id, RESTRICT).
@@ -642,5 +666,165 @@ class WorkoutRepositoryImplTest {
             assertEquals(listOf(exerciseId), rows.map { it.exerciseId })
             // Nur die Struktur wird kopiert, keine Saetze (9.6).
             assertTrue(db.workoutDao().getClustersForSessionExercise(rows.single().id).isEmpty())
+        }
+
+    @Test
+    fun `getSessionMusic liefert gespielte Titel in Aufnahme-Reihenfolge`() =
+        runTest {
+            val (sessionId, _) = startSessionWithExercise()
+            db.songDao().upsertAll(
+                listOf(
+                    SongEntity(
+                        mediaStoreId = 501,
+                        contentUri = "content://song/501",
+                        displayName = "drop.mp3",
+                        relativePath = "Music/",
+                        durationMs = 180_000,
+                        sizeBytes = 1_000,
+                        dateModifiedSeconds = 0,
+                        title = "Drop It",
+                        artist = "DJ",
+                        album = null,
+                        isAvailable = true,
+                    ),
+                    SongEntity(
+                        mediaStoreId = 502,
+                        contentUri = "content://song/502",
+                        displayName = "ohne_titel.mp3",
+                        relativePath = "Music/",
+                        durationMs = 120_000,
+                        sizeBytes = 900,
+                        dateModifiedSeconds = 0,
+                        title = null,
+                        artist = null,
+                        album = null,
+                        isAvailable = true,
+                    ),
+                ),
+            )
+            db.workoutDao().insertPlaybackSnapshot(
+                PlaybackSnapshotEntity(
+                    sessionId = sessionId,
+                    songId = 501,
+                    markerId = null,
+                    positionMs = 12_000,
+                    capturedAtEpochMs = 1_000,
+                ),
+            )
+            db.workoutDao().insertPlaybackSnapshot(
+                PlaybackSnapshotEntity(
+                    sessionId = sessionId,
+                    songId = 502,
+                    markerId = null,
+                    positionMs = 5_000,
+                    capturedAtEpochMs = 2_000,
+                ),
+            )
+
+            val tracks =
+                (repository.getSessionMusic(sessionId) as com.dropsync.core.common.AppResult.Success).value
+
+            assertEquals(listOf(501L, 502L), tracks.map { it.songId })
+            assertEquals("Drop It", tracks.first().title)
+            // Ohne Titel faellt die Anzeige auf den Dateinamen zurueck.
+            assertEquals("ohne_titel.mp3", tracks.last().title)
+            assertEquals(12_000L, tracks.first().positionMs)
+        }
+
+    @Test
+    fun `getExerciseDetail nutzt den lokalisierten Namen und sortiert Muskeln absteigend`() =
+        runTest {
+            db.exerciseDao().insertMuscleGroupsIgnoring(
+                listOf(MuscleGroupEntity("GLUTES"), MuscleGroupEntity("QUADRICEPS")),
+            )
+            db.exerciseDao().insertNamesIgnoring(
+                listOf(
+                    ExerciseNameEntity(exerciseId = exerciseId, locale = "de", displayName = "Kniebeuge"),
+                    ExerciseNameEntity(exerciseId = exerciseId, locale = "en", displayName = "Back Squat"),
+                ),
+            )
+            db.exerciseDao().insertMusclesIgnoring(
+                listOf(
+                    ExerciseMuscleEntity(
+                        exerciseId = exerciseId,
+                        muscleGroupId = "QUADRICEPS",
+                        contributionPercent = 60,
+                    ),
+                    ExerciseMuscleEntity(exerciseId = exerciseId, muscleGroupId = "GLUTES", contributionPercent = 80),
+                ),
+            )
+
+            val detail =
+                (repository.getExerciseDetail(exerciseId, "de") as com.dropsync.core.common.AppResult.Success).value
+
+            assertEquals("Kniebeuge", detail.displayName)
+            assertEquals("barbell_back_squat", detail.slug)
+            assertEquals(
+                listOf(MuscleGroup.GLUTES, MuscleGroup.QUADRICEPS),
+                detail.muscles.map { it.group },
+            )
+        }
+
+    @Test
+    fun `getExerciseDetail meldet eine fehlende Uebung als Fehler`() =
+        runTest {
+            val result = repository.getExerciseDetail(9_999L, "de")
+            assertTrue(result is com.dropsync.core.common.AppResult.Failure)
+        }
+
+    @Test
+    fun `createCustomExercise verlangt deutsche und englische Namen`() =
+        runTest {
+            val result =
+                repository.createCustomExercise(
+                    CustomExerciseInput(
+                        displayNames = mapOf("de" to "Nur Deutsch"),
+                        kind = ExerciseKind.STRENGTH,
+                        equipment = Equipment.BARBELL,
+                        muscles = listOf(MuscleContribution(MuscleGroup.QUADRICEPS, 60)),
+                    ),
+                )
+            assertTrue(result is com.dropsync.core.common.AppResult.Failure)
+        }
+
+    @Test
+    fun `createCustomExercise verlangt gueltige Muskelbeitraege`() =
+        runTest {
+            val result =
+                repository.createCustomExercise(
+                    CustomExerciseInput(
+                        displayNames = mapOf("de" to "Frontkniebeuge", "en" to "Front Squat"),
+                        kind = ExerciseKind.STRENGTH,
+                        equipment = Equipment.BARBELL,
+                        muscles = listOf(MuscleContribution(MuscleGroup.QUADRICEPS, 0)),
+                    ),
+                )
+            assertTrue(result is com.dropsync.core.common.AppResult.Failure)
+        }
+
+    @Test
+    fun `createCustomExercise legt die Uebung mit eindeutigem Slug an`() =
+        runTest {
+            // Lookup-Tabelle fuellen (FK exercise_muscles.muscle_group_id).
+            db.exerciseDao().insertMuscleGroupsIgnoring(listOf(MuscleGroupEntity("QUADRICEPS")))
+            val result =
+                repository.createCustomExercise(
+                    CustomExerciseInput(
+                        displayNames = mapOf("de" to "Frontkniebeuge", "en" to "Front Squat"),
+                        kind = ExerciseKind.STRENGTH,
+                        equipment = Equipment.BARBELL,
+                        muscles = listOf(MuscleContribution(MuscleGroup.QUADRICEPS, 60)),
+                    ),
+                )
+
+            val id = (result as com.dropsync.core.common.AppResult.Success).value
+            val entity = db.exerciseDao().getExercise(id)!!
+            assertTrue(entity.isCustom)
+            assertEquals(Slugs.fromDisplayName("Front Squat"), entity.canonicalName)
+            assertEquals("Frontkniebeuge", db.exerciseDao().getDisplayName(id, "de"))
+            assertEquals(
+                listOf("QUADRICEPS"),
+                db.exerciseDao().getMuscles(id).map { it.muscleGroupId },
+            )
         }
 }

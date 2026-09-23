@@ -6,6 +6,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.database.DropSyncDatabase
+import com.dropsync.core.database.RoomTransactionRunner
 import com.dropsync.core.database.entity.ExerciseEntity
 import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.TestDispatcherProvider
@@ -46,6 +47,8 @@ class FlatSetRepositoryImplTest {
                     flatSetDao = db.flatSetDao(),
                     clock = clock,
                     dispatchers = TestDispatcherProvider(),
+                    transactionRunner = RoomTransactionRunner(db),
+                    recomputer = PersonalRecordRecomputer(db.workoutDao(), db.flatSetDao()),
                 )
             exerciseId =
                 db.exerciseDao().insertExerciseIgnoring(
@@ -185,6 +188,68 @@ class FlatSetRepositoryImplTest {
             val result = repository.deleteSet(setId)
             assertTrue(result is AppResult.Success)
             assertNull(db.flatSetDao().getById(setId))
+        }
+
+    // --- A1/5.7: flacher Satz-Pfad als PR-Quelle --------------------------
+
+    @Test
+    fun `flacher satz erzeugt die drei PR-arten ohne session`() =
+        runTest {
+            // 100 kg x 5 und 100 kg x 8: gleiche Last, das spaetere Volumen
+            // (800) ist der Session-Rekord; jeder Satz ist seine eigene
+            // Mini-Session (kein Aufsummieren ueber die Historie).
+            logSet(weightMilliKg = 100_000_000, reps = 5)
+            clock.advanceBy(60_000)
+            logSet(weightMilliKg = 100_000_000, reps = 8)
+
+            val records = db.workoutDao().getPersonalRecordsForExercise(exerciseId)
+            val byType = records.associateBy { it.type }
+            assertEquals(3, records.size)
+            assertEquals(100_000_000L, byType.getValue("HIGHEST_LOAD").valueLong)
+            assertEquals(8L, byType.getValue("MOST_REPS_AT_LOAD").valueLong)
+            assertEquals(100_000_000L * 8, byType.getValue("HIGHEST_SESSION_VOLUME").valueLong)
+            assertTrue(
+                "flache PRs haben keine Session",
+                records.all { it.achievedSessionId == null },
+            )
+        }
+
+    @Test
+    fun `delete set rechnet die PRs aus der resthistorie neu`() =
+        runTest {
+            logSet(weightMilliKg = 100_000_000, reps = 5)
+            clock.advanceBy(60_000)
+            val heavierSetId = logSet(weightMilliKg = 90_000_000, reps = 10)
+            assertEquals(
+                "Volumen-PR liegt zunaechst beim zweiten Satz",
+                90_000_000L * 10,
+                db
+                    .workoutDao()
+                    .getPersonalRecordsForExercise(exerciseId)
+                    .first { it.type == "HIGHEST_SESSION_VOLUME" }
+                    .valueLong,
+            )
+
+            repository.deleteSet(heavierSetId)
+
+            val byType =
+                db
+                    .workoutDao()
+                    .getPersonalRecordsForExercise(exerciseId)
+                    .associateBy { it.type }
+            assertEquals(100_000_000L, byType.getValue("HIGHEST_LOAD").valueLong)
+            assertEquals(100_000_000L * 5, byType.getValue("HIGHEST_SESSION_VOLUME").valueLong)
+        }
+
+    @Test
+    fun `letzter satz entfernt alle PRs`() =
+        runTest {
+            val setId = logSet(weightMilliKg = 80_000_000, reps = 8)
+            assertTrue(db.workoutDao().getPersonalRecordsForExercise(exerciseId).isNotEmpty())
+
+            repository.deleteSet(setId)
+
+            assertTrue(db.workoutDao().getPersonalRecordsForExercise(exerciseId).isEmpty())
         }
 
     @Test

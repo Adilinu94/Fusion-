@@ -1,34 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="workout_no_session">No active workout</string>
-    <string name="workout_start_session">Start workout</string>
-    <string name="workout_active_session">Workout in progress</string>
-    <string name="workout_started_at">Started at %1$s</string>
-    <string name="workout_complete_session">Finish workout</string>
-    <string name="workout_discard_session">Discard</string>
-    <string name="workout_pick_exercise">Exercise</string>
-    <string name="workout_add_exercise">Add</string>
-    <string name="workout_weight_kg">Weight (kg)</string>
-    <string name="workout_reps">Reps</string>
-    <string name="workout_per_hand">Weight is per hand (two implements)</string>
-    <string name="workout_complete_set">Complete set</string>
-    <string name="workout_set_saved">Set saved:</string>
+    <string name="workout_set_saved">Set saved</string>
+    <string name="workout_set_undone">Set removed</string>
     <string name="workout_undo">Undo</string>
-    <string name="workout_repeat_last">Repeat last session</string>
-    <string name="workout_open_library">Exercise library</string>
-    <string name="workout_open_routines">Routines</string>
-    <string name="workout_open_progress">Progress</string>
-    <string name="workout_now_playing">Track: %1$s</string>
-    <string name="workout_save_as_routine">Save as routine</string>
-    <string name="workout_routine_name">Routine name</string>
-    <string name="workout_save">Save</string>
     <string name="workout_cancel">Cancel</string>
     <string name="workout_back">Back</string>
-    <string name="workout_swap">Swap</string>
-    <string name="workout_swap_title">Swap exercise</string>
-    <string name="workout_swap_keep">Keep logged sets on the old exercise</string>
-    <string name="workout_swap_move">Move logged sets to the new exercise</string>
-    <string name="workout_swap_discard">Discard logged sets from this session</string>
     <string name="workout_rest_dialog_title">Rest timer</string>
     <string name="workout_rest_seconds">Rest (seconds)</string>
     <string name="workout_rest_seconds_label">Rest: %1$d s</string>
@@ -38,6 +14,7 @@
     <string name="workout_rest_mode_normal">Normal</string>
     <string name="workout_rest_mode_dropsync">DropSync</string>
     <string name="library_title">Exercise library</string>
+    <string name="library_empty">No exercises found</string>
     <string name="library_search">Search</string>
     <string name="library_new_exercise">New exercise</string>
     <string name="library_custom_badge">Custom</string>
@@ -53,7 +30,6 @@
     <string name="library_percent">Percent</string>
     <string name="library_add_muscle">Add muscle</string>
     <string name="library_create">Create</string>
-    <string name="library_goal_section">Goal</string>
     <string name="library_goal_set">Set goal</string>
     <string name="library_goal_edit">Edit goal</string>
     <string name="library_goal_dialog_title">Goal for %s</string>
@@ -63,41 +39,13 @@
     <string name="library_goal_current">Goal: %1$s × %2$d</string>
     <string name="library_goal_clear">Remove goal</string>
     <string name="library_goal_save">Save</string>
-    <string name="routines_title">Routines</string>
-    <string name="routines_new">New routine</string>
-    <string name="routines_empty">No routines yet</string>
-    <string name="routines_start">Start workout</string>
-    <string name="routines_target_sets">Sets</string>
-    <string name="routines_add_exercise">Add exercise</string>
-    <string name="routines_remove">Remove</string>
-    <string name="detail_prs_title">Personal records</string>
-    <string name="detail_pr_highest_load">Highest weight</string>
-    <string name="detail_pr_session_volume">Highest session volume</string>
-    <string name="detail_pr_reps_at_load">Most reps at weight</string>
-    <string name="detail_pr_none">none yet</string>
-    <string name="detail_no_data">No training data yet</string>
-    <string name="detail_trend_1rm">Estimated 1RM trend (not a PR)</string>
-    <string name="detail_volume">Volume over time</string>
-    <string name="detail_weight_history">Weight history</string>
-    <string name="detail_chart_summary">%1$d sessions, latest %2$s kg</string>
-    <string name="detail_status_progressing">Progressing</string>
-    <string name="detail_status_stagnating">Stagnating</string>
-    <string name="detail_status_declining">Declining</string>
-    <string name="detail_plateau">Plateau: no new best for 3+ sessions</string>
-    <string name="detail_plateau_short">Plateau</string>
-    <string name="detail_suggestion">Suggestion: %1$s</string>
-    <string name="suggestion_keep_going">Keep going</string>
-    <string name="suggestion_deload">Deload</string>
-    <string name="suggestion_increase_volume">Increase volume</string>
-    <string name="suggestion_change_variation">Change variation</string>
-    <string name="progress_title">Progress</string>
 
     <!-- Train console (#26: was hardcoded in TrainScreen.kt) -->
     <string name="train_console_label">ENTER SET</string>
     <string name="train_pick_exercise_placeholder">Pick an exercise</string>
     <string name="train_console_hint">Confirm weight and reps</string>
     <string name="train_set_done">SET DONE</string>
-    <string name="train_drop_auto">Drop auto</string>
+    <string name="train_log_error">Could not save the set. Please try again.</string>
     <string name="train_pr_volume">PR volume: %1$.1f kg</string>
     <string name="train_recent_sets">Recent sets</string>
     <string name="train_set_reps">%1$d REPS</string>
@@ -114,20 +62,77 @@
 
     <!-- Rest console -->
     <string name="train_rest_label">REST</string>
+    <!-- P1-10: DropSync-Plan sichtbar machen (Design 4.5); Text statt Technik. -->
+    <string name="train_rest_label_dropsync">DROPSYNC</string>
+    <string name="train_rest_dropsync_best_effort">DropSync: nur Best Effort</string>
+    <string name="train_rest_dropsync_overridden">DropSync beendet - du hast die Musik geaendert</string>
+    <string name="train_rest_dropsync_unavailable">DropSync nicht moeglich - kein passender Drop</string>
+    <string name="train_rest_dropsync_target">Target in %1$s</string>
+    <string name="train_rest_dropsync_audio_ready">Audio prepared</string>
+    <string name="train_rest_dropsync_timing_stable">Timing stable</string>
+    <string name="train_rest_dropsync_go">GO</string>
+    <string name="train_rest_dropsync_landed">Drop landed</string>
+    <string name="train_rest_cancel_plan">CANCEL PLAN</string>
     <string name="train_rest_open_timer">Open timer</string>
+    <!-- C5 (T-8): spoken rest time and DropSync line for TalkBack. -->
+    <string name="train_rest_a11y_running">Rest running, %1$s left</string>
+    <string name="train_rest_dropsync_a11y">DropSync: %1$s. Target in %2$s.</string>
+    <plurals name="train_rest_spoken_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="train_rest_spoken_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
+    <!-- C3 (5.3): rest length and music mode per exercise. -->
+    <string name="train_rest_pref_row">Rest %1$d s · %2$s</string>
+    <string name="train_rest_pref_change">Change</string>
+    <string name="train_rest_pref_title">Rest &amp; music</string>
+    <string name="train_rest_pref_duration">Rest length</string>
+    <string name="train_rest_pref_seconds">%1$d s</string>
+    <string name="train_rest_pref_mode">Music mode</string>
+    <string name="train_rest_pref_mode_normal">Normal</string>
+    <string name="train_rest_pref_mode_dropsync">DropSync</string>
+    <string name="train_rest_pref_blocked_no_rest_playlist">No rest playlist set up yet — DropSync cannot land.</string>
+    <string name="train_rest_pref_blocked_no_work_playlist">No workout playlist set up yet — DropSync cannot land.</string>
+    <string name="train_rest_pref_save">Save</string>
+    <string name="train_rest_pref_cancel">Cancel</string>
+    <!-- C3 (P-3/MP-9): ducking of the rest music, same value as settings. -->
+    <string name="train_rest_duck_title">Rest music: %1$d dB</string>
+    <!-- C15 (PR-3/PR-4): DropSync switch of the running rest. -->
+    <string name="train_rest_drop_switch">DropSync for this rest</string>
+    <string name="train_rest_drop_switch_blocked">Only possible from 1 minute rest</string>
+    <string name="train_error_rest_pref_save">Rest preference could not be saved</string>
+    <!-- P1-12: learning-path event (snackbar). -->
+    <string name="train_learning_refined">Calibration refined (revision %1$d)</string>
+    <string name="train_learning_rolled_back">Calibration rolled back - too many deviations</string>
+    <string name="train_learning_skipped_implausible">Not learned: signal and count do not match</string>
+    <string name="train_learning_skipped_unreliable">Not learned: signal was unreliable</string>
+    <!-- T-10/S-7: no reproducible periodicity in the set. -->
+    <string name="train_learning_skipped_not_reproducible">Not learned: set was not reproducible</string>
+    <!-- T-10/S-7: visible errors of the train paths (snackbar). -->
+    <string name="train_error_exercise_create">Could not create the exercise. Please try again.</string>
+    <string name="train_error_profile_load">Could not load the calibration. Please try again.</string>
+    <string name="train_error_learning_save">Could not save the refined calibration.</string>
+    <!-- P2-17/RC-7: set report after stop (snackbar). -->
+    <string name="train_set_report">Set finished: %1$d counted · rate %2$s Hz · %3$d gaps · %4$d ZUPT</string>
+    <string name="train_set_report_rejected">%1$d rejected (%2$s)</string>
+    <string name="train_rejection_accel">accel voting</string>
+    <string name="train_rejection_template">template match</string>
+    <string name="train_rejection_phase">phase</string>
+    <string name="train_rejection_quality">quality</string>
     <string name="train_rest_add_long">+15 SECONDS</string>
     <string name="train_rest_add_short">+15 S</string>
     <string name="train_rest_end">END REST</string>
     <string name="train_exercise_end">FINISH EXERCISE</string>
 
     <!-- Sensor status card -->
-    <string name="sensor_status_disconnected">No chip connected</string>
     <string name="sensor_status_connecting">Connecting…</string>
     <string name="sensor_status_connected">Chip connected</string>
     <string name="sensor_status_streaming">Chip streaming</string>
     <string name="sensor_connect">Connect chip</string>
     <string name="sensor_disconnect">Disconnect</string>
-    <string name="sensor_calibrate">Calibrate</string>
 
     <!-- Heart rate badge -->
     <string name="heart_rate_allow">Allow heart rate</string>
@@ -137,10 +142,27 @@
 
     <!-- Live rep counting -->
     <string name="live_count_start">Start counted set</string>
-    <string name="live_count_needs_calibration">Calibrate first</string>
     <string name="live_count_weak_signal">Weak signal — please check the count</string>
     <string name="live_count_countdown">Starting in %1$d …</string>
     <string name="live_count_stop">Stop</string>
+    <string name="live_count_reason_no_profile">No calibration profile for this exercise yet.</string>
+    <string name="train_counted_zero_hint">No repetitions detected — check the signal or enter the number manually.</string>
+
+    <!-- Train console 2.0 (P2-20/RC-5): Rep-Hero mit Quelle + Sensor-Kopfzeile.
+         UI-Handbuch 7.4: genau eine Rep-Zahl mit genau einer Quelle; die
+         Quelle nennt bei "SENSOR DISCONNECTED" auch die Handlung. -->
+    <string name="reps_source_auto">AUTO</string>
+    <string name="reps_source_auto_hint">Sensor connected</string>
+    <string name="reps_source_corrected">MANUALLY CORRECTED</string>
+    <string name="reps_source_corrected_hint">Sensor counted %1$d</string>
+    <string name="reps_source_manual">MANUAL</string>
+    <string name="reps_source_manual_hint">Entered by hand</string>
+    <string name="reps_source_manual_disconnected_hint">Sensor not connected</string>
+    <string name="reps_source_disconnected">SENSOR DISCONNECTED</string>
+    <string name="reps_source_disconnected_hint">Keep counting with +/−</string>
+    <string name="sensor_quality_good">Signal ok</string>
+    <string name="sensor_quality_degraded">Signal weak</string>
+    <string name="sensor_quality_unreliable">Signal unreliable</string>
 
     <!-- Autocorrelation second opinion (Umbauplan 2026-09-04 Phase 7).
          A question, not a correction: the check cannot determine the exact
@@ -157,7 +179,6 @@
     <string name="calibration_quality_good">good</string>
     <string name="calibration_quality_medium">fair — consider repeating</string>
     <string name="calibration_quality_weak">poor — please repeat</string>
-    <string name="calibration_samples">%1$d samples</string>
     <string name="calibration_save_profile">Save profile</string>
     <string name="calibration_next">Next</string>
     <string name="calibration_stage_rest">1/4 Rest</string>
@@ -183,6 +204,33 @@
     <string name="calibration_error_no_motion_window">No motion window found. Please perform exactly 1 clear rep.</string>
     <string name="calibration_error_incomplete">Calibration incomplete — please start over.</string>
     <string name="calibration_error_save_failed">Saving failed.</string>
+
+    <!-- Calibration wizard 2.0 (RC-8): stepper, live signal, repeat, review facts -->
+    <string name="calibration_step_rest">Rest</string>
+    <string name="calibration_step_single_rep">1 rep</string>
+    <string name="calibration_step_known_set">5 reps</string>
+    <string name="calibration_step_slow_set">Slow</string>
+    <string name="calibration_step_review">Review</string>
+    <string name="calibration_step_a11y">Step %1$d of %2$d: %3$s, %4$s</string>
+    <string name="calibration_step_current">current</string>
+    <string name="calibration_step_state">open</string>
+    <string name="calibration_reps_detected">Reps detected: %1$d of %2$s</string>
+    <string name="calibration_reps_estimate_hint">Live estimate — the evaluation decides after Next.</string>
+    <string name="calibration_repeat_stage">Repeat this stage</string>
+    <string name="calibration_repeat_known_set">Repeat the 5-rep set</string>
+    <string name="calibration_repeat_slow_set">Repeat the slow set</string>
+    <string name="calibration_review_no_result">Calibration could not be computed — the 5-rep set was not clear enough.</string>
+    <string name="calibration_review_reps_found">Recovered %1$d of %2$d reps in the set.</string>
+    <string name="calibration_review_reps_found_slow">Recovered %1$d of %2$d reps in the slow set.</string>
+    <string name="calibration_review_regular">Rep spacing is even (spread %1$.0f %%) — steady reps are counted reliably.</string>
+    <string name="calibration_review_irregular">Rep spacing is uneven (spread %1$.0f %%) — very irregular reps can be missed.</string>
+    <string name="calibration_review_threshold">Threshold sits %1$.1f× above rest noise.</string>
+    <string name="calibration_review_threshold_low">Threshold sits only %1$.1f× above rest noise — keep the signal clean.</string>
+    <string name="calibration_review_accel_on">Motion channel active.</string>
+    <string name="calibration_review_accel_off">Motion channel off — no clear acceleration threshold was measured.</string>
+    <string name="calibration_review_duration">Expected rep duration: %1$.1f s.</string>
+    <string name="calibration_status_recalibrate">Calibrated for FlowRep %1$s — recalibrate</string>
+    <string name="calibration_status_missing">FlowRep %1$s not calibrated yet — calibrate now</string>
 
     <!-- Sensor errors (#27: were German strings built in :data:sensor / TrainViewModel) -->
     <string name="sensor_error_permission_denied">Bluetooth permission missing. Please allow it in the settings.</string>

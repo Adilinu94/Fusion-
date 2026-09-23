@@ -37,6 +37,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.FlowRepEmptyState
+import com.dropsync.core.designsystem.component.FlowRepTopBar
 import com.dropsync.core.model.Equipment
 import com.dropsync.core.model.ExerciseKind
 import com.dropsync.core.model.MuscleGroup
@@ -111,6 +113,16 @@ fun ExerciseLibraryScreen(
                 onBack = onBack,
             )
         }
+        // UI-Befund 4.2.7: Leerzustand statt stiller leerer Flaeche
+        // (z. B. wenn die Suche nichts findet).
+        if (items.isEmpty() && archivedItems.isEmpty()) {
+            item {
+                FlowRepEmptyState(
+                    text = stringResource(R.string.library_empty),
+                    modifier = Modifier.fillParentMaxHeight(0.6f),
+                )
+            }
+        }
         items(items, key = { it.id }) { item ->
             ExerciseCard(
                 item = item,
@@ -159,16 +171,13 @@ private fun LibraryHeader(
     onBack: () -> Unit,
 ) {
     Column(Modifier.padding(16.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = stringResource(R.string.library_title),
-                style = MaterialTheme.typography.titleLarge,
-                modifier = Modifier.weight(1f),
-            )
-            TextButton(onClick = onBack) {
-                Text(stringResource(R.string.workout_back))
-            }
-        }
+        // Einheitliches App-Bar-Muster (UI-Befund 4.1.6): Zurueck-Taste
+        // statt TextButton "Back".
+        FlowRepTopBar(
+            title = stringResource(R.string.library_title),
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.workout_back),
+        )
         OutlinedTextField(
             value = query,
             onValueChange = onQueryChange,

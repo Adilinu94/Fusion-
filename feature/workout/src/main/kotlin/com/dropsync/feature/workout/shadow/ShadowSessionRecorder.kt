@@ -1,7 +1,9 @@
 package com.dropsync.feature.workout.shadow
 
 import com.dropsync.domain.sensor.CalibrationProfile
+import com.dropsync.domain.sensor.RepRejectionReason
 import com.dropsync.domain.sensor.SensorSample
+import com.dropsync.domain.sensor.SetDiagnostics
 
 /**
  * Shadow-vs-confirmed diff recording (`docs/design/SHADOW_DIFF_HARNESS_PLAN.md`,
@@ -18,9 +20,14 @@ import com.dropsync.domain.sensor.SensorSample
  * is the binding for contexts without file I/O.
  */
 interface ShadowSessionRecorder {
-    fun startSession(sessionId: String)
+    /**
+     * A4/T-5/S-12: alle Methoden sind suspend — Implementierungen schreiben
+     * auf IO, der Aufrufer darf Main nicht blockieren. Die Reihenfolge
+     * (start -> set -> samples -> ... -> end) bleibt Vertrag.
+     */
+    suspend fun startSession(sessionId: String)
 
-    fun recordSet(event: ShadowDiffEvent)
+    suspend fun recordSet(event: ShadowDiffEvent)
 
     /**
      * Schreibt die Rohsamples eines abgeschlossenen Sets plus die Satzgrenze
@@ -35,9 +42,9 @@ interface ShadowSessionRecorder {
      * Samples nicht dem Satz zuordnen, dessen Wahrheit im Manifest steht —
      * und ein Corpus ohne Zuordnung ist wieder nur ein Protokoll.
      */
-    fun recordSamples(window: SampleWindow)
+    suspend fun recordSamples(window: SampleWindow)
 
-    fun endSession()
+    suspend fun endSession()
 }
 
 /**
@@ -90,6 +97,18 @@ data class ShadowDiffEvent(
     val confirmedRepsEdited: Boolean,
     val liveCountedReps: Int,
     val shadowReps: Int,
+    /**
+     * RC-17: Ablehnungsmechanismen des Sets (Enum-Name -> Anzahl). Damit
+     * zerfallen "N Abweichungen" im Corpus in ihre Ursachen. Leer bei
+     * Altaufrufern ohne Diagnose.
+     */
+    val rejectionCounts: Map<RepRejectionReason, Int> = emptyMap(),
+    /**
+     * RC-16: restliche Live-Diagnose des Sets (Rate, Gaps, ZUPT,
+     * Filterframes). Der Offline-Harness stellt sie der Replay-Seite
+     * gegenueber, um Pfad-Differenzen einzugrenzen. null bei Altaufrufern.
+     */
+    val diagnostics: SetDiagnostics? = null,
 ) {
     val delta: Int get() = shadowReps - confirmedReps
 
@@ -97,11 +116,31 @@ data class ShadowDiffEvent(
      * Manual JSONL encoding: fixed, small field set, not worth pulling
      * kotlinx-serialization into `:feature:workout` for one line type
      * (it is declared in the version catalog but used nowhere yet).
+     *
+     * RC-16: die Diagnosefelder kommen flach hinter `rejections` —
+     * dieselben Namen, die `CorpusLoader`/`tools/shadow_harness.py`
+     * lesen. Ohne Diagnose bleiben sie weg (Altformat bleibt gueltig).
      */
-    fun toJsonLine(): String =
-        "{\"t\":\"set\",\"exerciseId\":$exerciseId,\"weightMilliKg\":$weightMilliKg," +
+    fun toJsonLine(): String {
+        val rejections =
+            rejectionCounts.entries
+                .filter { it.value > 0 }
+                .sortedBy { it.key.ordinal }
+                .joinToString(",") { "\"${it.key.name}\":${it.value}" }
+        val diagnosticsJson =
+            diagnostics?.let {
+                ",\"framesProcessed\":${it.framesProcessed}" +
+                    ",\"framesRejected\":${it.framesRejected}" +
+                    ",\"gaps\":${it.largeGapCount}" +
+                    ",\"zuptUpdates\":${it.zuptBiasUpdates}" +
+                    ",\"zuptAborted\":${it.zuptAbortedPending}" +
+                    ",\"rateHz\":${it.measuredSampleRateHz}"
+            } ?: ""
+        return "{\"t\":\"set\",\"exerciseId\":$exerciseId,\"weightMilliKg\":$weightMilliKg," +
             "\"confirmedReps\":$confirmedReps,\"confirmedRepsEdited\":$confirmedRepsEdited," +
-            "\"liveCountedReps\":$liveCountedReps,\"shadowReps\":$shadowReps,\"delta\":$delta}"
+            "\"liveCountedReps\":$liveCountedReps,\"shadowReps\":$shadowReps,\"delta\":$delta," +
+            "\"rejections\":{$rejections}$diagnosticsJson}"
+    }
 }
 
 /**
@@ -111,11 +150,11 @@ data class ShadowDiffEvent(
  * Android storage APIs.
  */
 class NoOpShadowSessionRecorder : ShadowSessionRecorder {
-    override fun startSession(sessionId: String) = Unit
+    override suspend fun startSession(sessionId: String) = Unit
 
-    override fun recordSet(event: ShadowDiffEvent) = Unit
+    override suspend fun recordSet(event: ShadowDiffEvent) = Unit
 
-    override fun recordSamples(window: SampleWindow) = Unit
+    override suspend fun recordSamples(window: SampleWindow) = Unit
 
-    override fun endSession() = Unit
+    override suspend fun endSession() = Unit
 }

@@ -1,14 +1,19 @@
 package com.dropsync.data.workout
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.dropsync.domain.workout.WorkoutGoalRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.workoutGoalDataStore by preferencesDataStore(name = "workout_goal_prefs")
+private val Context.workoutGoalDataStore by preferencesDataStore(
+    name = "workout_goal_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * DataStore-Persistenz des Wochenziels (Schritt 7, Muster

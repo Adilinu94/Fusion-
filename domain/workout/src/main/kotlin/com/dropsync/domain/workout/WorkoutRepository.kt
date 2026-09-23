@@ -163,6 +163,9 @@ interface WorkoutRepository {
 
     fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>>
 
+    /** Alle PRs ueber alle Uebungen (Befund 3.14/153: echte PRs fuer das Dashboard). */
+    fun observeAllPersonalRecords(): Flow<List<PrRecord>>
+
     /** Waehrend der Session gespielte Tracks (Auswertung, Schritt 11.1). */
     suspend fun getSessionMusic(sessionId: Long): AppResult<List<PlayedTrackInfo>>
 }

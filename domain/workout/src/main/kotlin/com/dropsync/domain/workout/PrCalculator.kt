@@ -38,6 +38,11 @@ object PrCalculator {
     /**
      * Kern-Ergebnis -> Fusions [PrRecord]. Der Kern liefert kg als Double;
      * Reps stehen dort ebenfalls als Double, sind aber immer ganzzahlig.
+     *
+     * A1/5.7: negative Pseudo-Session-IDs markieren flache Saetze (jeder
+     * Satz zaehlt als eigene Mini-Session). Nach aussen — und in der DB —
+     * wird daraus null: es gibt keine echte Session, auf die man verweisen
+     * koennte.
      */
     private fun com.training.core.PrResult.toPrRecord(): PrRecord =
         PrRecord(
@@ -47,7 +52,7 @@ object PrCalculator {
                     CorePrType.HIGHEST_SESSION_VOLUME -> PrType.HIGHEST_SESSION_VOLUME
                     CorePrType.MOST_REPS_AT_LOAD -> PrType.MOST_REPS_AT_LOAD
                 },
-            achievedSessionId = achievedSessionId,
+            achievedSessionId = achievedSessionId.takeIf { it > 0L },
             achievedClusterId = achievedClusterId,
             valueLong =
                 when (valueUnit) {

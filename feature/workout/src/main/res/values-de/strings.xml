@@ -1,34 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="workout_no_session">Kein aktives Training</string>
-    <string name="workout_start_session">Training starten</string>
-    <string name="workout_active_session">Training läuft</string>
-    <string name="workout_started_at">Gestartet um %1$s</string>
-    <string name="workout_complete_session">Training beenden</string>
-    <string name="workout_discard_session">Verwerfen</string>
-    <string name="workout_pick_exercise">Übung</string>
-    <string name="workout_add_exercise">Hinzufügen</string>
-    <string name="workout_weight_kg">Gewicht (kg)</string>
-    <string name="workout_reps">Wdh.</string>
-    <string name="workout_per_hand">Gewicht gilt pro Hand (zwei Hanteln)</string>
-    <string name="workout_complete_set">Satz abschließen</string>
-    <string name="workout_set_saved">Satz gespeichert:</string>
+    <string name="workout_set_saved">Satz gespeichert</string>
+    <string name="workout_set_undone">Satz entfernt</string>
     <string name="workout_undo">Rückgängig</string>
-    <string name="workout_repeat_last">Letzte Session wiederholen</string>
-    <string name="workout_open_library">Übungsbibliothek</string>
-    <string name="workout_open_routines">Routinen</string>
-    <string name="workout_open_progress">Fortschritt</string>
-    <string name="workout_now_playing">Track: %1$s</string>
-    <string name="workout_save_as_routine">Als Routine speichern</string>
-    <string name="workout_routine_name">Name der Routine</string>
-    <string name="workout_save">Speichern</string>
     <string name="workout_cancel">Abbrechen</string>
     <string name="workout_back">Zurück</string>
-    <string name="workout_swap">Tauschen</string>
-    <string name="workout_swap_title">Übung tauschen</string>
-    <string name="workout_swap_keep">Geloggte Sätze bei der alten Übung behalten</string>
-    <string name="workout_swap_move">Geloggte Sätze zur neuen Übung verschieben</string>
-    <string name="workout_swap_discard">Geloggte Sätze dieser Session verwerfen</string>
     <string name="workout_rest_dialog_title">Pausen-Timer</string>
     <string name="workout_rest_seconds">Pause (Sekunden)</string>
     <string name="workout_rest_seconds_label">Pause: %1$d s</string>
@@ -38,6 +14,7 @@
     <string name="workout_rest_mode_normal">Normal</string>
     <string name="workout_rest_mode_dropsync">DropSync</string>
     <string name="library_title">Übungsbibliothek</string>
+    <string name="library_empty">Keine Übungen gefunden</string>
     <string name="library_search">Suche</string>
     <string name="library_new_exercise">Neue Übung</string>
     <string name="library_custom_badge">Eigene</string>
@@ -53,7 +30,6 @@
     <string name="library_percent">Prozent</string>
     <string name="library_add_muscle">Muskel hinzufügen</string>
     <string name="library_create">Anlegen</string>
-    <string name="library_goal_section">Ziel</string>
     <string name="library_goal_set">Ziel setzen</string>
     <string name="library_goal_edit">Ziel bearbeiten</string>
     <string name="library_goal_dialog_title">Ziel für %s</string>
@@ -63,41 +39,13 @@
     <string name="library_goal_current">Ziel: %1$s × %2$d</string>
     <string name="library_goal_clear">Ziel entfernen</string>
     <string name="library_goal_save">Speichern</string>
-    <string name="routines_title">Routinen</string>
-    <string name="routines_new">Neue Routine</string>
-    <string name="routines_empty">Noch keine Routinen</string>
-    <string name="routines_start">Training starten</string>
-    <string name="routines_target_sets">Sätze</string>
-    <string name="routines_add_exercise">Übung hinzufügen</string>
-    <string name="routines_remove">Entfernen</string>
-    <string name="detail_prs_title">Persönliche Rekorde</string>
-    <string name="detail_pr_highest_load">Höchstes Gewicht</string>
-    <string name="detail_pr_session_volume">Höchstes Session-Volumen</string>
-    <string name="detail_pr_reps_at_load">Meiste Wdh. bei Gewicht</string>
-    <string name="detail_pr_none">noch keiner</string>
-    <string name="detail_no_data">Noch keine Trainingsdaten</string>
-    <string name="detail_trend_1rm">Geschätzter 1RM-Trend (kein PR)</string>
-    <string name="detail_volume">Volumen über Zeit</string>
-    <string name="detail_weight_history">Gewichtsverlauf</string>
-    <string name="detail_chart_summary">%1$d Sessions, zuletzt %2$s kg</string>
-    <string name="detail_status_progressing">Progressiv</string>
-    <string name="detail_status_stagnating">Stagnierend</string>
-    <string name="detail_status_declining">Rückläufig</string>
-    <string name="detail_plateau">Plateau: seit 3+ Sessions keine neue Bestleistung</string>
-    <string name="detail_plateau_short">Plateau</string>
-    <string name="detail_suggestion">Vorschlag: %1$s</string>
-    <string name="suggestion_keep_going">Weiter so</string>
-    <string name="suggestion_deload">Deload einplanen</string>
-    <string name="suggestion_increase_volume">Volumen erhöhen</string>
-    <string name="suggestion_change_variation">Variation wechseln</string>
-    <string name="progress_title">Fortschritt</string>
 
     <!-- Satz-Konsole (#26: vorher hartkodiert in TrainScreen.kt) -->
     <string name="train_console_label">SATZ EINGEBEN</string>
     <string name="train_pick_exercise_placeholder">Übung wählen</string>
     <string name="train_console_hint">Gewicht und Wiederholungen bestätigen</string>
     <string name="train_set_done">SATZ FERTIG</string>
-    <string name="train_drop_auto">Drop-Auto</string>
+    <string name="train_log_error">Satz konnte nicht gespeichert werden. Bitte erneut versuchen.</string>
     <string name="train_pr_volume">PR-Volumen: %1$.1f kg</string>
     <string name="train_recent_sets">Letzte Sätze</string>
     <string name="train_set_reps">%1$d WDH.</string>
@@ -114,20 +62,77 @@
 
     <!-- Pausen-Konsole -->
     <string name="train_rest_label">PAUSE</string>
+    <!-- P1-10: DropSync-Plan sichtbar machen (Design 4.5); Text statt Technik. -->
+    <string name="train_rest_label_dropsync">DROPSYNC</string>
+    <string name="train_rest_dropsync_best_effort">DropSync: nur Best Effort</string>
+    <string name="train_rest_dropsync_overridden">DropSync beendet - du hast die Musik geändert</string>
+    <string name="train_rest_dropsync_unavailable">DropSync nicht möglich - kein passender Drop</string>
+    <string name="train_rest_dropsync_target">Ziel in %1$s</string>
+    <string name="train_rest_dropsync_audio_ready">Audio vorbereitet</string>
+    <string name="train_rest_dropsync_timing_stable">Timing stabil</string>
+    <string name="train_rest_dropsync_go">GO</string>
+    <string name="train_rest_dropsync_landed">Drop gelandet</string>
+    <string name="train_rest_cancel_plan">PLAN ABBRECHEN</string>
     <string name="train_rest_open_timer">Timer öffnen</string>
+    <!-- C5 (T-8): gesprochene Restzeit und DropSync-Zeile fuer TalkBack. -->
+    <string name="train_rest_a11y_running">Pause läuft, noch %1$s</string>
+    <string name="train_rest_dropsync_a11y">DropSync: %1$s. Ziel in %2$s.</string>
+    <plurals name="train_rest_spoken_minutes">
+        <item quantity="one">%d Minute</item>
+        <item quantity="other">%d Minuten</item>
+    </plurals>
+    <plurals name="train_rest_spoken_seconds">
+        <item quantity="one">%d Sekunde</item>
+        <item quantity="other">%d Sekunden</item>
+    </plurals>
+    <!-- C3 (5.3): Pausendauer und Musikmodus je Übung. -->
+    <string name="train_rest_pref_row">Pause %1$d s · %2$s</string>
+    <string name="train_rest_pref_change">Ändern</string>
+    <string name="train_rest_pref_title">Pause &amp; Musik</string>
+    <string name="train_rest_pref_duration">Pausenlänge</string>
+    <string name="train_rest_pref_seconds">%1$d s</string>
+    <string name="train_rest_pref_mode">Musikmodus</string>
+    <string name="train_rest_pref_mode_normal">Normal</string>
+    <string name="train_rest_pref_mode_dropsync">DropSync</string>
+    <string name="train_rest_pref_blocked_no_rest_playlist">Noch keine Pausen-Playlist eingerichtet — DropSync kann nicht landen.</string>
+    <string name="train_rest_pref_blocked_no_work_playlist">Noch keine Work-Playlist eingerichtet — DropSync kann nicht landen.</string>
+    <string name="train_rest_pref_save">Speichern</string>
+    <string name="train_rest_pref_cancel">Abbrechen</string>
+    <!-- C3 (P-3/MP-9): Ducking der Pausenmusik, derselbe Wert wie in den Einstellungen. -->
+    <string name="train_rest_duck_title">Pausenmusik: %1$d dB</string>
+    <!-- C15 (PR-3/PR-4): DropSync-Schalter der laufenden Pause. -->
+    <string name="train_rest_drop_switch">DropSync für diese Pause</string>
+    <string name="train_rest_drop_switch_blocked">Erst ab 1 Minute Pause möglich</string>
+    <string name="train_error_rest_pref_save">Pausen-Einstellung konnte nicht gespeichert werden</string>
+    <!-- P1-12: Lern-Ereignis des Kalibrierungs-Lernpfads (Snackbar). -->
+    <string name="train_learning_refined">Kalibrierung verfeinert (Revision %1$d)</string>
+    <string name="train_learning_rolled_back">Kalibrierung zurückgesetzt - zu viele Abweichungen</string>
+    <string name="train_learning_skipped_implausible">Nicht gelernt: Signal und Zählung passen nicht zusammen</string>
+    <string name="train_learning_skipped_unreliable">Nicht gelernt: Signal war unzuverlässig</string>
+    <!-- T-10/S-7: keine reproduzierbare Periodizität im Satz. -->
+    <string name="train_learning_skipped_not_reproducible">Nicht gelernt: Satz war nicht reproduzierbar</string>
+    <!-- T-10/S-7: sichtbare Fehler der Train-Pfade (Snackbar). -->
+    <string name="train_error_exercise_create">Übung konnte nicht angelegt werden. Bitte erneut versuchen.</string>
+    <string name="train_error_profile_load">Kalibrierung konnte nicht geladen werden. Bitte erneut versuchen.</string>
+    <string name="train_error_learning_save">Verfeinerte Kalibrierung konnte nicht gespeichert werden.</string>
+    <!-- P2-17/RC-7: Satz-Report nach dem Stop (Snackbar). -->
+    <string name="train_set_report">Satz beendet: %1$d erkannt · Rate %2$s Hz · %3$d Aussetzer · %4$d ZuPT</string>
+    <string name="train_set_report_rejected">%1$d abgelehnt (%2$s)</string>
+    <string name="train_rejection_accel">Accel-Voting</string>
+    <string name="train_rejection_template">Template</string>
+    <string name="train_rejection_phase">Phase</string>
+    <string name="train_rejection_quality">Qualität</string>
     <string name="train_rest_add_long">+15 SEKUNDEN</string>
     <string name="train_rest_add_short">+15 S</string>
     <string name="train_rest_end">PAUSE BEENDEN</string>
     <string name="train_exercise_end">ÜBUNG BEENDEN</string>
 
-    <!-- Sensor-Statuskarte -->
-    <string name="sensor_status_disconnected">Kein Chip verbunden</string>
+    <!-- Sensor-Statuskopfzeile -->
     <string name="sensor_status_connecting">Verbinde…</string>
     <string name="sensor_status_connected">Chip verbunden</string>
     <string name="sensor_status_streaming">Chip streamt</string>
     <string name="sensor_connect">Chip verbinden</string>
     <string name="sensor_disconnect">Trennen</string>
-    <string name="sensor_calibrate">Kalibrieren</string>
 
     <!-- Herzfrequenz-Badge -->
     <string name="heart_rate_allow">Puls erlauben</string>
@@ -137,10 +142,27 @@
 
     <!-- Live-Zählung -->
     <string name="live_count_start">Satz starten (zählen)</string>
-    <string name="live_count_needs_calibration">Zuerst kalibrieren</string>
     <string name="live_count_weak_signal">Signal schwach — Zahl bitte prüfen</string>
     <string name="live_count_countdown">Start in %1$d …</string>
     <string name="live_count_stop">Stopp</string>
+    <string name="live_count_reason_no_profile">Für diese Übung gibt es noch kein Kalibrierungsprofil.</string>
+    <string name="train_counted_zero_hint">0 Wiederholungen erkannt — bitte Signal prüfen oder die Zahl manuell eintragen.</string>
+
+    <!-- Train-Konsole 2.0 (P2-20/RC-5): Rep-Hero mit Quelle + Sensor-Kopfzeile.
+         UI-Handbuch 7.4: genau eine Rep-Zahl mit genau einer Quelle; die
+         Quelle nennt bei "SENSOR GETRENNT" auch die Handlung. -->
+    <string name="reps_source_auto">AUTO</string>
+    <string name="reps_source_auto_hint">Sensor verbunden</string>
+    <string name="reps_source_corrected">MANUELL KORRIGIERT</string>
+    <string name="reps_source_corrected_hint">Sensor erkannte %1$d</string>
+    <string name="reps_source_manual">MANUELL</string>
+    <string name="reps_source_manual_hint">Per Hand eingetragen</string>
+    <string name="reps_source_manual_disconnected_hint">Sensor nicht verbunden</string>
+    <string name="reps_source_disconnected">SENSOR GETRENNT</string>
+    <string name="reps_source_disconnected_hint">Reps per +/− weiter</string>
+    <string name="sensor_quality_good">Signal ok</string>
+    <string name="sensor_quality_degraded">Signal schwach</string>
+    <string name="sensor_quality_unreliable">Signal unzuverlässig</string>
 
     <!-- Autokorrelations-Zweitmeinung (Umbauplan 2026-09-04 Phase 7).
          Eine Frage, keine Korrektur: die Prüfung kann die Zahl nicht exakt
@@ -157,7 +179,6 @@
     <string name="calibration_quality_good">gut</string>
     <string name="calibration_quality_medium">mittel — ggf. wiederholen</string>
     <string name="calibration_quality_weak">schwach — bitte wiederholen</string>
-    <string name="calibration_samples">%1$d Samples</string>
     <string name="calibration_save_profile">Profil speichern</string>
     <string name="calibration_next">Weiter</string>
     <string name="calibration_stage_rest">1/4 Ruhe</string>
@@ -183,6 +204,33 @@
     <string name="calibration_error_no_motion_window">Kein Bewegungsfenster gefunden. Bitte genau 1 deutliche Wiederholung ausführen.</string>
     <string name="calibration_error_incomplete">Kalibrierung unvollständig — bitte neu starten.</string>
     <string name="calibration_error_save_failed">Speichern fehlgeschlagen.</string>
+
+    <!-- Kalibrier-Wizard 2.0 (RC-8): Stepper, Live-Signal, Wiederholen, Review-Fakten -->
+    <string name="calibration_step_rest">Ruhe</string>
+    <string name="calibration_step_single_rep">1 Rep</string>
+    <string name="calibration_step_known_set">5 Reps</string>
+    <string name="calibration_step_slow_set">Langsam</string>
+    <string name="calibration_step_review">Review</string>
+    <string name="calibration_step_a11y">Schritt %1$d von %2$d: %3$s, %4$s</string>
+    <string name="calibration_step_current">aktuell</string>
+    <string name="calibration_step_state">offen</string>
+    <string name="calibration_reps_detected">Reps erkannt: %1$d von %2$s</string>
+    <string name="calibration_reps_estimate_hint">Live-Schätzung — die Auswertung entscheidet nach Weiter.</string>
+    <string name="calibration_repeat_stage">Stufe wiederholen</string>
+    <string name="calibration_repeat_known_set">5er-Satz wiederholen</string>
+    <string name="calibration_repeat_slow_set">Langsam-Satz wiederholen</string>
+    <string name="calibration_review_no_result">Kalibrierung konnte nicht berechnet werden — der 5er-Satz war nicht deutlich genug.</string>
+    <string name="calibration_review_reps_found">%1$d von %2$d Wiederholungen im Satz wiedergefunden.</string>
+    <string name="calibration_review_reps_found_slow">%1$d von %2$d Wiederholungen im langsamen Satz wiedergefunden.</string>
+    <string name="calibration_review_regular">Rep-Abstände gleichmäßig (Streuung %1$.0f %%) — gleichmäßige Wiederholungen werden zuverlässig gezählt.</string>
+    <string name="calibration_review_irregular">Rep-Abstände unregelmäßig (Streuung %1$.0f %%) — sehr unregelmäßige Wiederholungen können fehlen.</string>
+    <string name="calibration_review_threshold">Schwelle liegt %1$.1f-fach über dem Ruherauschen.</string>
+    <string name="calibration_review_threshold_low">Schwelle liegt nur %1$.1f-fach über dem Ruherauschen — Signal sauber halten.</string>
+    <string name="calibration_review_accel_on">Bewegungskanal aktiv.</string>
+    <string name="calibration_review_accel_off">Bewegungskanal aus — keine trennscharfe Beschleunigungs-Schwelle gemessen.</string>
+    <string name="calibration_review_duration">Erwartete Rep-Dauer: %1$.1f s.</string>
+    <string name="calibration_status_recalibrate">Kalibriert für FlowRep %1$s — neu kalibrieren</string>
+    <string name="calibration_status_missing">FlowRep %1$s noch nicht kalibriert — jetzt kalibrieren</string>
 
     <!-- Sensor-Fehler (#27: vorher deutsche Strings aus :data:sensor / TrainViewModel) -->
     <string name="sensor_error_permission_denied">Bluetooth-Berechtigung fehlt. Bitte in den Einstellungen erlauben.</string>

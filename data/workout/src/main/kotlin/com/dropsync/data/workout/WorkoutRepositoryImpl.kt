@@ -14,7 +14,6 @@ import com.dropsync.core.database.entity.ExerciseEntity
 import com.dropsync.core.database.entity.ExerciseMuscleEntity
 import com.dropsync.core.database.entity.ExerciseNameEntity
 import com.dropsync.core.database.entity.ExerciseRestPrefEntity
-import com.dropsync.core.database.entity.PersonalRecordEntity
 import com.dropsync.core.database.entity.PlaybackSnapshotEntity
 import com.dropsync.core.database.entity.RoutineEntity
 import com.dropsync.core.database.entity.RoutineExerciseEntity
@@ -38,9 +37,7 @@ import com.dropsync.domain.workout.ExerciseLibraryItem
 import com.dropsync.domain.workout.MuscleContribution
 import com.dropsync.domain.workout.PlaybackSnapshotInfo
 import com.dropsync.domain.workout.PlayedTrackInfo
-import com.dropsync.domain.workout.PrCalculator
 import com.dropsync.domain.workout.PrRecord
-import com.dropsync.domain.workout.QualifiedSegment
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.SegmentInput
 import com.dropsync.domain.workout.SessionExerciseInfo
@@ -72,6 +69,7 @@ class WorkoutRepositoryImpl(
     private val playbackRepository: PlaybackRepository,
     private val clock: Clock,
     private val dispatchers: DispatcherProvider,
+    private val recomputer: PersonalRecordRecomputer,
 ) : WorkoutRepository {
     override val activeSession: Flow<WorkoutSessionInfo?> =
         workoutDao.observeActiveSession().map { entity ->
@@ -632,6 +630,23 @@ class WorkoutRepositoryImpl(
         workoutDao.observePersonalRecordsForExercise(exerciseId).map { rows ->
             rows.map { e ->
                 PrRecord(
+                    exerciseId = e.exerciseId,
+                    type = PrType.valueOf(e.type),
+                    achievedSessionId = e.achievedSessionId,
+                    achievedClusterId = e.achievedClusterId,
+                    valueLong = e.valueLong,
+                    valueUnit = PrValueUnit.valueOf(e.valueUnit),
+                    comparableLoadMilliKg = e.comparableLoadMilliKg,
+                    achievedAtEpochMs = e.achievedAtEpochMs,
+                )
+            }
+        }
+
+    override fun observeAllPersonalRecords(): Flow<List<PrRecord>> =
+        workoutDao.observeAllPersonalRecords().map { rows ->
+            rows.map { e ->
+                PrRecord(
+                    exerciseId = e.exerciseId,
                     type = PrType.valueOf(e.type),
                     achievedSessionId = e.achievedSessionId,
                     achievedClusterId = e.achievedClusterId,
@@ -693,35 +708,6 @@ class WorkoutRepositoryImpl(
 
     /** Muss innerhalb einer laufenden Transaktion aufgerufen werden. */
     private suspend fun recomputeInTransaction(exerciseId: Long) {
-        val history =
-            workoutDao.getQualifiedSegments(exerciseId).map {
-                QualifiedSegment(
-                    sessionId = it.sessionId,
-                    sessionStartedAtEpochMs = it.sessionStartedAtEpochMs,
-                    clusterId = it.clusterId,
-                    completedAtEpochMs = it.completedAtEpochMs,
-                    loadMilliKg = it.loadMilliKg,
-                    loadMultiplier = it.loadMultiplier,
-                    reps = it.reps,
-                )
-            }
-        val records = PrCalculator.computeAll(history)
-        workoutDao.deletePersonalRecordsForExercise(exerciseId)
-        if (records.isNotEmpty()) {
-            workoutDao.insertPersonalRecords(
-                records.map {
-                    PersonalRecordEntity(
-                        exerciseId = exerciseId,
-                        type = it.type.name,
-                        achievedSessionId = it.achievedSessionId,
-                        achievedClusterId = it.achievedClusterId,
-                        valueLong = it.valueLong,
-                        valueUnit = it.valueUnit.name,
-                        comparableLoadMilliKg = it.comparableLoadMilliKg,
-                        achievedAtEpochMs = it.achievedAtEpochMs,
-                    )
-                },
-            )
-        }
+        recomputer.recompute(exerciseId)
     }
 }

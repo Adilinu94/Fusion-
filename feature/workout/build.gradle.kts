@@ -6,6 +6,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // D1: Screenshot-Gate fuer die Rest-Konsole (Roborazzi).
+    alias(libs.plugins.roborazzi)
+}
+
+// D1: CaptureType explizit — `recordRoborazziDebug` schreibt die
+// Referenzbilder unter src/test/screenshots (nur lokal, nach Review),
+// `verifyRoborazziDebug` vergleicht sie (CI-Gate). Der normale `test`-Task
+// dumpt nur nach build/intermediates/roborazzi und laesst die Referenzen
+// unberuehrt.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 android {
@@ -33,6 +44,10 @@ android {
     }
 
     testOptions {
+        unitTests.all {
+            // D1: Compose+Robolectric-Screenshots brauchen mehr Heap.
+            it.maxHeapSize = "2g"
+        }
         unitTests {
             // android.util.Log (Shadow-Pfad in TrainViewModel) ist in
             // JVM-Unit-Tests ein Stub; ohne diese Option wirft jeder
@@ -56,6 +71,12 @@ dependencies {
     // Rest-Timer der Uebung nutzt die eine TimerEngine (Praezedenz
     // :feature:timer/:feature:player); DropSync-Rest via DropRestRequestBus.
     implementation(project(":domain:timer"))
+    // Drop-Auto-Schalter ist persistiert (MP-13): Pausen-Musik-Einstellung.
+    implementation(project(":domain:playback"))
+    // C3: Bereitschaftsgrund am DropSync-Schalter (Pausen-/Work-Playlist).
+    implementation(project(":domain:library"))
+    // C3 (P-3/MP-9): Ducking der Pausenmusik am Ort (DspConfig.restDuckDb).
+    implementation(project(":domain:audio"))
     // Herzfrequenz-Badge (Herzfrequenz-Plan Phase 2): Port ohne SDK-Leak.
     implementation(project(":domain:health"))
 
@@ -82,6 +103,10 @@ dependencies {
     // Context fuer getExternalFilesDir (Umbauplan 2026-09-04 Phase 0.3).
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.ext.junit)
+    // D1: Compose-Tests/Screenshots der Rest-Konsole (Roborazzi).
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.roborazzi)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

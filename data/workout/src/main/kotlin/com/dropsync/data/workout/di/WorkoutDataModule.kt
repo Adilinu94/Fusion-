@@ -10,6 +10,7 @@ import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.RoutineDao
 import com.dropsync.core.database.dao.WorkoutDao
 import com.dropsync.data.workout.FlatSetRepositoryImpl
+import com.dropsync.data.workout.PersonalRecordRecomputer
 import com.dropsync.data.workout.TargetRepositoryImpl
 import com.dropsync.data.workout.WorkoutGoalPreferencesStore
 import com.dropsync.data.workout.WorkoutRepositoryImpl
@@ -29,6 +30,17 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object WorkoutDataModule {
+    /**
+     * A1/5.7: eine PR-Wahrheit fuer Cluster- und flachen Satz-Pfad; beide
+     * Repositories berechnen damit in ihrer jeweiligen Transaktion neu.
+     */
+    @Provides
+    @Singleton
+    fun providePersonalRecordRecomputer(
+        workoutDao: WorkoutDao,
+        flatSetDao: FlatSetDao,
+    ): PersonalRecordRecomputer = PersonalRecordRecomputer(workoutDao, flatSetDao)
+
     @Provides
     @Singleton
     fun provideWorkoutRepository(
@@ -39,6 +51,7 @@ object WorkoutDataModule {
         playbackRepository: PlaybackRepository,
         clock: Clock,
         dispatchers: DispatcherProvider,
+        recomputer: PersonalRecordRecomputer,
     ): WorkoutRepository =
         WorkoutRepositoryImpl(
             workoutDao,
@@ -48,6 +61,7 @@ object WorkoutDataModule {
             playbackRepository,
             clock,
             dispatchers,
+            recomputer,
         )
 
     /** Flaches Satz-Log (FlowRep Phase 2). */
@@ -57,7 +71,9 @@ object WorkoutDataModule {
         flatSetDao: FlatSetDao,
         clock: Clock,
         dispatchers: DispatcherProvider,
-    ): FlatSetRepository = FlatSetRepositoryImpl(flatSetDao, clock, dispatchers)
+        transactionRunner: TransactionRunner,
+        recomputer: PersonalRecordRecomputer,
+    ): FlatSetRepository = FlatSetRepositoryImpl(flatSetDao, clock, dispatchers, transactionRunner, recomputer)
 
     /** Wochenziel-DataStore (Flowtimer-Integration Schritt 7). */
     @Provides

@@ -37,8 +37,14 @@ data class QualifiedSegment(
 
 /** Ergebnis der PR-Berechnung; Persistenz uebernimmt :data:workout. */
 data class PrRecord(
+    /** Uebung, auf die sich der Rekord bezieht (fuer Dashboards/Listen). */
+    val exerciseId: Long = 0L,
     val type: PrType,
-    val achievedSessionId: Long,
+    /**
+     * A1/5.7: null, wenn der Rekord aus dem flachen Satz-Log stammt — dort
+     * gibt es keine Session. Der Session-/Cluster-Pfad traegt die echte ID.
+     */
+    val achievedSessionId: Long?,
     val achievedClusterId: Long?,
     val valueLong: Long,
     val valueUnit: PrValueUnit,

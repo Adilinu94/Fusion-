@@ -2,13 +2,20 @@ package com.dropsync.feature.workout
 
 import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
+import com.dropsync.core.model.RestMode
 import com.dropsync.core.testing.FakeCalibrationProfileRepository
 import com.dropsync.core.testing.FakeClock
+import com.dropsync.core.testing.FakeDropRestRequestBus
+import com.dropsync.core.testing.FakeDropSyncStateSource
 import com.dropsync.core.testing.FakeFlatSetRepository
 import com.dropsync.core.testing.FakeHeartRateSource
+import com.dropsync.core.testing.FakeLibraryBrowseRepository
+import com.dropsync.core.testing.FakeRestMusicSettingsRepository
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
 import com.dropsync.core.testing.FakeSensorProvider
+import com.dropsync.core.testing.FakeSetDiagnosticsLog
 import com.dropsync.core.testing.FakeWorkoutRepository
+import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.domain.sensor.ActiveSetPhase
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.ProfileStatus
@@ -17,6 +24,8 @@ import com.dropsync.domain.timer.CueOutput
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.workout.ExerciseInfo
+import com.dropsync.domain.workout.RestPref
+import com.dropsync.domain.workout.SetLogHaptics
 import com.dropsync.feature.workout.shadow.SampleWindow
 import com.dropsync.feature.workout.shadow.ShadowDiffEvent
 import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
@@ -57,6 +66,7 @@ class TrainViewModelTest {
     private lateinit var timerEngine: TimerEngine
     private lateinit var shadowSessionRecorder: FakeShadowSessionRecorder
     private lateinit var heartRateSource: FakeHeartRateSource
+    private val dropRestRequestBus = FakeDropRestRequestBus()
 
     private fun profile(
         exerciseId: Long = 1L,
@@ -98,15 +108,23 @@ class TrainViewModelTest {
         TrainViewModel(
             workoutRepository = workoutRepository,
             flatSetRepository = flatSetRepository,
+            setLogHaptics = SetLogHaptics { },
             timerEngine = timerEngine,
             restTimerServiceStarter = RestTimerServiceStarter { },
             sensorProvider = sensorProvider,
             calibrationProfileRepository = calibrationProfileRepository,
+            setDiagnosticsLog = FakeSetDiagnosticsLog(),
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
+            restMusicSettings = FakeRestMusicSettingsRepository(),
+            dropSyncStateSource = FakeDropSyncStateSource(),
             shadowSessionRecorder = shadowSessionRecorder,
             heartRateSource = heartRateSource,
+            dropRestRequestBus = dropRestRequestBus,
+            browseRepository = FakeLibraryBrowseRepository(),
+            audioEngine = FakeAudioEngineRepository(),
             healthPermissionContract = TestHealthPermissionContract(),
             clock = FakeClock(),
+            dispatchers = TestDispatcherProvider(dispatcher),
         )
 
     /**
@@ -135,6 +153,28 @@ class TrainViewModelTest {
             testScheduler.runCurrent()
         }
     }
+
+    @Test
+    fun `C14 Stoss ohne Rep-Event loest keinen Peak-Blitz aus`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                sensorProvider.emit(
+                    com.dropsync.domain.sensor.SensorSample(
+                        timestampMs = 1_000L,
+                        ax = 0.0,
+                        ay = 0.0,
+                        az = 2.0,
+                        gx = 0.0,
+                        gy = 0.0,
+                        gz = 0.0,
+                    ),
+                )
+                testScheduler.runCurrent()
+                // Vor C14 feuerte hier die Flanken-Heuristik (az-Sprung);
+                // jetzt zaehlt nur noch das echte Rep-Event der Engine.
+                assertEquals(0L, vm.lastPeakMs.value)
+            }
+        }
 
     @Test
     fun `repsInput bleibt leer wenn kein Live-Set lief (Shadow zaehlt nicht vor)`() =
@@ -195,6 +235,75 @@ class TrainViewModelTest {
                 assertEquals(1, flatSetRepository.logged.size)
                 assertEquals(12, flatSetRepository.logged.single().reps)
                 assertEquals("", vm.repsInput.value)
+            }
+        }
+
+    @Test
+    fun `setRestPref persistiert und uebernimmt die Werte`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                dispatcher.scheduler.runCurrent()
+
+                vm.setRestPref(restSeconds = 120, restMode = RestMode.DROPSYNC)
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(RestPref(120, RestMode.DROPSYNC), workoutRepository.restPrefs[1L])
+                assertEquals(120, vm.restSeconds.value)
+                assertEquals(RestMode.DROPSYNC, vm.restMode.value)
+            }
+        }
+
+    @Test
+    fun `uebungs-DropSync fordert die Landung auch bei globaler Einstellung`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                dispatcher.scheduler.runCurrent()
+                vm.setRestPref(restSeconds = 90, restMode = RestMode.DROPSYNC)
+                vm.setWeight("20")
+                vm.setReps("12")
+                dispatcher.scheduler.runCurrent()
+
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(1, dropRestRequestBus.requestCount)
+            }
+        }
+
+    @Test
+    fun `uebungs-Praeferenz NORMAL schaltet Drop-Auto fuer die Uebung ab`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                dispatcher.scheduler.runCurrent()
+                // Der globale Schalter ist per Default an; die Uebung hat sich
+                // mit NORMAL bewusst dagegen entschieden (5.3).
+                vm.setRestPref(restSeconds = 90, restMode = RestMode.NORMAL)
+                vm.setWeight("20")
+                vm.setReps("12")
+                dispatcher.scheduler.runCurrent()
+
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(0, dropRestRequestBus.requestCount)
+            }
+        }
+
+    @Test
+    fun `Bereitschaft nennt die fehlende Pausen-Playlist`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.dropAutoReadiness.test {
+                    assertEquals(DropAutoReadiness.Ready, awaitItem())
+                    assertEquals(
+                        DropAutoReadiness.Blocked(DropAutoBlockReason.NO_REST_PLAYLIST),
+                        awaitItem(),
+                    )
+                    cancelAndIgnoreRemainingEvents()
+                }
             }
         }
 
@@ -444,20 +553,21 @@ class TrainViewModelTest {
         }
 
     @Test
-    fun `Shadow-Recorder Lifecycle startet im init und endet bei finishExercise und disconnect`() =
+    fun `Shadow-Recorder Session startet im init und ueberlebt finishExercise und disconnect`() =
         runTest(dispatcher) {
             withViewModel { vm ->
-                // init -> startSession genau einmal.
+                dispatcher.scheduler.runCurrent()
+                // A4/T-4: init -> startSession genau einmal.
                 assertEquals("init muss eine Recording-Session starten", 1, shadowSessionRecorder.started.size)
                 assertEquals(0, shadowSessionRecorder.ended)
 
                 vm.finishExercise()
-                assertEquals("finishExercise muss die Session beenden", 1, shadowSessionRecorder.ended)
-
                 vm.disconnectSensor()
+                dispatcher.scheduler.runCurrent()
+
                 assertEquals(
-                    "disconnectSensor muss die Session ebenfalls beenden",
-                    2,
+                    "finishExercise/disconnect duerfen die Session nicht beenden",
+                    0,
                     shadowSessionRecorder.ended,
                 )
             }
@@ -675,6 +785,101 @@ class TrainViewModelTest {
             }
         }
 
+    // --- Gewichtseingabe: Dezimalkomma und Schrittschalter ----------------
+
+    @Test
+    fun `canLog akzeptiert Dezimalkomma`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                vm.setWeight("92,5")
+                vm.setReps("10")
+                assertEquals("Komma-Eingabe muss loggbar sein", true, vm.canLog)
+            }
+        }
+
+    @Test
+    fun `logSet mit Dezimalkomma schreibt ganze Millikilogramm`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                vm.setWeight("92,5")
+                vm.setReps("10")
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(1, flatSetRepository.logged.size)
+                assertEquals(92_500_000L, flatSetRepository.logged.single().weightMilliKg)
+            }
+        }
+
+    @Test
+    fun `adjustWeight erzeugt keine Float-Artefakte`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.setWeight("20")
+                repeat(3) { vm.adjustWeight(2.5) }
+                assertEquals("27.5", vm.weightInput.value)
+                vm.adjustWeight(-2.5)
+                assertEquals("25", vm.weightInput.value)
+                // Frueherer Bug: (20.0 + 2.5) als Double-String konnte
+                // "22.499999999999996" liefern.
+                assertEquals(false, vm.weightInput.value.contains("99999"))
+            }
+        }
+
+    @Test
+    fun `adjustWeight akzeptiert Komma im Feld und faellt nicht unter null`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.setWeight("20,5")
+                vm.adjustWeight(2.5)
+                assertEquals("23", vm.weightInput.value)
+                vm.setWeight("2,5")
+                vm.adjustWeight(-2.5)
+                vm.adjustWeight(-2.5)
+                assertEquals("0", vm.weightInput.value)
+            }
+        }
+
+    @Test
+    fun `logSet mit Drop-Auto fordert einen Drop-Rest an`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                vm.setWeight("20")
+                vm.setReps("10")
+                vm.setDropAutoEnabled(true)
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(
+                    "Drop-Auto muss den DropRestRequestBus feuern",
+                    1,
+                    dropRestRequestBus.requestCount,
+                )
+            }
+        }
+
+    @Test
+    fun `logSet ohne Drop-Auto fordert keinen Drop-Rest an`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                vm.selectExercise(ExerciseInfo(id = 1L, slug = "curl", displayName = "Curl"))
+                vm.setWeight("20")
+                vm.setReps("10")
+                // MP-13: Drop-Auto ist per Default an — hier bewusst aus.
+                vm.setDropAutoEnabled(false)
+                dispatcher.scheduler.runCurrent()
+                vm.logSet()
+                dispatcher.scheduler.runCurrent()
+
+                assertEquals(0, dropRestRequestBus.requestCount)
+            }
+        }
+
     // --- Fakes ------------------------------------------------------------
     // Sensor/FlatSet/Workout/RestTimerPrefs/Clock/CalibrationProfile kommen
     // aus :core:testing (Testinfra-Umbau Schritt 2); nur der hier spezifische
@@ -693,21 +898,21 @@ class TrainViewModelTest {
         var started: MutableList<String> = mutableListOf()
         var ended: Int = 0
 
-        override fun startSession(sessionId: String) {
+        override suspend fun startSession(sessionId: String) {
             started += sessionId
         }
 
-        override fun recordSet(event: ShadowDiffEvent) {
+        override suspend fun recordSet(event: ShadowDiffEvent) {
             recorded += event
             callOrder += "set"
         }
 
-        override fun recordSamples(window: SampleWindow) {
+        override suspend fun recordSamples(window: SampleWindow) {
             sampleWindows += window
             callOrder += "samples"
         }
 
-        override fun endSession() {
+        override suspend fun endSession() {
             ended++
         }
     }
