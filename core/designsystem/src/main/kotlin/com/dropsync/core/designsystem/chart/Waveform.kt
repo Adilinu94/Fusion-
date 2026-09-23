@@ -37,6 +37,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -220,12 +221,15 @@ private val MARKER_TICK_WIDTH = 3.dp
  * Performance-Leitlinie "defer state reads").
  */
 @Composable
-private fun rememberSmoothedFraction(progressFraction: () -> Float): State<Float> {
+private fun rememberSmoothedFraction(
+    progressFraction: () -> Float,
+    reducedMotion: Boolean = false,
+): State<Float> {
     val animatable = remember { Animatable(progressFraction().coerceIn(0f, 1f)) }
-    LaunchedEffect(animatable) {
+    LaunchedEffect(animatable, reducedMotion) {
         snapshotFlow { progressFraction().coerceIn(0f, 1f) }
             .collectLatest { goal ->
-                if (abs(goal - animatable.value) > PROGRESS_SNAP_THRESHOLD) {
+                if (reducedMotion || abs(goal - animatable.value) > PROGRESS_SNAP_THRESHOLD) {
                     animatable.snapTo(goal)
                 } else {
                     animatable.animateTo(
@@ -244,9 +248,11 @@ private fun rememberSmoothedFraction(progressFraction: () -> Float): State<Float
  */
 @Composable
 private fun rememberAppearAlpha(durationMs: Int): State<Float> {
-    val animatable = remember { Animatable(0f) }
+    val animatable = remember { Animatable(if (durationMs <= 0) 1f else 0f) }
     LaunchedEffect(animatable) {
-        animatable.animateTo(1f, tween(durationMillis = durationMs, easing = FastOutSlowInEasing))
+        if (durationMs > 0) {
+            animatable.animateTo(1f, tween(durationMillis = durationMs, easing = FastOutSlowInEasing))
+        }
     }
     return animatable.asState()
 }
@@ -304,8 +310,11 @@ fun Waveform(
     // Dann wird der Marker gezogen statt gescrubbt (Phase 5 "verschiebbar").
     var draggingMarker by remember { mutableStateOf(false) }
 
-    val appear = rememberAppearAlpha(APPEAR_MS)
-    val smoothed = rememberSmoothedFraction(progressFraction)
+    // Reduced Motion (7.2/6): ohne Animationen blendet die Wellenform sofort
+    // voll ein und der Fortschritt springt ohne Glaettung.
+    val reducedMotion = rememberReducedMotion()
+    val appear = rememberAppearAlpha(if (reducedMotion) 0 else APPEAR_MS)
+    val smoothed = rememberSmoothedFraction(progressFraction, reducedMotion)
 
     // Ein Lesevorgang, den BEIDE Phasen brauchen: Semantik (Composition) und
     // Zeichnen (Draw). Die Semantik nimmt bewusst den ungeglaetteten Wert —
@@ -663,9 +672,11 @@ fun RunningWaveform(
 
     // Zwischen den 200ms-Positionsticks weich gleiten, damit der Raster
     // sichtbar laeuft statt zu springen (Poweramp interpoliert dafuer in
-    // `q1.doFrame` zeitbasiert je Frame).
-    val smoothed = rememberSmoothedFraction(progressFraction)
-    val appearance = rememberAppearAlpha(RUNNING_APPEAR_MS)
+    // `q1.doFrame` zeitbasiert je Frame). Reduced Motion (7.2/6): springt
+    // sofort statt zu gleiten, blendet ohne Animation ein.
+    val reducedMotion = rememberReducedMotion()
+    val smoothed = rememberSmoothedFraction(progressFraction, reducedMotion)
+    val appearance = rememberAppearAlpha(if (reducedMotion) 0 else RUNNING_APPEAR_MS)
 
     /** Aktuell gezeigter Anteil: Scrub-Vorschau hat Vorrang. */
     fun shownFraction(): Float {
@@ -953,17 +964,24 @@ fun WaveformPlaceholder(
     contentDescription: String? = null,
 ) {
     val color = MaterialTheme.colorScheme.onSurfaceVariant
-    val transition = rememberInfiniteTransition(label = "waveform_placeholder")
-    val alpha by transition.animateFloat(
-        initialValue = 0.35f,
-        targetValue = 0.7f,
-        animationSpec =
-            infiniteRepeatable(
-                animation = tween(durationMillis = 900, easing = LinearEasing),
-                repeatMode = RepeatMode.Reverse,
-            ),
-        label = "waveform_placeholder_alpha",
-    )
+    // Reduced Motion (7.2/6): statische Deckkraft statt Puls.
+    val alpha =
+        if (rememberReducedMotion()) {
+            0.5f
+        } else {
+            val transition = rememberInfiniteTransition(label = "waveform_placeholder")
+            val animated by transition.animateFloat(
+                initialValue = 0.35f,
+                targetValue = 0.7f,
+                animationSpec =
+                    infiniteRepeatable(
+                        animation = tween(durationMillis = 900, easing = LinearEasing),
+                        repeatMode = RepeatMode.Reverse,
+                    ),
+                label = "waveform_placeholder_alpha",
+            )
+            animated
+        }
     val desc = contentDescription
     val semanticsModifier =
         if (desc != null) {

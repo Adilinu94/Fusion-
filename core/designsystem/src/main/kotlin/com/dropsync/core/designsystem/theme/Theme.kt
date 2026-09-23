@@ -137,7 +137,7 @@ internal val DarkColors =
 private val BrandShapes =
     Shapes(
         small = RoundedCornerShape(12.dp),
-        medium = RoundedCornerShape(24.dp),
+        medium = RoundedCornerShape(20.dp),
         large = RoundedCornerShape(32.dp),
     )
 

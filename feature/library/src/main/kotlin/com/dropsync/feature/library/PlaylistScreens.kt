@@ -39,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.FlowRepTopBar
@@ -335,7 +336,11 @@ internal fun AddToPlaylistDialog(
         title = { Text(stringResource(R.string.library_add_to_playlist)) },
         text = {
             Column(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 360.dp).verticalScroll(rememberScrollState()),
+                // Fontscale-Adaption (7.2): Kappe skaliert mit der Schrift.
+                modifier =
+                    Modifier.fillMaxWidth()
+                        .heightIn(max = 360.dp * LocalDensity.current.fontScale)
+                        .verticalScroll(rememberScrollState()),
             ) {
                 ListItem(
                     headlineContent = { Text(stringResource(R.string.library_playlist_new)) },

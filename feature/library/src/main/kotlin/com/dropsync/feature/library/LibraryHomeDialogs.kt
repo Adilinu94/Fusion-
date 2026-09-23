@@ -22,6 +22,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -65,7 +66,11 @@ internal fun SelectFoldersDialog(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                    // Fontscale-Adaption (7.2): Kappe skaliert mit der Schrift.
+                    LazyColumn(
+                        modifier =
+                            Modifier.heightIn(max = 360.dp * LocalDensity.current.fontScale),
+                    ) {
                         items(allFolders, key = { it }) { folder ->
                             val included = folder !in working
                             Row(
@@ -130,7 +135,10 @@ internal fun CategoryVisibilityDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.library_categories_title)) },
         text = {
-            LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+            // Fontscale-Adaption (7.2): Kappe skaliert mit der Schrift.
+            LazyColumn(
+                modifier = Modifier.heightIn(max = 400.dp * LocalDensity.current.fontScale),
+            ) {
                 items(LibraryCategory.entries, key = { it.key }) { category ->
                     val visible = category.key !in hidden
                     Row(

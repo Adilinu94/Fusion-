@@ -61,6 +61,9 @@ internal fun TempoSheet(
                 style = MaterialTheme.typography.headlineMedium,
                 color = rememberAccentTextColor(),
             )
+            // 7.2/5: lokalisierte Beschreibung statt hartcodiertem deutschem
+            // Literal; der String-Read liegt in der Composition.
+            val tempoDescription = stringResource(R.string.now_playing_tempo_a11y_value, speed)
             Slider(
                 value = speed,
                 onValueChange = { raw ->
@@ -71,7 +74,7 @@ internal fun TempoSheet(
                 valueRange = PlayerViewModel.MIN_PLAYBACK_SPEED..PlayerViewModel.MAX_PLAYBACK_SPEED,
                 modifier =
                     Modifier.semantics {
-                        contentDescription = "Tempo ${"%.2f".format(Locale.ROOT, speed)}"
+                        contentDescription = tempoDescription
                     },
             )
             Row(

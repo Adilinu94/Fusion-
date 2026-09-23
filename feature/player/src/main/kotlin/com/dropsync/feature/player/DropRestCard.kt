@@ -2,13 +2,13 @@ package com.dropsync.feature.player
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -24,6 +24,7 @@ import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.BrandCard
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.DropRestBlockReason
@@ -58,7 +59,12 @@ fun DropRestCard(
                 TimerStatus.FAILED,
             )
 
-    Card(modifier = modifier.fillMaxWidth()) {
+    // 7.2/7: Marken-Card statt nacktem M3-Card; kompakter Innenabstand wie
+    // zuvor, damit das Layout im Now-Playing unverändert bleibt.
+    BrandCard(
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(16.dp),
+    ) {
         Column(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),

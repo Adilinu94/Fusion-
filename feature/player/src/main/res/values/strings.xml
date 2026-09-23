@@ -64,6 +64,8 @@
     <!-- C10 (P-10): Einstieg in die Marker-Review-Liste. -->
     <string name="now_playing_marker_review">Review markers</string>
     <string name="now_playing_tempo_original">Original</string>
+    <!-- 7.2/5: Slider-Beschreibung, lokalisiert statt hartcodiert. -->
+    <string name="now_playing_tempo_a11y_value">Tempo: %1$.2fx</string>
     <string name="now_playing_tempo_lock_title">Match BPM (lock)</string>
     <string name="now_playing_tempo_lock_track_bpm">Track: %1$d BPM</string>
     <string name="now_playing_tempo_lock_no_bpm">No reliable BPM available for this track yet.</string>

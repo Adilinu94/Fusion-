@@ -69,11 +69,9 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.chart.RunningWaveform
@@ -1177,8 +1175,8 @@ internal fun PowerampWaveformTransport(
             Text(
                 formatClockMs(safeDuration),
                 color = palette.contentMuted,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Normal,
+                // C1 (7.2): Typo-Skala statt 15-sp-Literal.
+                style = MaterialTheme.typography.bodyMedium,
             )
         }
     }
@@ -1444,8 +1442,8 @@ private fun PositionText(
     Text(
         text = formatClockMs(position()),
         color = color,
-        fontSize = 15.sp,
-        fontWeight = FontWeight.Normal,
+        // C1 (7.2): Typo-Skala statt 15-sp-Literal.
+        style = MaterialTheme.typography.bodyMedium,
     )
 }
 

@@ -36,8 +36,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
@@ -122,10 +125,18 @@ internal fun LibraryHomeScreen(
                     DropdownMenu(
                         expanded = menuOpen,
                         onDismissRequest = { menuOpen = false },
-                        // Rechtsbuendig unter die drei Punkte: das Menue wird
-                        // um seine eigene Breite minus Buttonbreite nach links
-                        // verschoben, damit die rechte Kante buendig liegt.
-                        offset = DpOffset(x = -136.dp, y = 0.dp),
+                        // Rechtsbuendig unter die drei Punkte: Offset aus der
+                        // Breite des laengsten Menue-Labels (7.2) statt eines
+                        // hartcodierten Werts, der bei anderen Sprachen bricht.
+                        offset =
+                            DpOffset(
+                                x = -with(LocalDensity.current) {
+                                    stringResource(R.string.library_select_folders)
+                                        .textWidthDp()
+                                        .coerceAtLeast(136.dp)
+                                },
+                                y = 0.dp,
+                            ),
                     ) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.library_select_folders)) },
@@ -616,6 +627,22 @@ private fun categoryTint(category: LibraryCategory): Color {
 
 /** Abdunklungsfaktor der Kategorie-Farben im hellen Modus (C1). */
 private const val LIGHT_TINT_SCALE: Float = 0.72f
+
+/**
+ * Breite eines Strings in dp (7.2): Grundlage fuer den rechtsbuendigen
+ * Dropdown-Offset. `ceil` rundet auf, damit das Menue nie in den Button
+ * ragt.
+ */
+@Composable
+internal fun String.textWidthDp(): Dp {
+    val measurer = rememberTextMeasurer()
+    val widthPx =
+        measurer.measure(
+            text = this,
+            style = MaterialTheme.typography.bodyMedium,
+        ).size.width
+    return with(LocalDensity.current) { kotlin.math.ceil(widthPx.toDp().value).dp }
+}
 
 /** Angezeigter Kategorie-Name. */
 internal fun LibraryCategory.titleRes(): Int =

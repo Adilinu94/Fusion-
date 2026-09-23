@@ -113,7 +113,6 @@ private fun ButtonGallery() {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         BrandButtonPrimary(text = "Primaer", onClick = {})
-        BrandButtonSecondary(text = "Sekundaer", onClick = {})
         BrandButtonGhost(text = "Ghost", onClick = {})
         BrandButtonPrimary(text = "Deaktiviert", onClick = {}, enabled = false)
     }

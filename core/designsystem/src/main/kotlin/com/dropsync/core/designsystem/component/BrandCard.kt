@@ -15,8 +15,9 @@ import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.theme.Spacing
 
 /**
- * Marken-Card gemaess Design.txt: Radius 24, Hairline-Border (`outline`),
- * dezenter, weicher Schatten. Innenabstand 24 als Baseline.
+ * Marken-Card gemaess Design.txt: Radius `radiusCard` (20), Hairline-Border
+ * (`outline`), dezenter, weicher Schatten. Innenabstand 24 als Baseline.
+ * `shapes.medium` ist mit dem Token-Satz konsolidiert (C1): 20 statt 24.
  */
 @Composable
 fun BrandCard(
@@ -28,7 +29,7 @@ fun BrandCard(
     val clickModifier = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     Card(
         modifier = modifier.then(clickModifier),
-        // C1: System-Radius (BrandShapes.medium = 24) statt Literal.
+        // C1: System-Radius (BrandShapes.medium = radiusCard = 20) statt Literal.
         shape = MaterialTheme.shapes.medium,
         colors =
             CardDefaults.cardColors(

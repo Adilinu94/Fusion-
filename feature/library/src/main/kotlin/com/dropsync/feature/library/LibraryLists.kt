@@ -430,7 +430,8 @@ private fun AlphabetScroller(
         modifier =
             modifier
                 .fillMaxHeight()
-                .widthIn(min = 32.dp),
+                // 7.2/10: volle 48-dp-Trefferbreite statt 32 dp.
+                .widthIn(min = 48.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -441,7 +442,7 @@ private fun AlphabetScroller(
                 color = rememberAccentTextColor(),
                 modifier =
                     Modifier
-                        .sizeIn(minWidth = 32.dp, minHeight = 48.dp)
+                        .sizeIn(minWidth = 48.dp, minHeight = 48.dp)
                         .clickable { scope.launch { listState.scrollToItem(index) } }
                         .padding(vertical = 1.dp)
                         .semantics {
@@ -604,7 +605,6 @@ private fun CoverTile(
                 Box(modifier = Modifier.padding(8.dp)) { SelectionBadge(isSelected = isSelected) }
             }
         }
-        Spacer(Modifier.width(4.dp))
         Text(
             text = title,
             style = MaterialTheme.typography.titleSmall,

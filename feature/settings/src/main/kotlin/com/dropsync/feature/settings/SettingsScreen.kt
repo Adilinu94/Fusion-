@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -601,7 +602,10 @@ private fun LinkMarkerDialog(
             if (songs.isEmpty()) {
                 Text(stringResource(R.string.settings_link_no_songs))
             } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 360.dp)) {
+                // Fontscale-Adaption (7.2): Kappe skaliert mit der Schrift.
+                LazyColumn(
+                    modifier = Modifier.heightIn(max = 360.dp * LocalDensity.current.fontScale),
+                ) {
                     items(songs, key = { it.mediaStoreId }) { song ->
                         ListItem(
                             headlineContent = { Text(song.displayName) },

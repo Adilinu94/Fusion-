@@ -74,39 +74,6 @@ fun BrandButtonPrimary(
     }
 }
 
-/**
- * Sekundaere Aktion: ruhige Flaeche (surfaceContainerHigh) statt Farbe.
- * Seit der Flowtimer-Integration (CONTEXT E4d) ist secondary exklusiv die
- * semantische Rolle "Ziele" (Violett) und steht Buttons nicht mehr zur
- * Verfuegung.
- */
-@Composable
-fun BrandButtonSecondary(
-    text: String,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    leadingIcon: ImageVector? = null,
-) {
-    val source = remember { MutableInteractionSource() }
-    val scale = rememberPressScale(source)
-    Button(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = ButtonHeight).scale(scale),
-        enabled = enabled,
-        shape = PillShape,
-        colors =
-            ButtonDefaults.buttonColors(
-                containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
-                contentColor = MaterialTheme.colorScheme.onSurface,
-            ),
-        contentPadding = PaddingValues(horizontal = 24.dp),
-        interactionSource = source,
-    ) {
-        ButtonRow(text = text, leadingIcon = leadingIcon)
-    }
-}
-
 /** Tertiaere Aktion: Ghost mit Hairline-Border, ohne Fuellung. */
 @Composable
 fun BrandButtonGhost(

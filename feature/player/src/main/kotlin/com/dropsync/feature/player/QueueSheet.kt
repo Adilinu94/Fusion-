@@ -21,6 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,7 +69,10 @@ internal fun QueueSheet(
                 modifier =
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 480.dp),
+                        // Fontscale-Adaption (7.2): Kappe skaliert mit der
+                        // Schrift, damit groessere Einstellungen mehr Zeilen
+                        // sehen statt nur groessere.
+                        .heightIn(max = 480.dp * LocalDensity.current.fontScale),
             ) {
                 itemsIndexed(state.items, key = { _, item -> item.mediaId }) { index, item ->
                     QueueRow(
@@ -96,6 +102,12 @@ private fun QueueRow(
     onMoveDown: () -> Unit,
     onRemove: () -> Unit,
 ) {
+    // 7.2/8: Rueckmeldung beim Umsortieren/Entfernen wie beim Satz-Logging.
+    val haptics = LocalHapticFeedback.current
+    fun moveHaptic(action: () -> Unit) {
+        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+        action()
+    }
     Row(
         modifier =
             Modifier
@@ -134,19 +146,19 @@ private fun QueueRow(
             }
         }
         // 48-dp-Touch-Ziele (Schritt 12.5); Pfeile sind an den Raendern deaktiviert.
-        IconButton(onClick = onMoveUp, enabled = canMoveUp) {
+        IconButton(onClick = { moveHaptic(onMoveUp) }, enabled = canMoveUp) {
             Icon(
                 Icons.Outlined.KeyboardArrowUp,
                 contentDescription = stringResource(R.string.player_queue_move_up),
             )
         }
-        IconButton(onClick = onMoveDown, enabled = canMoveDown) {
+        IconButton(onClick = { moveHaptic(onMoveDown) }, enabled = canMoveDown) {
             Icon(
                 Icons.Outlined.KeyboardArrowDown,
                 contentDescription = stringResource(R.string.player_queue_move_down),
             )
         }
-        IconButton(onClick = onRemove) {
+        IconButton(onClick = { moveHaptic(onRemove) }) {
             Icon(
                 painterResource(BrandIcons.Delete),
                 contentDescription = stringResource(R.string.player_queue_remove),

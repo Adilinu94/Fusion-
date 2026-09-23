@@ -64,6 +64,7 @@
     <!-- C10 (P-10): Einstieg in die Marker-Review-Liste. -->
     <string name="now_playing_marker_review">Marker prüfen</string>
     <string name="now_playing_tempo_original">Original</string>
+    <string name="now_playing_tempo_a11y_value">Tempo: %1$.2fx</string>
     <string name="now_playing_tempo_lock_title">BPM anpassen (Lock)</string>
     <string name="now_playing_tempo_lock_track_bpm">Titel: %1$d BPM</string>
     <string name="now_playing_tempo_lock_no_bpm">Für diesen Titel ist noch kein verlässlicher BPM-Wert verfügbar.</string>

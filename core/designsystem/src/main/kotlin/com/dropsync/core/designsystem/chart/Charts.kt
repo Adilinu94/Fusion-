@@ -17,12 +17,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextLayoutResult
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 
 // Eigene, offline-konforme Compose-Canvas-Charts (Schritt 12): keine neue
 // Abhaengigkeit, animiertes Einzeichnen, Lime-Akzent via MaterialTheme.
@@ -61,20 +59,26 @@ fun BarChart(
 ) {
     val baselineColor = MaterialTheme.colorScheme.outlineVariant
     val progress = remember(values) { Animatable(0f) }
-    LaunchedEffect(values) {
-        progress.snapTo(0f)
-        progress.animateTo(1f, animationSpec = tween(CHART_ANIMATION_MILLIS))
+    // Reduced Motion (7.2/6): ohne Animationen stehen die Balken sofort auf
+    // dem Zielwert.
+    val reducedMotion = rememberReducedMotion()
+    LaunchedEffect(values, reducedMotion) {
+        if (reducedMotion) {
+            progress.snapTo(1f)
+        } else {
+            progress.snapTo(0f)
+            progress.animateTo(1f, animationSpec = tween(CHART_ANIMATION_MILLIS))
+        }
     }
     val density = LocalDensity.current
     val textMeasurer = rememberTextMeasurer()
+    // C1 (7.2): Pillen-Text folgt der Typo-Skala (labelMedium, 12 sp
+    // SemiBold) statt eines Literals und skaliert mit der Schrift. Der
+    // Theme-Read liegt in der Composition, das remember keyt auf ihn.
+    val pillStyle = MaterialTheme.typography.labelMedium
     val pillLayout =
-        remember(pillText) {
-            pillText?.let {
-                textMeasurer.measure(
-                    it,
-                    TextStyle(fontSize = 12.sp, fontWeight = FontWeight.SemiBold),
-                )
-            }
+        remember(pillText, pillStyle) {
+            pillText?.let { textMeasurer.measure(it, pillStyle) }
         }
     val strokeWidthPx = with(density) { 1.dp.toPx() }
     val cornerPx = with(density) { 3.dp.toPx() }

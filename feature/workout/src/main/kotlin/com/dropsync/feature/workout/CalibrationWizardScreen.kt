@@ -17,7 +17,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -42,7 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.BrandButtonPrimary
-import com.dropsync.core.designsystem.component.FlowRepIconButton
+import com.dropsync.core.designsystem.component.FlowRepTopBar
 import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.calibration.CalibrationController
@@ -104,19 +103,12 @@ fun CalibrationWizardScreen(
                 .padding(horizontal = 24.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        // P3-Fix #28: sichtbare Zurueck-Affordance statt eines alleinstehenden
-        // Textbuttons am Seitenende. AutoMirrored funktioniert auch in RTL.
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FlowRepIconButton(
-                icon = Icons.AutoMirrored.Filled.ArrowBack,
-                contentDescription = stringResource(R.string.a11y_close_calibration),
-                onClick = onFinished,
-            )
-            Text(
-                text = stringResource(R.string.calibration_title),
-                style = MaterialTheme.typography.headlineMedium,
-            )
-        }
+        // 7.2/9: einheitliches App-Bar-Muster statt eigener ArrowBack-Reihe.
+        FlowRepTopBar(
+            title = stringResource(R.string.calibration_title),
+            onBack = onFinished,
+            backContentDescription = stringResource(R.string.a11y_close_calibration),
+        )
 
         if (connection != SensorConnectionState.STREAMING &&
             connection != SensorConnectionState.CONNECTED
