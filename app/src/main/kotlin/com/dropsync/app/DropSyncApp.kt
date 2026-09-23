@@ -587,7 +587,7 @@ private fun DropSyncNavigationRail(navController: NavHostController) {
 }
 
 /** Standard-Navigationsmuster: ein Backstack-Eintrag je Top-Level-Ziel. */
-private fun NavHostController.navigateTopLevel(route: String) {
+internal fun NavHostController.navigateTopLevel(route: String) {
     navigate(route) {
         popUpTo(graph.findStartDestination().id) { saveState = true }
         launchSingleTop = true
@@ -600,7 +600,7 @@ private fun NavHostController.navigateTopLevel(route: String) {
  * als Sheet von unten, alle anderen Ziele blenden weich ein; bei Reduced
  * Motion ohne Slide.
  */
-private fun libraryEnterTransition(
+internal fun libraryEnterTransition(
     targetRoute: String?,
     reducedMotion: Boolean,
 ): EnterTransition =
@@ -622,7 +622,7 @@ private fun libraryEnterTransition(
     }
 
 /** Pop-Exit-Transition des NavHost; Gegenstueck zu [libraryEnterTransition]. */
-private fun libraryPopExitTransition(
+internal fun libraryPopExitTransition(
     targetRoute: String?,
     reducedMotion: Boolean,
 ): ExitTransition =
@@ -647,7 +647,7 @@ private fun libraryPopExitTransition(
  * Oeffnet den Now-Playing-Screen; [launchSingleTop] verhindert, dass
  * wiederholte Titel-Taps mehrere identische Eintraege stapeln.
  */
-private fun NavHostController.openNowPlaying() {
+internal fun NavHostController.openNowPlaying() {
     navigate(ROUTE_NOW_PLAYING) { launchSingleTop = true }
 }
 

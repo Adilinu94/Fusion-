@@ -102,6 +102,16 @@ android {
         lintConfig = file("lint.xml")
         warningsAsErrors = true
     }
+
+    testOptions {
+        unitTests {
+            // Paket 5 (Befund 8.5): NavHost-/Backstack-Tests laufen mit
+            // Robolectric + Compose-UI-Test auf der JVM; die Manifest-Resources
+            // brauchen isIncludeAndroidResources, sonst kann die
+            // Test-Activity nicht aufgeloest werden.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -167,6 +177,15 @@ dependencies {
     // Paket 1.6: erste :app-Unit-Tests (Onboarding/Navigation) brauchen
     // den Test-Dispatcher fuer viewModelScope.
     testImplementation(libs.kotlinx.coroutines.test)
+    // Paket 5 (Befund 8.5): NavHost-/Backstack-Tests laufen mit Robolectric
+    // und dem Compose-UI-Test-Framework auf der JVM; die Screens selbst
+    // werden dabei nicht instanziiert, nur der Route-Graph.
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.androidx.navigation.compose)
+    testImplementation(project(":core:designsystem"))
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.compiler)

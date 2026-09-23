@@ -407,7 +407,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /** Kategorienamen des Browse-Baums (Plan Phase 6.5). */
-    private data class BrowseLabels(
+    internal data class BrowseLabels(
         val root: String,
         val songs: String,
         val albums: String,
@@ -423,7 +423,13 @@ class PlaybackService : MediaLibraryService() {
      * und Position aus dem PlayerStateStore wieder her.
      */
     @OptIn(UnstableApi::class)
-    private class LibrarySessionCallback(
+    /**
+     * Testbar gehaltener Session-Callback (Befund 8.2): die
+     * Custom-Command-Logik ist der Vertragskern zwischen App und Service
+     * und wird deshalb in [PlaybackServiceCommandsTest] ohne echten
+     * ExoPlayer ausgefuehrt. `internal` nur fuer `:data:playback`-Tests.
+     */
+    internal class LibrarySessionCallback(
         private val scope: CoroutineScope,
         private val stateStore: PlayerStateStore,
         private val libraryRepository: LibraryRepository,

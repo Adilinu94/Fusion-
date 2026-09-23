@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Paket 5 (Befund 7.1.5): Screenshot-Gate fuer die Einstellungen.
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -82,6 +84,8 @@ dependencies {
     testImplementation(libs.turbine)
     // D4: Compose-UI-Test der Einstellungs-Sektionen (Robolectric, ohne Geraet).
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    // Paket 5: Screenshot-Referenzen (captureRoboImage).
+    testImplementation(libs.roborazzi)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

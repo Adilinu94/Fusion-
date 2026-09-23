@@ -6,6 +6,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Paket 5 (Befund 7.1.5): Screenshot-Gate fuer das Timer-Stellrad.
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -70,6 +72,8 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     // B2: Stellrad-Interaktionstest (Robolectric + createComposeRule).
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    // Paket 5: Screenshot-Referenzen (captureRoboImage).
+    testImplementation(libs.roborazzi)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)

@@ -7,6 +7,8 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // Paket 5 (Befund 7.1.5): Screenshot-Gate fuer das Bento-Dashboard.
+    alias(libs.plugins.roborazzi)
 }
 
 android {
@@ -68,6 +70,8 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     // A5: Semantik-Tests der Chart-Tap-Ebene (Robolectric + createComposeRule).
     testImplementation(libs.androidx.compose.ui.test.junit4)
+    // Paket 5: Screenshot-Referenzen (captureRoboImage).
+    testImplementation(libs.roborazzi)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
