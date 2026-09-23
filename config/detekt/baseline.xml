@@ -10,7 +10,7 @@
   <ManuallySuppressedIssues/>
   <CurrentIssues>
     <ID>CyclomaticComplexMethod:BleErrorMapper.kt:BleErrorMapper$fun classify: SensorErrorReason</ID>
-    <ID>CyclomaticComplexMethod:CalibrationController.kt:CalibrationController$internal fun knownCountSweep: SweepCfg?</ID>
+    <ID>CyclomaticComplexMethod:CueSheetParser.kt:CueSheetParser$fun parse: ParsedCueSheet</ID>
     <ID>CyclomaticComplexMethod:CueSheetParser.kt:CueSheetParser$fun parse: ParsedCueSheet</ID>
     <ID>CyclomaticComplexMethod:DataStoreCalibrationProfileRepository.kt:DataStoreCalibrationProfileRepository$private fun decode: CalibrationProfile?</ID>
     <!-- C16 hat den zentralen Dispatcher ueber die Schwelle gehoben (26/20);
@@ -41,6 +41,5 @@
     <ID>LongMethod:TimerSection.kt:@OptIn(ExperimentalLayoutApi::class) @Composable fun TimerSection</ID>
     <ID>LongMethod:TrainScreen.kt:@Composable fun TrainScreen</ID>
     <ID>LongMethod:Waveform.kt:@Composable fun RunningWaveform</ID>
-    <ID>LoopWithTooManyJumpStatements:CalibrationController.kt:CalibrationController$for</ID>
   </CurrentIssues>
 </SmellBaseline>

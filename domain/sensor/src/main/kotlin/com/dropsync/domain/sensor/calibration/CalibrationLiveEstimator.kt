@@ -64,7 +64,7 @@ internal object CalibrationLiveEstimator {
         achse: DoubleArray,
         bias: DoubleArray,
         sampleRateHz: Double,
-        sweepCfg: CalibrationController.SweepCfg?,
+        sweepCfg: SweepCfg?,
         baselineChosen: Double?,
         useLearnedCfg: Boolean,
         provisionalRefractoryS: Double,
