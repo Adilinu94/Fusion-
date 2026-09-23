@@ -17,13 +17,13 @@ import kotlin.math.sin
  * Aenderung: Der AudioTrack laeuft mit fester, niedriger Lautstaerke
  * und gibt die Ressourcen nach dem Abspielen frei.
  */
-class CountdownBeepPlayer {
+class CountdownBeepPlayer : CueBeeps {
     private val shortBeep = renderBeep(FREQ_HZ, SHORT_MS, SAMPLE_RATE)
     private val goBeep = renderBeep(GO_FREQ_HZ, GO_MS, SAMPLE_RATE)
 
-    fun shortBeep() = play(shortBeep)
+    override fun shortBeep() = play(shortBeep)
 
-    fun goBeep() = play(goBeep)
+    override fun goBeep() = play(goBeep)
 
     private fun play(pcm: ShortArray) {
         val minBuffer =
@@ -72,9 +72,10 @@ class CountdownBeepPlayer {
 
         /**
          * Sinus-Beep mit linearer Attack-/Release-Huellkurve (5% je
-         * Seite), damit kein Klick entsteht.
+         * Seite), damit kein Klick entsteht. Intern, damit die
+         * Render-Logik ohne AudioTrack getestet werden kann.
          */
-        private fun renderBeep(
+        internal fun renderBeep(
             freqHz: Double,
             durationMs: Int,
             sampleRate: Int,

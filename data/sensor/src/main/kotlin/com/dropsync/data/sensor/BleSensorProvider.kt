@@ -4,12 +4,9 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
-import android.bluetooth.BluetoothGattCallback
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
-import android.bluetooth.BluetoothProfile
-import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanFilter
 import android.bluetooth.le.ScanResult
@@ -46,7 +43,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.UUID
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -123,7 +119,7 @@ class BleSensorProvider
 
         private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { sampleFanout.emit(it) })
         private val dedupTracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
-        private val gattClient = BleGattClient()
+        private val gattClient = BleGattClient(scope = scope)
         private val mtuNegotiation = MtuNegotiationSession()
 
         private var sensorDataChar: BluetoothGattCharacteristic? = null
@@ -773,7 +769,7 @@ internal enum class GattOperationType {
 }
 
 /**
- * Serialized wrapper around [BluetoothGatt] (the Android BLE stack allows one
+ * Serialized wrapper around the Android BLE stack (the Android BLE stack allows one
  * outstanding operation at a time). Operations suspend until the matching
  * callback arrives; a FIFO queue paces them.
  *
@@ -781,33 +777,25 @@ internal enum class GattOperationType {
  * - Jede Operation hat eine ID und einen Typ.
  * - Android-Rueckgabewerte werden geprueft (false = sofort opDone).
  * - Pro Operation laeuft ein Timeout; danach wird die Queue freigegeben.
- * - Spaete Callbacks fremder Typen werden in [opDone] ignoriert.
+ * - Spaete Callbacks fremder Typen werden in [GattOperationQueue] ignoriert.
  * - Kein frei erzeugter CoroutineScope pro Operation; ein Scope fuer alles.
  * - Haengt ein READ oder DISCOVER endgueltig (kein Callback), meldet der
  *   Client [GattEvent.OperationTimedOut]; der Provider raeumt dann die
  *   Verbindung zentral auf.
+ *
+ * Audit 2026-09-23: saemtliche `BluetoothGatt`-Aufrufe stecken hinter dem
+ * [GattTransport]-Port; Queue/Timeout/ID-Guard liegen in
+ * [GattOperationQueue] (dort testbar), Pending-Matching bleibt hier.
  */
-@SuppressLint("MissingPermission")
-internal class BleGattClient {
+internal class BleGattClient(
+    private val transport: GattTransport = AndroidGattTransport(),
+    private val scope: CoroutineScope = CoroutineScope(
+        kotlinx.coroutines.CoroutineName("BleGattClient") +
+            kotlinx.coroutines.SupervisorJob() +
+            kotlinx.coroutines.Dispatchers.Default,
+    ),
+) {
     var onEvent: (GattEvent) -> Unit = {}
-
-    private var gatt: BluetoothGatt? = null
-
-    private var nextOpId = 0L
-
-    private data class ActiveOp(
-        val id: Long,
-        val type: GattOperationType,
-    )
-
-    private val activeOp = AtomicReference<ActiveOp?>(null)
-
-    private val scope =
-        CoroutineScope(
-            kotlinx.coroutines.CoroutineName("BleGattClient") +
-                kotlinx.coroutines.SupervisorJob() +
-                kotlinx.coroutines.Dispatchers.Default,
-        )
 
     private data class ReadRequest(
         val characteristic: BluetoothGattCharacteristic,
@@ -820,111 +808,103 @@ internal class BleGattClient {
 
     private val pendingRead = AtomicReference<ReadRequest?>(null)
     private val pendingWrite = AtomicReference<WriteRequest?>(null)
-    private val opInFlight = AtomicBoolean(false)
-    private val opQueue =
-        java.util.concurrent.ConcurrentLinkedQueue<Pair<GattOperationType, suspend () -> Unit>>()
+
+    private val queue =
+        GattOperationQueue(
+            scope = scope,
+            onTimeout = { type ->
+                when (type) {
+                    GattOperationType.READ -> pendingRead.getAndSet(null)?.cont?.resume(null)
+                    GattOperationType.WRITE -> pendingWrite.getAndSet(null)?.cont?.resume(false)
+                    GattOperationType.MTU,
+                    GattOperationType.DISCOVER,
+                    GattOperationType.DESCRIPTOR,
+                    -> Unit
+                }
+            },
+            onEvent = { onEvent(it) },
+        )
 
     val isConnected: Boolean
-        get() = gatt != null
+        get() = transport.isConnected
 
-    private val callback =
-        object : BluetoothGattCallback() {
-            override fun onConnectionStateChange(
-                g: BluetoothGatt,
-                status: Int,
-                newState: Int,
-            ) {
-                when (newState) {
-                    BluetoothProfile.STATE_CONNECTED -> onEvent(GattEvent.Connected)
-                    BluetoothProfile.STATE_DISCONNECTED -> onEvent(GattEvent.Disconnected)
-                }
+    /**
+     * Der an den Transport gebundene Listener — intern, damit Tests die
+     * GATT-Ereignisse ueber einen Fake-Transport direkt feuern koennen
+     * (Media3AudioClock.positionListener-Muster).
+     */
+    internal val transportListener =
+        object : GattTransportListener {
+            override fun onConnected() {
+                onEvent(GattEvent.Connected)
+            }
+
+            override fun onDisconnected() {
+                onEvent(GattEvent.Disconnected)
             }
 
             override fun onMtuChanged(
-                g: BluetoothGatt,
                 mtu: Int,
                 status: Int,
             ) {
                 onEvent(GattEvent.MtuChanged(mtu, status))
-                opDone(GattOperationType.MTU)
+                queue.opDone(GattOperationType.MTU)
             }
 
-            override fun onServicesDiscovered(
-                g: BluetoothGatt,
-                status: Int,
-            ) {
+            override fun onServicesDiscovered() {
                 onEvent(GattEvent.ServicesDiscovered)
-                opDone(GattOperationType.DISCOVER)
+                queue.opDone(GattOperationType.DISCOVER)
             }
 
             override fun onCharacteristicRead(
-                g: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                value: ByteArray,
+                characteristicUuid: UUID,
+                value: ByteArray?,
                 status: Int,
             ) {
-                val req = pendingRead.getAndSet(null)
-                if (req != null && req.characteristic.uuid == characteristic.uuid && req.cont.isActive) {
+                val req = pendingRead.get()
+                if (req == null || req.characteristic.uuid != characteristicUuid) {
+                    // Fremder Callback (falsche UUID oder nach Timeout/Close):
+                    // weder Pending verbrauchen noch Queue freigeben — sonst
+                    // hinge read() ewig (der Timeout prueft die Op-ID und
+                    // griffe nach opDone nicht mehr). Der echte Callback
+                    // loest noch auf.
+                    return
+                }
+                if (!pendingRead.compareAndSet(req, null)) return
+                if (req.cont.isActive) {
                     req.cont.resume(if (status == BluetoothGatt.GATT_SUCCESS) value else null)
                 }
-                opDone(GattOperationType.READ)
+                queue.opDone(GattOperationType.READ)
             }
 
-            @Deprecated("API < 33")
-            override fun onCharacteristicRead(
-                g: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                status: Int,
-            ) {
-                val req = pendingRead.getAndSet(null)
-                if (req != null && req.characteristic.uuid == characteristic.uuid && req.cont.isActive) {
-                    @Suppress("DEPRECATION")
-                    req.cont.resume(if (status == BluetoothGatt.GATT_SUCCESS) characteristic.value else null)
-                }
-                opDone(GattOperationType.READ)
+            override fun onCharacteristicWrite(status: Int) {
+                val req = pendingWrite.get() ?: return
+                if (!pendingWrite.compareAndSet(req, null)) return
+                if (req.cont.isActive) req.cont.resume(status == BluetoothGatt.GATT_SUCCESS)
+                queue.opDone(GattOperationType.WRITE)
             }
 
-            override fun onCharacteristicWrite(
-                g: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-                status: Int,
-            ) {
-                val req = pendingWrite.getAndSet(null)
-                if (req != null && req.cont.isActive) req.cont.resume(status == BluetoothGatt.GATT_SUCCESS)
-                opDone(GattOperationType.WRITE)
+            override fun onDescriptorWritten() {
+                queue.opDone(GattOperationType.DESCRIPTOR)
             }
 
-            override fun onDescriptorWrite(
-                g: BluetoothGatt,
-                descriptor: BluetoothGattDescriptor,
-                status: Int,
-            ) {
-                opDone(GattOperationType.DESCRIPTOR)
-            }
-
-            override fun onCharacteristicChanged(
-                g: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
+            override fun onNotification(
+                characteristicUuid: UUID,
                 value: ByteArray,
             ) {
-                onEvent(GattEvent.Notification(characteristic.uuid, value))
-            }
-
-            @Deprecated("API < 33")
-            override fun onCharacteristicChanged(
-                g: BluetoothGatt,
-                characteristic: BluetoothGattCharacteristic,
-            ) {
-                @Suppress("DEPRECATION")
-                characteristic.value?.let { onEvent(GattEvent.Notification(characteristic.uuid, it)) }
+                onEvent(GattEvent.Notification(characteristicUuid, value))
             }
         }
+
+    init {
+        transport.setListener(transportListener)
+    }
 
     fun connect(
         context: Context,
         device: BluetoothDevice,
     ) {
-        gatt = device.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
+        transport.connect(context, device)
     }
 
     /**
@@ -932,55 +912,41 @@ internal class BleGattClient {
      * leert die Queue, schliesst GATT und setzt alle Zustands-Bits zurueck.
      */
     fun close() {
-        gatt?.close()
-        gatt = null
-        activeOp.set(null)
-        opInFlight.set(false)
-        opQueue.clear()
+        transport.close()
+        queue.clear()
         pendingRead.getAndSet(null)?.cont?.resume(null)
         pendingWrite.getAndSet(null)?.cont?.resume(false)
     }
 
-    fun getService(uuid: UUID) = gatt?.getService(uuid)
+    fun getService(uuid: UUID) = transport.getService(uuid)
 
     fun requestMtu(mtu: Int) {
-        enqueue(GattOperationType.MTU) {
-            if (gatt?.requestMtu(mtu) != true) opDone(GattOperationType.MTU)
+        queue.enqueue(GattOperationType.MTU) {
+            if (!transport.requestMtu(mtu)) queue.opDone(GattOperationType.MTU)
         }
     }
 
     fun discoverServices() {
-        enqueue(GattOperationType.DISCOVER) {
-            if (gatt?.discoverServices() != true) {
+        queue.enqueue(GattOperationType.DISCOVER) {
+            if (!transport.discoverServices()) {
                 // Android hat den Aufruf abgelehnt: es kommt kein Callback.
-                opDone(GattOperationType.DISCOVER)
+                queue.opDone(GattOperationType.DISCOVER)
                 onEvent(GattEvent.OperationTimedOut)
             }
         }
     }
 
     fun requestHighConnectionPriority() {
-        // Fire-and-forget: no completion callback for connection priority.
-        gatt?.requestConnectionPriority(BluetoothGatt.CONNECTION_PRIORITY_HIGH)
+        transport.requestHighPriority()
     }
 
     fun enableNotification(characteristic: BluetoothGattCharacteristic) {
-        val g = gatt ?: return
+        if (!transport.isConnected) return
         runCatching {
-            g.setCharacteristicNotification(characteristic, true)
+            transport.setCharacteristicNotification(characteristic, true)
             val cccd = characteristic.getDescriptor(CCCD_UUID) ?: return
-            enqueue(GattOperationType.DESCRIPTOR) {
-                val ok =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
-                            BluetoothStatusCodes.SUCCESS
-                    } else {
-                        @Suppress("DEPRECATION")
-                        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        @Suppress("DEPRECATION")
-                        g.writeDescriptor(cccd)
-                    }
-                if (!ok) opDone(GattOperationType.DESCRIPTOR)
+            queue.enqueue(GattOperationType.DESCRIPTOR) {
+                if (!transport.writeDescriptor(cccd, true)) queue.opDone(GattOperationType.DESCRIPTOR)
             }
         }
     }
@@ -995,42 +961,29 @@ internal class BleGattClient {
      * wiederholen und der Dedup-Tracker alles verwerfen.
      */
     fun disableNotification(characteristic: BluetoothGattCharacteristic?) {
-        val g = gatt ?: return
+        if (!transport.isConnected) return
         val ch = characteristic ?: return
         runCatching {
             val cccd = ch.getDescriptor(CCCD_UUID)
             if (cccd != null) {
-                enqueue(GattOperationType.DESCRIPTOR) {
-                    val ok =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            g.writeDescriptor(cccd, BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE) ==
-                                BluetoothStatusCodes.SUCCESS
-                        } else {
-                            @Suppress("DEPRECATION")
-                            cccd.value = BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-                            @Suppress("DEPRECATION")
-                            g.writeDescriptor(cccd)
-                        }
-                    if (!ok) opDone(GattOperationType.DESCRIPTOR)
+                queue.enqueue(GattOperationType.DESCRIPTOR) {
+                    if (!transport.writeDescriptor(cccd, false)) queue.opDone(GattOperationType.DESCRIPTOR)
                 }
             }
-            g.setCharacteristicNotification(ch, false)
+            transport.setCharacteristicNotification(ch, false)
         }
     }
 
     suspend fun read(characteristic: BluetoothGattCharacteristic?): ByteArray? {
-        val g = gatt ?: return null
+        if (!transport.isConnected) return null
         val ch = characteristic ?: return null
         return suspendCancellableCoroutine { cont ->
-            enqueue(GattOperationType.READ) {
+            queue.enqueue(GattOperationType.READ) {
                 pendingRead.set(ReadRequest(ch, cont))
-                val initiated: Boolean =
-                    @Suppress("DEPRECATION")
-                    g.readCharacteristic(ch)
-                if (!initiated) {
+                if (!transport.readCharacteristic(ch)) {
                     pendingRead.set(null)
                     if (cont.isActive) cont.resume(null)
-                    opDone(GattOperationType.READ)
+                    queue.opDone(GattOperationType.READ)
                 }
             }
         }
@@ -1040,92 +993,18 @@ internal class BleGattClient {
         characteristic: BluetoothGattCharacteristic?,
         value: ByteArray,
     ): Boolean {
-        val g = gatt ?: return false
+        if (!transport.isConnected) return false
         val ch = characteristic ?: return false
         return suspendCancellableCoroutine { cont ->
-            enqueue(GattOperationType.WRITE) {
+            queue.enqueue(GattOperationType.WRITE) {
                 pendingWrite.set(WriteRequest(cont))
-                val ok =
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                        g.writeCharacteristic(ch, value, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
-                            BluetoothStatusCodes.SUCCESS
-                    } else {
-                        @Suppress("DEPRECATION")
-                        ch.value = value
-                        @Suppress("DEPRECATION")
-                        g.writeCharacteristic(ch)
-                    }
-                if (!ok) {
+                if (!transport.writeCharacteristic(ch, value)) {
                     pendingWrite.set(null)
                     if (cont.isActive) cont.resume(false)
-                    opDone(GattOperationType.WRITE)
+                    queue.opDone(GattOperationType.WRITE)
                 }
             }
         }
-    }
-
-    private fun enqueue(
-        type: GattOperationType,
-        op: suspend () -> Unit,
-    ) {
-        opQueue.add(type to op)
-        drain()
-    }
-
-    private fun drain() {
-        if (!opInFlight.compareAndSet(false, true)) return
-        val (type, op) =
-            opQueue.poll() ?: run {
-                opInFlight.set(false)
-                return
-            }
-        scope.launch {
-            val opId = ++nextOpId
-            activeOp.set(ActiveOp(opId, type))
-            // Umbauplan Phase 2.1: Timeout pro Operation. Feuert der
-            // Callback nicht, wird die Queue freigegeben; READ/DISCOVER
-            // melden den Haenger an den Provider (zentraler Cleanup).
-            val timeoutJob =
-                scope.launch {
-                    delay(OPERATION_TIMEOUT_MS)
-                    if (activeOp.get()?.id == opId) {
-                        when (type) {
-                            GattOperationType.READ -> pendingRead.getAndSet(null)?.cont?.resume(null)
-                            GattOperationType.WRITE -> pendingWrite.getAndSet(null)?.cont?.resume(false)
-                            else -> Unit
-                        }
-                        opDone(opId)
-                        if (type == GattOperationType.READ || type == GattOperationType.DISCOVER) {
-                            onEvent(GattEvent.OperationTimedOut)
-                        }
-                    }
-                }
-            try {
-                op()
-            } finally {
-                timeoutJob.cancel()
-            }
-        }
-    }
-
-    /**
-     * Umbauplan Phase 2.1: spaete Callbacks alter Operationen duerfen weder
-     * die Continuation einer neuen Operation bedienen noch deren Queue-Sperre
-     * freigeben: freigegeben wird nur, wenn der Callback-Typ zur aktuell
-     * aktiven Operation passt.
-     */
-    private fun opDone(type: GattOperationType) {
-        val active = activeOp.get() ?: return
-        if (active.type != type) return
-        opDone(active.id)
-    }
-
-    private fun opDone(opId: Long) {
-        val active = activeOp.get() ?: return
-        if (active.id != opId) return
-        if (!activeOp.compareAndSet(active, null)) return
-        opInFlight.set(false)
-        drain()
     }
 
     companion object {

@@ -112,6 +112,39 @@ class SpeechTextFormatterTest {
         assertEquals("2 minutes", formatter.format(120))
         assertEquals("Done", formatter.format(0))
     }
+
+    @Test
+    fun `deutsch prueft die minuten-grenze und den rueckfall auf sekunden`() {
+        val formatter = SpeechTextFormatter(Locale.GERMAN)
+        assertEquals("59 Sekunden", formatter.format(59))
+        assertEquals("61 Sekunden", formatter.format(61))
+        assertEquals("2 Minuten", formatter.format(120))
+        assertEquals("60 Minuten", formatter.format(3_600))
+        // V1 ohne Singularisierung im Sekundenweg.
+        assertEquals("1 Sekunden", formatter.format(1))
+    }
+
+    @Test
+    fun `englisch prueft die minuten-grenze und den rueckfall auf sekunden`() {
+        val formatter = SpeechTextFormatter(Locale.ENGLISH)
+        assertEquals("59 seconds", formatter.format(59))
+        assertEquals("61 seconds", formatter.format(61))
+        assertEquals("1 seconds", formatter.format(1))
+    }
+
+    @Test
+    fun `negative restzeit meldet wie null das ende`() {
+        assertEquals("Fertig", SpeechTextFormatter(Locale.GERMAN).format(-5))
+        assertEquals("Done", SpeechTextFormatter(Locale.ENGLISH).format(-5))
+    }
+
+    @Test
+    fun `sprachen ausserhalb v1 fallen auf englisch zurueck`() {
+        val formatter = SpeechTextFormatter(Locale.FRENCH)
+        assertEquals("45 seconds", formatter.format(45))
+        assertEquals("2 minutes", formatter.format(120))
+        assertEquals("Done", formatter.format(0))
+    }
 }
 
 class TtsSpeakerCompanionTest {

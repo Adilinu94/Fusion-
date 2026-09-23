@@ -7,7 +7,6 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.common.datastore.createResilientPreferencesDataStore
 import com.dropsync.data.timer.AndroidCueOutput
 import com.dropsync.data.timer.AndroidSetLogHaptics
-import com.dropsync.data.timer.CompletionTonePlayer
 import com.dropsync.data.timer.CountdownBeepPlayer
 import com.dropsync.data.timer.DataStoreDropSyncPlanStore
 import com.dropsync.data.timer.DataStoreMonotonicStateStore
@@ -71,7 +70,6 @@ object TimerDataModule {
         return AndroidCueOutput(
             tts = speaker,
             haptics = HapticsAdapter(context),
-            tonePlayer = CompletionTonePlayer(),
             beepPlayer = CountdownBeepPlayer(),
             ducking = ducking,
             formatter = SpeechTextFormatter(Locale.getDefault()),

@@ -52,12 +52,15 @@ class SpeechTextFormatter(
  * Komponierte Cue-Ausgabe (Bauplan Schritt 8): TTS mit Ducking, Haptik
  * und Abschlusston. Fehlendes TTS laesst die Session vollstaendig mit
  * Haptik und UI-Countdown laufen (Abnahme Schritt 8).
+ *
+ * Die Abhaengigkeiten laufen ueber die Ports [CueSpeaker], [CueHaptics]
+ * und [CueBeeps] (frueher konkrete Klassen — der ungenutzte
+ * CompletionTonePlayer wurde entfernt: tone() spielt den Go-Beep).
  */
 class AndroidCueOutput(
-    private val tts: TtsSpeaker,
-    private val haptics: HapticsAdapter,
-    private val tonePlayer: CompletionTonePlayer,
-    private val beepPlayer: CountdownBeepPlayer,
+    private val tts: CueSpeaker,
+    private val haptics: CueHaptics,
+    private val beepPlayer: CueBeeps,
     private val ducking: DuckingController,
     private val formatter: SpeechTextFormatter,
     private val scope: CoroutineScope,

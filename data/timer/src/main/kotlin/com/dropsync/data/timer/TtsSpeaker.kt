@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 class TtsSpeaker(
     private val context: Context,
     private val onCueFinished: (cueSessionId: String) -> Unit,
-) {
+) : CueSpeaker {
     private var tts: TextToSpeech? = null
     private val available = AtomicBoolean(false)
 
@@ -73,9 +73,9 @@ class TtsSpeaker(
     }
 
     /** false => Timer laeuft mit Haptik/Ton weiter (Schritt 8.1). */
-    fun isAvailable(): Boolean = available.get()
+    override fun isAvailable(): Boolean = available.get()
 
-    fun speak(
+    override fun speak(
         cueSessionId: String,
         text: String,
     ): Boolean {
@@ -87,7 +87,7 @@ class TtsSpeaker(
     }
 
     /** Stoppt laufende Ansagen sofort (Schritt 7.7). */
-    fun stop() {
+    override fun stop() {
         tts?.stop()
     }
 

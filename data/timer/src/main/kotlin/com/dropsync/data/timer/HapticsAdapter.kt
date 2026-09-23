@@ -15,7 +15,7 @@ import android.os.VibratorManager
  */
 class HapticsAdapter(
     context: Context,
-) {
+) : CueHaptics {
     private val vibrator: Vibrator? =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             val manager =
@@ -26,13 +26,13 @@ class HapticsAdapter(
             context.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
         }
 
-    fun tick() {
+    override fun tick() {
         val target = vibrator ?: return
         if (!target.hasVibrator()) return
         target.vibrate(VibrationEffect.createOneShot(TICK_MS, VibrationEffect.DEFAULT_AMPLITUDE))
     }
 
-    fun completion() {
+    override fun completion() {
         val target = vibrator ?: return
         if (!target.hasVibrator()) return
         target.vibrate(
