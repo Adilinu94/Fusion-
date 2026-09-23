@@ -15,6 +15,7 @@ import androidx.media3.common.C
 import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -43,7 +44,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -70,6 +74,12 @@ class PlaybackService : MediaLibraryService() {
     lateinit var audioPipeline: AudioPipeline
 
     @Inject
+    lateinit var bitPerfectGateway: com.dropsync.data.audio.BitPerfectGateway
+
+    @Inject
+    lateinit var trackAnalysisRepository: com.dropsync.domain.audio.TrackAnalysisRepository
+
+    @Inject
     lateinit var playerStateStore: PlayerStateStore
 
     @Inject
@@ -83,6 +93,9 @@ class PlaybackService : MediaLibraryService() {
 
     @Inject
     lateinit var audioClock: Media3AudioClock
+
+    @Inject
+    lateinit var dropLandingArmer: DropLandingArmer
 
     @Inject
     lateinit var dispatchers: DispatcherProvider
@@ -108,10 +121,13 @@ class PlaybackService : MediaLibraryService() {
                     DspRenderersFactory(
                         this,
                         audioPipeline.audioProcessors(),
-                        // Standard: 16-Bit-Ausgabe, um CPU/Akku zu schonen.
-                        // Hi-Res/Bit-Perfect ist als Option spaeter wieder
-                        // aktivierbar, ist aber nicht der Workout-Standard.
-                        floatOutput = false,
+                        // Befund 2.8: Float-Output folgt der Konfiguration —
+                        // Bit-Perfect (ADR-0009) erzwingt Int16- Durchreichung,
+                        // sonst bleibt der Hi-Res-Float-Pfad aktiv. Der
+                        // Wert gilt fuer den gesamten Player-Lebenszyklus;
+                        // ein Wechsel erfordert den Service-Neustart
+                        // (unten verdrahtet).
+                        floatOutput = !audioPipeline.currentConfig.value.bitPerfectEnabled,
                     ),
                 ).setAudioAttributes(
                     AudioAttributes
@@ -122,12 +138,20 @@ class PlaybackService : MediaLibraryService() {
                     // Media3 uebernimmt den Audio Focus (Schritt 5.6).
                     true,
                 ).setHandleAudioBecomingNoisy(true)
+                // Workout-Normalfall: Display aus, Geraet in der Tasche.
+                // Ohne WakeLock kann Doze/OEM-Management die Wiedergabe
+                // unterbrechen (Audit Fokus 1, Befund 3).
+                .setWakeMode(C.WAKE_MODE_LOCAL)
                 .build()
         exoPlayer.addAnalyticsListener(AudioInfoListener(audioPipeline))
         player = exoPlayer
         // AudioClock (Design Phase 6): Player binden, damit der Rest
         // der App eine interpolierte hoerbare Position lesen kann.
         audioClock.attach(exoPlayer)
+        // Armierte Drop-Landung (MP-3): PlayerMessage-Landung laeuft auf
+        // dem Main-Thread des Service; der Armer wird hier ueber den
+        // schmalen LandingPlayer-Port gebunden (Audit 2026-09-22).
+        dropLandingArmer.attach(ExoLandingPlayer(exoPlayer), mainScope)
         session =
             MediaLibrarySession
                 .Builder(
@@ -142,11 +166,50 @@ class PlaybackService : MediaLibraryService() {
                         ownPackageName = packageName,
                         onPlaySongAt = ::handlePlaySongAt,
                         onSetScrubbingMode = ::handleSetScrubbingMode,
+                        onArmLanding = ::handleArmLanding,
+                        onCancelLanding = ::handleCancelLanding,
                     ),
                 ).build()
         // MusicFX (Plan Phase 4): Systemequalizer erhaelt die Session-ID;
         // ob er statt der internen Kette wirkt, steuert useSystemEffects.
+        // Reconnect-Fix (Befund 3.2): Die Session-ID kann sich bei einem
+        // Sink-Neuaufbau (BT an/aus, USB-DAC) aendern — einmaliges Lesen
+        // bricht die MusicFX-Bindung. Der Listener aktualisiert und
+        // rebroadcastet bei jeder Aenderung.
         audioSessionId = exoPlayer.audioSessionId
+        exoPlayer.addListener(
+            object : Player.Listener {
+                override fun onAudioSessionIdChanged(audioSessionId: Int) {
+                    this@PlaybackService.audioSessionId = audioSessionId
+                    if (audioSessionId != C.AUDIO_SESSION_ID_UNSET) {
+                        broadcastEffectSession(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
+                    }
+                }
+
+                override fun onMediaItemTransition(
+                    mediaItem: MediaItem?,
+                    reason: Int,
+                ) {
+                    // ReplayGain (Befund 2.10): Loudness des neuen Titels
+                    // nachziehen; Referenz ist -18 LUFS (ReplayGain 2.0 mit
+                    // Surround-Toleranz, gängige Player-Praxis).
+                    val songId = mediaItem?.mediaId?.toLongOrNull()
+                    if (songId == null) {
+                        audioPipeline.setReplayGainDb(null)
+                        return
+                    }
+                    serviceScope.launch {
+                        val lufs =
+                            trackAnalysisRepository
+                                .observeAnalysis(songId)
+                                .first()
+                                ?.integratedLufs
+                        val gainDb = lufs?.let { ReplayGain.REFERENCE_LUFS - it.toDouble() }
+                        audioPipeline.setReplayGainDb(gainDb)
+                    }
+                }
+            },
+        )
         broadcastEffectSession(AudioEffect.ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION)
         // Option "Bei BT-Verbindung automatisch fortsetzen" (Plan Phase 4).
         mainScope.launch {
@@ -155,6 +218,31 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         registerBluetoothResumeCallback()
+        // Befund 2.8: Bit-Perfect-Schalter beobachten. Beim Aktivieren werden
+        // die bevorzugten Mixer-Attribute am USB-Gerät gesetzt; der Float-
+        // Output-Wechsel erfordert einen neuen Player, daher startet der
+        // Service neu (Settings-UI warnt bereits mit "wirkt beim naechsten
+        // Start"). Beim Deaktivieren werden die Attribute wieder freigegeben.
+        serviceScope.launch {
+            audioPipeline.currentConfig
+                .map { it.bitPerfectEnabled }
+                .distinctUntilChanged()
+                .drop(1) // Startwert nicht als "Wechsel" werten.
+                .collect { enabled ->
+                    if (enabled) {
+                        bitPerfectGateway.applyPreferredMixerAttributes()
+                    } else {
+                        bitPerfectGateway.clearPreferredMixerAttributes()
+                    }
+                    // Service-Neustart, damit der Player mit dem richtigen
+                    // floatOutput neu gebaut wird.
+                    withContext(Dispatchers.Main) {
+                        val restart = Intent(this@PlaybackService, PlaybackService::class.java)
+                        stopService(restart)
+                        startService(restart)
+                    }
+                }
+        }
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
@@ -183,6 +271,7 @@ class PlaybackService : MediaLibraryService() {
             getSystemService<AudioManager>()?.unregisterAudioDeviceCallback(callback)
         }
         audioDeviceCallback = null
+        dropLandingArmer.detach()
         audioClock.detach()
         // Genau einmal freigeben (Abnahme Schritt 5).
         session?.release()
@@ -246,6 +335,28 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
+     * Armierte Drop-Landung (MP-3): Der Service terminiert den Wechsel
+     * per `PlayerMessage` an der Wiedergabeposition (Audio-Uhr) und
+     * blendet Stufe 1 (ADR-0022) aus/ein. Laeuft auf dem Main-Thread.
+     */
+    private suspend fun handleArmLanding(
+        songId: Long,
+        startPositionMs: Long,
+        delayMs: Long,
+        fadeMs: Long,
+    ): Boolean {
+        val song = (libraryRepository.getSong(songId) as? AppResult.Success)?.value ?: return false
+        return withContext(dispatchers.main) {
+            dropLandingArmer.arm(song, startPositionMs, delayMs, fadeMs)
+        }
+    }
+
+    /** Bricht eine armierte Landung ab (Override, Neuplanung, Sitzungsende). */
+    private suspend fun handleCancelLanding() {
+        withContext(dispatchers.main) { dropLandingArmer.cancel() }
+    }
+
+    /**
      * Scrubbing-Modus (Media3 1.8+): waehrend eines Waveform-Drags optimiert
      * der Player auf viele schnelle Seeks statt jeden Sprung als vollen
      * Positionswechsel mit Audio-Ausgabe-Reset zu behandeln. Muss auf dem
@@ -283,6 +394,8 @@ class PlaybackService : MediaLibraryService() {
         private val ownPackageName: String,
         private val onPlaySongAt: suspend (Long, Long) -> Unit,
         private val onSetScrubbingMode: (Boolean) -> Unit,
+        private val onArmLanding: suspend (Long, Long, Long, Long) -> Boolean,
+        private val onCancelLanding: suspend () -> Unit,
     ) : MediaLibrarySession.Callback {
         /**
          * Das interne Drop-Landungs-Kommando wird nur dem eigenen Package
@@ -338,6 +451,35 @@ class PlaybackService : MediaLibraryService() {
                     }
                     onSetScrubbingMode(args.getBoolean(PlaybackCommands.ARG_SCRUBBING_ENABLED, false))
                     return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+                }
+
+                PlaybackCommands.ACTION_ARM_LANDING -> {
+                    if (!isOwnPackage(controller)) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                    }
+                    val songId = args.getLong(PlaybackCommands.ARG_SONG_ID, -1L)
+                    if (songId < 0) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
+                    }
+                    val startPositionMs = args.getLong(PlaybackCommands.ARG_START_POSITION_MS, 0L)
+                    val delayMs = args.getLong(PlaybackCommands.ARG_DELAY_MS, 0L)
+                    val fadeMs = args.getLong(PlaybackCommands.ARG_FADE_MS, 0L)
+                    return scope.future {
+                        val armed = onArmLanding(songId, startPositionMs, delayMs, fadeMs)
+                        SessionResult(
+                            if (armed) SessionResult.RESULT_SUCCESS else SessionResult.RESULT_ERROR_UNKNOWN,
+                        )
+                    }
+                }
+
+                PlaybackCommands.ACTION_CANCEL_LANDING -> {
+                    if (!isOwnPackage(controller)) {
+                        return Futures.immediateFuture(SessionResult(SessionError.ERROR_PERMISSION_DENIED))
+                    }
+                    return scope.future {
+                        onCancelLanding()
+                        SessionResult(SessionResult.RESULT_SUCCESS)
+                    }
                 }
             }
             return super.onCustomCommand(session, controller, customCommand, args)

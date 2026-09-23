@@ -1,12 +1,15 @@
 package com.dropsync.data.playback.di
 
 import android.content.Context
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.dropsync.core.common.DispatcherProvider
+import com.dropsync.core.common.datastore.createResilientPreferencesDataStore
 import com.dropsync.data.audio.AudioPipeline
 import com.dropsync.data.audio.OutputDeviceMonitor
+import com.dropsync.data.playback.AudioPipelineDuckingTarget
 import com.dropsync.data.playback.DataStorePlayerStateStore
+import com.dropsync.data.playback.DropLandingArmer
+import com.dropsync.data.playback.DuckingTarget
 import com.dropsync.data.playback.Media3AudioClock
 import com.dropsync.data.playback.MediaControllerConnection
 import com.dropsync.data.playback.PlaybackRepositoryImpl
@@ -47,7 +50,7 @@ object PlaybackDataModule {
         @ApplicationContext context: Context,
     ): PlayerStateStore =
         DataStorePlayerStateStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(DataStorePlayerStateStore.DATA_STORE_NAME)
             },
         )
@@ -57,12 +60,17 @@ object PlaybackDataModule {
     fun providePlaybackRepository(
         connection: PlayerConnection,
         stateStore: PlayerStateStore,
+        dropLandingArmer: DropLandingArmer,
         dispatchers: DispatcherProvider,
-    ): PlaybackRepository = PlaybackRepositoryImpl(connection, stateStore, dispatchers)
+    ): PlaybackRepository = PlaybackRepositoryImpl(connection, stateStore, dropLandingArmer, dispatchers)
 
     @Provides
     @Singleton
-    fun providePlayerVolumeGate(pipeline: AudioPipeline): PlayerVolumeGate = PlayerVolumeGateImpl(pipeline)
+    fun provideDuckingTarget(pipeline: AudioPipeline): DuckingTarget = AudioPipelineDuckingTarget(pipeline)
+
+    @Provides
+    @Singleton
+    fun providePlayerVolumeGate(target: DuckingTarget): PlayerVolumeGate = PlayerVolumeGateImpl(target)
 
     @Provides
     @Singleton
@@ -88,5 +96,5 @@ object PlaybackDataModule {
     /** Rest-Ducking auf dem Preamp-Knoten (Design Phase 7). */
     @Provides
     @Singleton
-    fun provideRestDuckingGate(pipeline: AudioPipeline): RestDuckingGate = RestDuckingGateImpl(pipeline)
+    fun provideRestDuckingGate(target: DuckingTarget): RestDuckingGate = RestDuckingGateImpl(target)
 }

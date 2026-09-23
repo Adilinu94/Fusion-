@@ -8,6 +8,7 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
+import com.dropsync.domain.playback.DropLandingEvent
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
@@ -18,7 +19,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.filterNotNull
@@ -36,13 +39,28 @@ import kotlinx.coroutines.withContext
 class PlaybackRepositoryImpl(
     private val connection: PlayerConnection,
     private val stateStore: PlayerStateStore,
+    private val dropLandingArmer: DropLandingArmer,
     private val dispatchers: DispatcherProvider,
 ) : PlaybackRepository {
     private val scope = CoroutineScope(SupervisorJob() + dispatchers.io)
     private val mutableState = MutableStateFlow(PlaybackState())
     private var listenerAttached = false
+    private var listenerPlayer: Player? = null
 
     override val state: Flow<PlaybackState> = mutableState.asStateFlow()
+
+    /** Ergebnis einer armierten Landung (MP-3/MP-5), app-weit sichtbar. */
+    private val mutableLandingEvents = MutableSharedFlow<DropLandingEvent>(extraBufferCapacity = 8)
+
+    override val landingEvents: Flow<DropLandingEvent> = mutableLandingEvents.asSharedFlow()
+
+    init {
+        // Ereignisse des Service-Armers in den Repository-Kanal heben
+        // (der Armer lebt prozessweit, das Repository ist der App-Port).
+        scope.launch {
+            dropLandingArmer.events.collect { mutableLandingEvents.tryEmit(it) }
+        }
+    }
 
     override suspend fun setQueue(
         songs: List<Song>,
@@ -177,6 +195,66 @@ class PlaybackRepositoryImpl(
         }
 
     /**
+     * Armierte Drop-Landung (MP-3): reicht an den Service weiter, der die
+     * PlayerMessage auf der Audio-Uhr terminiert.
+     */
+    override suspend fun armLanding(
+        song: Song,
+        startPositionMs: Long,
+        delayMs: Long,
+        fadeMs: Long,
+    ): AppResult<Unit> =
+        try {
+            withContext(dispatchers.main) {
+                val controller = connection.requirePlayer() as? MediaController
+                if (controller != null) {
+                    val args =
+                        Bundle().apply {
+                            putLong(PlaybackCommands.ARG_SONG_ID, song.mediaStoreId)
+                            putLong(
+                                PlaybackCommands.ARG_START_POSITION_MS,
+                                startPositionMs.coerceAtLeast(0),
+                            )
+                            putLong(PlaybackCommands.ARG_DELAY_MS, delayMs.coerceAtLeast(0))
+                            putLong(PlaybackCommands.ARG_FADE_MS, fadeMs.coerceAtLeast(0))
+                        }
+                    controller
+                        .sendCustomCommand(
+                            SessionCommand(PlaybackCommands.ACTION_ARM_LANDING, Bundle.EMPTY),
+                            args,
+                        ).awaitResult()
+                        .throwOnFailure()
+                }
+            }
+            AppResult.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppResult.failure(AppError.Unknown(e.message))
+        }
+
+    /** Bricht eine armierte Landung ab (Override, Neuplanung, Sitzungsende). */
+    override suspend fun cancelLanding(): AppResult<Unit> =
+        try {
+            withContext(dispatchers.main) {
+                val controller = connection.requirePlayer() as? MediaController
+                if (controller != null) {
+                    controller
+                        .sendCustomCommand(
+                            SessionCommand(PlaybackCommands.ACTION_CANCEL_LANDING, Bundle.EMPTY),
+                            Bundle.EMPTY,
+                        ).awaitResult()
+                        .throwOnFailure()
+                }
+            }
+            AppResult.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            AppResult.failure(AppError.Unknown(e.message))
+        }
+
+    /**
      * Umbauplan Phase 10.1: wartet auf den Session-Result des Custom
      * Commands, statt sofort Erfolg zu melden. Nicht erfolgreiche Codes
      * (Permission, Bad Value, Unknown) werfen, damit Prepare/Arm sich
@@ -243,35 +321,47 @@ class PlaybackRepositoryImpl(
             AppResult.failure(AppError.Unknown(e.message))
         }
 
-    /** Muss auf dem Main-Dispatcher laufen (MediaController-Vertrag). */
+    /**
+     * Muss auf dem Main-Dispatcher laufen (MediaController-Vertrag).
+     *
+     * Reconnect-Fix (Befund 3.2): Bei Service-Neustart erzeugt
+     * [MediaControllerConnection] einen NEUEN Controller und released den
+     * alten. Ein nur an `listenerAttached` gebundener Flag haengte den
+     * Listener dauerhaft am toten Controller — der neue Controller blieb
+     * unbeobachtet und `state` fror ein. Deshalb wird der Listener an den
+     * konkreten Player gebunden und bei Instanzwechsel erneut angehaengt.
+     */
     private fun attachListener(player: Player) {
-        if (listenerAttached) return
+        if (listenerAttached && listenerPlayer === player) return
+        listenerPlayer?.removeListener(playerListener)
         listenerAttached = true
-        player.addListener(
-            object : Player.Listener {
-                override fun onEvents(
-                    eventsPlayer: Player,
-                    events: Player.Events,
-                ) {
-                    if (events.containsAny(
-                            Player.EVENT_IS_PLAYING_CHANGED,
-                            Player.EVENT_MEDIA_ITEM_TRANSITION,
-                            Player.EVENT_TIMELINE_CHANGED,
-                            Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
-                            Player.EVENT_REPEAT_MODE_CHANGED,
-                            Player.EVENT_POSITION_DISCONTINUITY,
-                            Player.EVENT_PLAYBACK_STATE_CHANGED,
-                            Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
-                        )
-                    ) {
-                        // Auch externe Steuerung (Notification, Bluetooth)
-                        // landet so im Zustand und im Restore-Speicher (5.5).
-                        publishAndPersist(eventsPlayer)
-                    }
-                }
-            },
-        )
+        listenerPlayer = player
+        player.addListener(playerListener)
     }
+
+    private val playerListener =
+        object : Player.Listener {
+            override fun onEvents(
+                eventsPlayer: Player,
+                events: Player.Events,
+            ) {
+                if (events.containsAny(
+                        Player.EVENT_IS_PLAYING_CHANGED,
+                        Player.EVENT_MEDIA_ITEM_TRANSITION,
+                        Player.EVENT_TIMELINE_CHANGED,
+                        Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_REPEAT_MODE_CHANGED,
+                        Player.EVENT_POSITION_DISCONTINUITY,
+                        Player.EVENT_PLAYBACK_STATE_CHANGED,
+                        Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
+                    )
+                ) {
+                    // Auch externe Steuerung (Notification, Bluetooth)
+                    // landet so im Zustand und im Restore-Speicher (5.5).
+                    publishAndPersist(eventsPlayer)
+                }
+            }
+        }
 
     private fun publishAndPersist(player: Player) {
         val snapshot = player.toPlaybackState(lastQueue)

@@ -1,7 +1,9 @@
 package com.dropsync.data.playback
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -16,7 +18,10 @@ import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.routeProfileDataStore by preferencesDataStore(name = "route_profiles")
+private val Context.routeProfileDataStore by preferencesDataStore(
+    name = "route_profiles",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * Latenzprofil-Store je Audio-Route (Design Phase 6, Abschnitt 10).

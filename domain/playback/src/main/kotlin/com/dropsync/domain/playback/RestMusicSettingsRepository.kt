@@ -14,4 +14,19 @@ interface RestMusicSettingsRepository {
 
     /** Setzt das Verhalten (in den Einstellungen waehlbar). */
     suspend fun setBehavior(behavior: RestMusicBehavior)
+
+    /**
+     * Drop-Auto je Pause (MP-13, Design 5.2): Musik landet am Pausenende,
+     * wenn ein Work-Titel mit brauchbarem Drop bereitsteht. Persistiert,
+     * **Default an** — der Schalter im Train-Tab beschriftet das pro Pause.
+     */
+    val dropAutoEnabled: Flow<Boolean>
+
+    /** Setzt den Drop-Auto-Schalter dauerhaft. */
+    suspend fun setDropAutoEnabled(enabled: Boolean)
+
+    companion object {
+        /** Produktabsicht: Drop-Auto ist standardmaessig aktiv. */
+        const val DEFAULT_DROP_AUTO_ENABLED: Boolean = true
+    }
 }

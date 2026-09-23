@@ -16,6 +16,13 @@ interface PlaybackRepository {
     val state: Flow<PlaybackState>
 
     /**
+     * Ergebnis arbierter Landungen (MP-3/MP-5): Landed mit Delta oder
+     * Missed mit Mechanismus. Die Feature-Schicht uebersetzt das in den
+     * DropSync-Zustand; ohne Armierung kommen keine Ereignisse.
+     */
+    val landingEvents: Flow<DropLandingEvent>
+
+    /**
      * Ersetzt die Queue durch [songs], startet bei [startIndex].
      * MediaUnavailable, wenn die Liste leer ist oder der Index nicht passt.
      */
@@ -95,6 +102,29 @@ interface PlaybackRepository {
         song: Song,
         startPositionMs: Long,
     ): AppResult<Unit>
+
+    /**
+     * Armiert eine Drop-Landung (MP-3, Tiefenrecherche D3): Der Service
+     * terminiert den Wechsel auf [song] an der **Wiedergabeposition**
+     * `aktuellePosition + delayMs` per Media3-`PlayerMessage` — also auf
+     * der Audio-Uhr statt an einem `delay()` im App-Prozess. Der Wechsel
+     * selbst laeuft mit [fadeMs] Aus-/Einblendung (Stufe 1 der
+     * Crossfade-Entscheidung, ADR-0022); 0 bedeutet reine Mikro-Rampe.
+     *
+     * Ein Watchdog im Service uebernimmt, falls die Nachricht nicht
+     * feuert (Titelwechsel, pausierte Wiedergabe); pausiert der Nutzer,
+     * landet nichts. Eine armierte Landung wird durch [cancelLanding]
+     * oder die naechste Armierung ersetzt.
+     */
+    suspend fun armLanding(
+        song: Song,
+        startPositionMs: Long,
+        delayMs: Long,
+        fadeMs: Long,
+    ): AppResult<Unit>
+
+    /** Bricht eine armierte Landung ab (Override, Neuplanung, Sitzungsende). */
+    suspend fun cancelLanding(): AppResult<Unit>
 
     /**
      * Schaltet den Scrubbing-Modus der Wiedergabe (Media3 1.8+).

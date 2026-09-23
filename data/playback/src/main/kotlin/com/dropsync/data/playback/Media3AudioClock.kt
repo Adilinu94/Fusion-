@@ -101,7 +101,10 @@ class Media3AudioClock
             return SystemClock.elapsedRealtime() - at < RECENT_UNDERRUN_WINDOW_MS
         }
 
-        private val positionListener =
+        /** Der an den Player gebundene Listener — intern, damit Tests die
+         *  Media3-Events direkt feuern koennen (der Event-Layer des Players
+         *  laeuft asynchron ueber den Main-Looper). */
+        internal val positionListener =
             object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
                     lastPositionMs.set(player?.currentPosition ?: 0L)

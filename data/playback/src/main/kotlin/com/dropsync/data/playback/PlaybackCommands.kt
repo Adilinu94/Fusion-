@@ -19,11 +19,27 @@ object PlaybackCommands {
      */
     const val ACTION_SET_SCRUBBING_MODE: String = "com.dropsync.playback.SET_SCRUBBING_MODE"
 
+    /**
+     * Armierte Drop-Landung (MP-3): der Service terminiert den Wechsel
+     * per `PlayerMessage` an der Wiedergabeposition und blendet mit
+     * [ARG_FADE_MS] um (Stufe 1, ADR-0022).
+     */
+    const val ACTION_ARM_LANDING: String = "com.dropsync.playback.ARM_LANDING"
+
+    /** Bricht eine armierte Landung ab. */
+    const val ACTION_CANCEL_LANDING: String = "com.dropsync.playback.CANCEL_LANDING"
+
     /** MediaStore-ID des Zieltitels (Long). */
     const val ARG_SONG_ID: String = "song_id"
 
     /** Startposition/Vorspulen des Zieltitels in Millisekunden (Long). */
     const val ARG_START_POSITION_MS: String = "start_position_ms"
+
+    /** Verzoegerung bis zur Landung ab der aktuellen Position (Long, ms). */
+    const val ARG_DELAY_MS: String = "delay_ms"
+
+    /** Ueberblenddauer der Landung (Long, ms); 0 = nur Mikro-Rampe. */
+    const val ARG_FADE_MS: String = "fade_ms"
 
     /** Scrubbing an/aus (Boolean). */
     const val ARG_SCRUBBING_ENABLED: String = "scrubbing_enabled"

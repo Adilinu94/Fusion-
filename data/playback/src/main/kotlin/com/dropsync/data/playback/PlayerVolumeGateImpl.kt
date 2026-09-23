@@ -1,6 +1,5 @@
 package com.dropsync.data.playback
 
-import com.dropsync.data.audio.AudioPipeline
 import com.dropsync.domain.playback.PlayerVolumeGate
 
 /**
@@ -12,11 +11,11 @@ import com.dropsync.domain.playback.PlayerVolumeGate
  * der Basiswert ist ausserhalb einer Ansage stets 1.0.
  */
 class PlayerVolumeGateImpl(
-    private val pipeline: AudioPipeline,
+    private val target: DuckingTarget,
 ) : PlayerVolumeGate {
-    override suspend fun currentVolume(): Float = pipeline.duckingGain.value.toFloat()
+    override suspend fun currentVolume(): Float = target.duckingGain.value.toFloat()
 
     override suspend fun setVolume(volume: Float) {
-        pipeline.setDuckingGain(volume.toDouble())
+        target.setDuckingGain(volume.toDouble())
     }
 }
