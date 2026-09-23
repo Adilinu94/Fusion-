@@ -56,6 +56,7 @@
     <string name="drop_rest_blocked_not_playing">Die Wiedergabe ist pausiert.</string>
     <string name="drop_rest_blocked_no_marker">Der aktuelle Song hat keinen kommenden Drop-Marker.</string>
     <string name="drop_rest_blocked_too_close">Der nächste Drop ist weniger als 5 Sekunden entfernt.</string>
+    <string name="drop_rest_start_failed">Drop-Rest konnte nicht gestartet werden. Bitte erneut versuchen.</string>
 
     <!-- Aktions-Carousel + Sheets (Umbau 2026-08) -->
     <string name="now_playing_waveform_with_markers">Welle: Marker antippen zum Bearbeiten, daneben tippen zum Springen, ziehen für eine Vorschau. %1$d Marker gesetzt.</string>

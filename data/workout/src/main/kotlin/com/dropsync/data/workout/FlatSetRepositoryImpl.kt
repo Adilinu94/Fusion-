@@ -9,6 +9,7 @@ import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.entity.FlatSetEntity
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.SetSummaries
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -35,6 +36,11 @@ class FlatSetRepositoryImpl(
 
     override fun observeAllSets(): Flow<List<FlatSet>> =
         flatSetDao.observeAll().map { list ->
+            list.map { it.toDomain() }
+        }
+
+    override fun observeRecentSets(limit: Int): Flow<List<FlatSet>> =
+        flatSetDao.observeRecent(limit).map { list ->
             list.map { it.toDomain() }
         }
 
@@ -142,6 +148,27 @@ class FlatSetRepositoryImpl(
                 throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getRecentSets"))
+            }
+        }
+
+    override suspend fun getSetSummaries(
+        exerciseId: Long,
+        recentLimit: Int,
+    ): AppResult<SetSummaries> =
+        withContext(dispatchers.io) {
+            try {
+                val summaries = flatSetDao.getSummaries(exerciseId, recentLimit)
+                AppResult.success(
+                    SetSummaries(
+                        lastSet = summaries.last?.toDomain(),
+                        maxVolumeMilliKg = summaries.maxVolumeMilliKg,
+                        recentSets = summaries.recent.map { it.toDomain() },
+                    ),
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("getSetSummaries"))
             }
         }
 

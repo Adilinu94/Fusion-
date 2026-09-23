@@ -3,6 +3,7 @@ package com.dropsync.core.database.dao
 import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
+import androidx.room.Transaction
 import com.dropsync.core.database.entity.FlatSetEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -33,6 +34,14 @@ interface FlatSetDao {
     @Query("SELECT * FROM flat_sets ORDER BY logged_at_epoch_ms DESC")
     fun observeAll(): Flow<List<FlatSetEntity>>
 
+    /**
+     * Befund 5.3: begrenzter Verlauf-Strom — die unbegrenzte Liste waechst
+     * mit jedem Training (Speicher + Mapping je Emission). Aufrufer laden
+     * seitenweise nach (`limit` erhoehen), statt alles auf einmal.
+     */
+    @Query("SELECT * FROM flat_sets ORDER BY logged_at_epoch_ms DESC LIMIT :limit")
+    fun observeRecent(limit: Int): Flow<List<FlatSetEntity>>
+
     /** Letzter Satz einer Uebung (fuer Gewichts-Platzhalter). */
     @Query("SELECT * FROM flat_sets WHERE exercise_id = :exerciseId ORDER BY logged_at_epoch_ms DESC LIMIT 1")
     suspend fun getLastForExercise(exerciseId: Long): FlatSetEntity?
@@ -56,4 +65,28 @@ interface FlatSetDao {
     /** Letzte N Saetze (Mini-Verlauf). */
     @Query("SELECT * FROM flat_sets ORDER BY logged_at_epoch_ms DESC LIMIT :limit")
     suspend fun getRecent(limit: Int): List<FlatSetEntity>
+
+    /**
+     * Gebuendelter Refetch nach Log/Undo (Befund 5.2): letzter Satz,
+     * Max-Volumen und Mini-Verlauf in EINER Transaktion statt drei
+     * getrennten Fahrten. Room darf Default-Methoden mit `@Transaction`
+     * umgeben; die drei Queries laufen atomar im selben Snapshot.
+     */
+    @Transaction
+    suspend fun getSummaries(
+        exerciseId: Long,
+        recentLimit: Int,
+    ): FlatSetSummaries =
+        FlatSetSummaries(
+            last = getLastForExercise(exerciseId),
+            maxVolumeMilliKg = getMaxVolumeForExercise(exerciseId),
+            recent = getRecent(recentLimit),
+        )
 }
+
+/** Ergebnis des gebuendelten Refetchs ([FlatSetDao.getSummaries]). */
+data class FlatSetSummaries(
+    val last: FlatSetEntity?,
+    val maxVolumeMilliKg: Long?,
+    val recent: List<FlatSetEntity>,
+)

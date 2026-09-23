@@ -115,6 +115,13 @@
     <string name="library_scan_saf_failed">Folder scan failed.</string>
     <string name="library_m3u_import_done_detail">Playlist imported: %1$d tracks, %2$d unresolved, %3$d web links skipped.</string>
     <string name="library_m3u_import_failed">Playlist file could not be read.</string>
+    <string name="library_playlist_create_failed">Playlist could not be created. Please try again.</string>
+    <string name="library_playlist_rename_failed">Playlist could not be renamed. Please try again.</string>
+    <string name="library_playlist_change_failed">Playlist change failed. Please try again.</string>
+    <string name="library_playlist_restore_failed">Undo failed. Please try again.</string>
+    <string name="library_favorite_failed">Favorite could not be saved. Please try again.</string>
+    <string name="library_search_failed">Search failed. Please try again.</string>
+    <string name="library_play_failed">Playback could not be started. Please try again.</string>
     <string name="library_categories">Categories</string>
     <string name="library_categories_title">Show categories</string>
     <string name="library_now_playing">Now playing</string>

@@ -100,9 +100,20 @@ class BitPerfectGateway
          * nach Service-Neustart beim ersten Track-Start gerufen; die Wahl
          * des Attributs ueberlaesst der AudioMixer dem Geraet.
          *
+         * Befund 4.5: der ECHTE Stand (nicht die Absicht) landet in
+         * [support] ([BitPerfectSupport.mixerApplied]) — die UI zeigt ihn
+         * an, statt Erfolg zu behaupten. Ein Geraetewechsel setzt zurueck
+         * (Attribute sind geraetegebunden).
+         *
          * @return true, wenn die Attribute gesetzt werden konnten.
          */
         fun applyPreferredMixerAttributes(): Boolean {
+            val applied = applyInternal()
+            mutableSupport.value = currentSupport().copy(mixerApplied = applied)
+            return applied
+        }
+
+        private fun applyInternal(): Boolean {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
             val usbDevice =
                 audioManager
@@ -146,5 +157,8 @@ class BitPerfectGateway
                     usbDevice,
                 )
             }
+            // Befund 4.5: nach dem Freigeben ist nichts mehr angewendet —
+            // der Support faellt auf den reinen Geraetebefund zurueck.
+            mutableSupport.value = currentSupport()
         }
     }

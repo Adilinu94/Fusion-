@@ -56,6 +56,7 @@
     <string name="drop_rest_blocked_not_playing">Playback is paused.</string>
     <string name="drop_rest_blocked_no_marker">The current song has no upcoming drop marker.</string>
     <string name="drop_rest_blocked_too_close">The next drop is less than 5 seconds away.</string>
+    <string name="drop_rest_start_failed">Drop rest could not be started. Please try again.</string>
 
     <!-- Aktions-Carousel + Sheets (Umbau 2026-08) -->
     <string name="now_playing_waveform_with_markers">Waveform: tap a marker to edit it, tap elsewhere to jump, drag to preview. %1$d markers set.</string>

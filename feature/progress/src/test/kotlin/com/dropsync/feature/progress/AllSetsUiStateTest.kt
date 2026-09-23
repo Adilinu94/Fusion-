@@ -1,13 +1,16 @@
 package com.dropsync.feature.progress
 
+import com.dropsync.core.model.PrType
+import com.dropsync.core.model.PrValueUnit
 import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.FlatSet
+import com.dropsync.domain.workout.PrRecord
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class AllSetsUiStateTest {
     @Test
-    fun `uses highest volume set per exercise as personal record`() {
+    fun `verwendet echte PRs aus personal records, juengster zuerst`() {
         val state =
             AllSetsUiState.from(
                 sets =
@@ -22,10 +25,14 @@ class AllSetsUiStateTest {
                         ExerciseInfo(20, "deadlift", "Kreuzheben"),
                     ),
                 fallbackExerciseName = "Übung",
+                personalRecords =
+                    listOf(
+                        prRecord(exerciseId = 10, at = 2_000L),
+                        prRecord(exerciseId = 20, at = 3_000L),
+                    ),
             )
 
-        assertEquals(listOf(2L, 3L), state.personalRecords.map { it.set.id })
-        assertEquals(listOf("Kniebeuge", "Kreuzheben"), state.personalRecords.map { it.exerciseName })
+        assertEquals(listOf("Kreuzheben", "Kniebeuge"), state.personalRecords.map { it.exerciseName })
         assertEquals(3, state.allSets.size)
     }
 
@@ -36,10 +43,26 @@ class AllSetsUiStateTest {
                 sets = listOf(flatSet(id = 7, exerciseId = 99, weightMilliKg = 60_000_000, reps = 3)),
                 exercises = emptyList(),
                 fallbackExerciseName = "Übung",
+                personalRecords = listOf(prRecord(exerciseId = 99, at = 1L)),
             )
 
         assertEquals(listOf("Übung"), state.allSets.map { it.exerciseName })
+        assertEquals(listOf("Übung"), state.personalRecords.map { it.exerciseName })
     }
+
+    private fun prRecord(
+        exerciseId: Long,
+        at: Long,
+    ) = PrRecord(
+        exerciseId = exerciseId,
+        type = PrType.HIGHEST_LOAD,
+        achievedSessionId = null,
+        achievedClusterId = null,
+        valueLong = 80_000_000,
+        valueUnit = PrValueUnit.MILLI_KG,
+        comparableLoadMilliKg = 80_000_000,
+        achievedAtEpochMs = at,
+    )
 
     private fun flatSet(
         id: Long,

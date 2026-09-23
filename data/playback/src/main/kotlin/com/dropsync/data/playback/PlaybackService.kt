@@ -8,6 +8,7 @@ import android.media.audiofx.AudioEffect
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import androidx.annotation.OptIn
 import androidx.core.content.getSystemService
 import androidx.media3.common.AudioAttributes
@@ -42,6 +43,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -110,6 +112,20 @@ class PlaybackService : MediaLibraryService() {
     private var audioSessionId: Int = C.AUDIO_SESSION_ID_UNSET
     private var audioDeviceCallback: AudioDeviceCallback? = null
     private var resumeOnBluetoothConnect = false
+
+    /**
+     * Befund 4.4: genau EIN ReplayGain-Lauf ist aktuell. Jeder Titelwechsel
+     * bricht den Vorgaenger ab, loescht sofort und erhoeht die Generation —
+     * ein langsamer (ueberholter) Lauf darf den Gain des Vortitels nicht
+     * spaeter ueberschreiben. Laeufe ohne Main-Zugriff brauchen kein
+     * Main-Confinement; der Listener laeuft auf dem Player-Thread.
+     */
+    private var replayGainJob: Job? = null
+    private var replayGainGeneration = 0L
+
+    private companion object {
+        const val TAG = "PlaybackService"
+    }
 
     @OptIn(UnstableApi::class)
     override fun onCreate() {
@@ -192,21 +208,31 @@ class PlaybackService : MediaLibraryService() {
                 ) {
                     // ReplayGain (Befund 2.10): Loudness des neuen Titels
                     // nachziehen; Referenz ist -18 LUFS (ReplayGain 2.0 mit
-                    // Surround-Toleranz, gängige Player-Praxis).
+                    // Surround-Toleranz, gaengige Player-Praxis).
                     val songId = mediaItem?.mediaId?.toLongOrNull()
                     if (songId == null) {
+                        replayGainJob?.cancel()
+                        replayGainJob = null
                         audioPipeline.setReplayGainDb(null)
                         return
                     }
-                    serviceScope.launch {
-                        val lufs =
-                            trackAnalysisRepository
-                                .observeAnalysis(songId)
-                                .first()
-                                ?.integratedLufs
-                        val gainDb = lufs?.let { ReplayGain.REFERENCE_LUFS - it.toDouble() }
-                        audioPipeline.setReplayGainDb(gainDb)
-                    }
+                    // Befund 4.4: Vorgaenger abbrechen, sofort loeschen,
+                    // Generation erhoehen — ein ueberholter Lauf schreibt
+                    // danach nichts mehr (Pruefung unten).
+                    replayGainJob?.cancel()
+                    audioPipeline.setReplayGainDb(null)
+                    val generation = ++replayGainGeneration
+                    replayGainJob =
+                        serviceScope.launch {
+                            val lufs =
+                                trackAnalysisRepository
+                                    .observeAnalysis(songId)
+                                    .first()
+                                    ?.integratedLufs
+                            if (generation != replayGainGeneration) return@launch
+                            val gainDb = lufs?.let { ReplayGain.REFERENCE_LUFS - it.toDouble() }
+                            audioPipeline.setReplayGainDb(gainDb)
+                        }
                 }
             },
         )
@@ -230,7 +256,16 @@ class PlaybackService : MediaLibraryService() {
                 .drop(1) // Startwert nicht als "Wechsel" werten.
                 .collect { enabled ->
                     if (enabled) {
-                        bitPerfectGateway.applyPreferredMixerAttributes()
+                        // Befund 4.5: das Ergebnis ist kein Selbstgaenger —
+                        // ohne USB-DAC, unter API 34 oder bei Ablehnung durch
+                        // das Geraet bleibt der Mixer unangetastet. Der Nutzer
+                        // sieht den echten Stand in den Audio-Einstellungen
+                        // (BitPerfectSupport.mixerApplied), hier landet der
+                        // Grund im Log statt im Nirwana.
+                        val applied = bitPerfectGateway.applyPreferredMixerAttributes()
+                        if (!applied) {
+                            Log.w(TAG, "Bit-Perfect angefordert, Mixer-Attribute nicht gesetzt (kein USB-DAC, API < 34 oder Geraet lehnt ab)")
+                        }
                     } else {
                         bitPerfectGateway.clearPreferredMixerAttributes()
                     }

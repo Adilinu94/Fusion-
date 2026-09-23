@@ -508,7 +508,10 @@ fun NowPlayingScreen(
                 // Drop) hingehoert. Nur sichtbar, wenn ein Rest laeuft oder
                 // startbar ist; der reine Blockadegrund bleibt dem Train-Tab
                 // vorbehalten, damit der Player ruhig bleibt.
-                DropRestSection(modifier = Modifier.padding(top = 12.dp))
+                DropRestSection(
+                    modifier = Modifier.padding(top = 12.dp),
+                    snackbarHostState = snackbarHostState,
+                )
             }
         }
     }
@@ -896,10 +899,20 @@ internal fun PowerampTitleRow(
  * Player ruhig (der reine Blockadegrund gehoert in den Train-Tab).
  */
 @Composable
-private fun DropRestSection(modifier: Modifier = Modifier) {
+private fun DropRestSection(
+    modifier: Modifier = Modifier,
+    snackbarHostState: SnackbarHostState,
+) {
     val dropRestViewModel: DropRestViewModel = hiltViewModel()
     val timer by dropRestViewModel.timerState.collectAsStateWithLifecycle()
     val eligibility by dropRestViewModel.eligibility.collectAsStateWithLifecycle()
+    // Befund 6.2: Start-Fehlschlag sichtbar machen (vorher toter Knopf).
+    val startFailedText = stringResource(R.string.drop_rest_start_failed)
+    LaunchedEffect(dropRestViewModel) {
+        dropRestViewModel.startFailed.collect {
+            snackbarHostState.showSnackbar(startFailedText)
+        }
+    }
     val dropSyncActive =
         timer.session?.mode == TimerMode.DROPSYNC &&
             timer.status in

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +35,7 @@ import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.PrRecord
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -63,21 +65,31 @@ class AllSetsViewModel
         // Flow neu auf, statt den Fehler stumm zu verschlucken.
         private val retryTrigger = MutableStateFlow(0)
 
+        /**
+         * Befund 5.3: Seiten-Limit — die Liste waechst per "Mehr laden",
+         * statt die gesamte Historie auf einmal in Speicher und Mapping zu
+         * holen. `hasMore` ist true, solange eine Seite voll zurueckkam.
+         */
+        private val limit = MutableStateFlow(ALL_SETS_PAGE_SIZE)
+
         @OptIn(ExperimentalCoroutinesApi::class)
         val screenState: StateFlow<AllSetsScreenState> =
-            retryTrigger
-                .flatMapLatest {
+            combine(retryTrigger, limit) { _, currentLimit -> currentLimit }
+                .flatMapLatest { currentLimit ->
                     val ready: Flow<AllSetsScreenState> =
                         combine(
-                            flatSetRepository.observeAllSets(),
+                            flatSetRepository.observeRecentSets(currentLimit),
                             workoutRepository.observeExercises("de"),
-                        ) { sets, exercises ->
+                            workoutRepository.observeAllPersonalRecords(),
+                        ) { sets, exercises, personalRecords ->
                             AllSetsScreenState.Ready(
                                 AllSetsUiState.from(
                                     sets,
                                     exercises,
                                     appContext.getString(R.string.progress_default_exercise),
+                                    personalRecords,
                                 ),
+                                hasMore = sets.size >= currentLimit,
                             )
                         }
                     ready.catch { emit(AllSetsScreenState.Error) }
@@ -90,6 +102,16 @@ class AllSetsViewModel
         /** C6: laedt das Satz-Log nach einem Fehler neu. */
         fun retry() {
             retryTrigger.value++
+        }
+
+        /** Befund 5.3: naechste Seite der Historie laden. */
+        fun loadMore() {
+            limit.value += ALL_SETS_PAGE_SIZE
+        }
+
+        private companion object {
+            /** Befund 5.3: Seitengroesse der Historie (~ein Trainingsjahr). */
+            const val ALL_SETS_PAGE_SIZE = 200
         }
     }
 
@@ -104,30 +126,37 @@ sealed interface AllSetsScreenState {
 
     data class Ready(
         val sets: AllSetsUiState,
+        /** Befund 5.3: true, solange Nachladen (“Mehr laden”) moeglich ist. */
+        val hasMore: Boolean,
     ) : AllSetsScreenState
 }
 
 data class AllSetsUiState(
-    val personalRecords: List<ProgressSetRow>,
+    /** Befund 5.8: echte PRs — dieselbe Quelle wie Tile 5, keine Zweit-Rechnung. */
+    val personalRecords: List<ProgressPrRow>,
     val allSets: List<ProgressSetRow>,
 ) {
     companion object {
         val Empty = AllSetsUiState(emptyList(), emptyList())
 
+        /**
+         * Befund 5.8: EINE Rekord-Quelle — die [PrRecord] aus
+         * personal_records (drei PR-Arten aus dem PrCalculator) statt der
+         * frueheren zweiten, volumenbasierten Rechnung, die vom Dashboard
+         * abweichen konnte. Sortiert nach Erreichen, juengster zuerst.
+         */
         fun from(
             sets: List<FlatSet>,
             exercises: List<ExerciseInfo>,
             fallbackExerciseName: String,
+            personalRecords: List<PrRecord>,
         ): AllSetsUiState {
             val names = exercises.associate { it.id to it.displayName }
             val rows = sets.map { ProgressSetRow(it, names[it.exerciseId] ?: fallbackExerciseName) }
             val records =
-                rows
-                    .groupBy { it.set.exerciseId }
-                    .values
-                    .mapNotNull { exerciseRows -> exerciseRows.maxByOrNull { it.set.volumeKg } }
-                    .sortedByDescending { it.set.volumeKg }
-                    .take(3)
+                personalRecords
+                    .map { ProgressPrRow(it, names[it.exerciseId] ?: fallbackExerciseName) }
+                    .sortedByDescending { it.record.achievedAtEpochMs }
             return AllSetsUiState(personalRecords = records, allSets = rows)
         }
     }
@@ -167,6 +196,8 @@ fun AllSetsScreen(
         is AllSetsScreenState.Ready -> {
             AllSetsList(
                 state = current.sets,
+                hasMore = current.hasMore,
+                onLoadMore = viewModel::loadMore,
                 contentPadding = contentPadding,
                 onBack = onBack,
                 modifier = modifier,
@@ -179,6 +210,8 @@ fun AllSetsScreen(
 @Composable
 private fun AllSetsList(
     state: AllSetsUiState,
+    hasMore: Boolean,
+    onLoadMore: () -> Unit,
     contentPadding: PaddingValues,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
@@ -212,7 +245,9 @@ private fun AllSetsList(
                         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
                     )
                     FlowRepSurface(contentPadding = PaddingValues(vertical = 4.dp)) {
-                        state.personalRecords.forEach { AllSetsRow(it, showRecord = true) }
+                        // Befund 5.8: echte PR-Zeilen (Art + Wert + Datum),
+                        // dieselbe Semantik wie Tile 5 des Dashboards.
+                        state.personalRecords.forEach { AllSetsPrRow(it) }
                     }
                 }
             }
@@ -228,17 +263,65 @@ private fun AllSetsList(
                 modifier = Modifier.padding(horizontal = 16.dp),
                 contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
             ) {
-                AllSetsRow(row, showRecord = false)
+                AllSetsRow(row)
+            }
+        }
+        // Befund 5.3: Nachladen statt Gesamt-Historie auf einmal.
+        if (hasMore) {
+            item {
+                Button(
+                    onClick = onLoadMore,
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp),
+                ) {
+                    Text(stringResource(R.string.progress_load_more))
+                }
             }
         }
     }
 }
 
+/** Befund 5.8: echte PR-Zeile — Uebung, PR-Art, Rekordwert und Datum. */
 @Composable
-private fun AllSetsRow(
-    row: ProgressSetRow,
-    showRecord: Boolean,
-) {
+private fun AllSetsPrRow(row: ProgressPrRow) {
+    // TalkBack (Plan 6.2): die ganze Zeile als ein Element vorlesen statt
+    // vier einzelne Texte; mergeDescendants fasst sie zusammen.
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .semantics(mergeDescendants = true) {},
+    ) {
+        Text(
+            row.exerciseName,
+            style = MaterialTheme.typography.titleMedium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text =
+                stringResource(
+                    R.string.progress_pr_row_detail,
+                    stringResource(prTypeLabel(row.record.type)),
+                    formatPrValue(row.record),
+                ),
+            style = MaterialTheme.typography.titleSmall,
+            color = rememberAccentTextColor(),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            text = DateFormat.getDateInstance(DateFormat.MEDIUM).format(Date(row.record.achievedAtEpochMs)),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+@Composable
+private fun AllSetsRow(row: ProgressSetRow) {
     // TalkBack (Plan 6.2): die ganze Zeile als ein Element vorlesen statt
     // vier einzelne Texte; mergeDescendants fasst sie zusammen.
     Column(
@@ -264,14 +347,9 @@ private fun AllSetsRow(
             modifier = Modifier.padding(top = 8.dp),
         )
         Text(
-            text =
-                if (showRecord) {
-                    stringResource(R.string.progress_row_best_volume)
-                } else {
-                    stringResource(R.string.progress_row_volume, ProgressFormatters.volume(row.set.volumeKg))
-                },
+            text = stringResource(R.string.progress_row_volume, ProgressFormatters.volume(row.set.volumeKg)),
             style = MaterialTheme.typography.bodySmall,
-            color = if (showRecord) rememberAccentTextColor() else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

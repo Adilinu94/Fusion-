@@ -24,8 +24,8 @@ data class ProgressPrRow(
  * Volumen je Uebung, juenger als sieben Tage). [newPrRecords] enthaelt die
  * echten PRs aus der personal_records-Tabelle (drei PR-Arten aus dem
  * PrCalculator, Befund 3.14/153), ebenfalls auf die letzten sieben Tage
- * gefiltert — Tile 5 zeigt die echte Sicht, die volumenbasierte bleibt fuer
- * die "Alle Saetze"-Route.
+ * gefiltert — Tile 5 zeigt die echte Sicht. Die Alle-Saetze-Route nutzt
+ * seit Befund 5.8 dieselben echten PRs ([AllSetsUiState]).
  */
 data class ProgressFeedUiState(
     val recentSets: List<ProgressSetRow>,

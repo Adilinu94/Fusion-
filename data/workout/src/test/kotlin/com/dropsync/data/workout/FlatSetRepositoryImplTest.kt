@@ -312,4 +312,33 @@ class FlatSetRepositoryImplTest {
         runTest {
             assertTrue(repository.logSet(-1L, 80_000_000, 8) is AppResult.Failure)
         }
+
+    // --- Befund 5.2: gebuendelter Refetch ----------------------------------
+
+    @Test
+    fun `set summaries buendeln letzten satz max volumen und verlauf`() =
+        runTest {
+            logSet(weightMilliKg = 60_000_000, reps = 10)
+            clock.advanceBy(60_000)
+            logSet(weightMilliKg = 80_000_000, reps = 8)
+            clock.advanceBy(60_000)
+            // Darf nicht in die Zusammenfassung dieser Uebung gelangen.
+            logSet(exercise = otherExerciseId, weightMilliKg = 200_000_000, reps = 1)
+
+            val summaries = (repository.getSetSummaries(exerciseId, 5) as AppResult.Success).value
+            assertEquals(80_000_000L, summaries.lastSet?.weightMilliKg)
+            // Max-Volumen: 80kg x 8 = 640.000.000 > 60kg x 10 = 600.000.000.
+            assertEquals(80_000_000L * 8, summaries.maxVolumeMilliKg)
+            assertEquals(3, summaries.recentSets.size)
+            assertEquals(200_000_000L, summaries.recentSets.first().weightMilliKg)
+        }
+
+    @Test
+    fun `set summaries leerer uebung liefern null und leere liste`() =
+        runTest {
+            val summaries = (repository.getSetSummaries(exerciseId, 5) as AppResult.Success).value
+            assertNull(summaries.lastSet)
+            assertNull(summaries.maxVolumeMilliKg)
+            assertTrue(summaries.recentSets.isEmpty())
+        }
 }

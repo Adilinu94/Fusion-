@@ -213,6 +213,14 @@ internal fun BitPerfectSection(
             if (support.encodings.isNotEmpty()) {
                 Text(stringResource(R.string.audio_bitperfect_encodings, support.encodings.joinToString(", ")))
             }
+            // Befund 4.5: angefordert ist nicht angewendet — der Mixer hat
+            // die Attribute (noch) nicht bestaetigt.
+            if (config.bitPerfectEnabled && !support.mixerApplied) {
+                Text(
+                    text = stringResource(R.string.audio_bitperfect_not_applied),
+                    modifier = Modifier.padding(top = 4.dp),
+                )
+            }
         } else {
             Text(
                 text = stringResource(R.string.audio_bitperfect_unavailable),

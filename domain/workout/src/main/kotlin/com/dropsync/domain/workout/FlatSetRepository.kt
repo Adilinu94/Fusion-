@@ -26,6 +26,16 @@ data class DayVolume(
 )
 
 /**
+ * Gebuendelte Zusammenfassung nach Log/Undo (Befund 5.2): ein Aufruf, eine
+ * Transaktion — statt drei getrennten Roundtrips je geloggtem Satz.
+ */
+data class SetSummaries(
+    val lastSet: FlatSet?,
+    val maxVolumeMilliKg: Long?,
+    val recentSets: List<FlatSet>,
+)
+
+/**
  * Repository fuer das flache Satz-Log (FlowRep Phase 2).
  * Ersetzt nicht WorkoutRepository, sondern ergaenzt es als
  * einfache Alternative ohne Session-Overhead.
@@ -36,6 +46,13 @@ interface FlatSetRepository {
 
     /** Alle Saetze, neueste zuerst (Verlauf). */
     fun observeAllSets(): Flow<List<FlatSet>>
+
+    /**
+     * Befund 5.3: begrenzter Verlauf-Strom (neueste zuerst, max. [limit]).
+     * Listen-UI laedt seitenweise nach, statt die gesamte Historie in den
+     * Speicher zu holen.
+     */
+    fun observeRecentSets(limit: Int): Flow<List<FlatSet>>
 
     /** Letzter Satz der Uebung (Gewichts-Platzhalter). */
     suspend fun getLastSet(exerciseId: Long): AppResult<FlatSet?>
@@ -58,4 +75,13 @@ interface FlatSetRepository {
 
     /** Letzte N Saetze (Mini-Verlauf). */
     suspend fun getRecentSets(limit: Int): AppResult<List<FlatSet>>
+
+    /**
+     * Gebuendelter Refetch nach Log/Undo (Befund 5.2): letzter Satz,
+     * Max-Volumen und Mini-Verlauf in einem Aufruf statt drei Roundtrips.
+     */
+    suspend fun getSetSummaries(
+        exerciseId: Long,
+        recentLimit: Int,
+    ): AppResult<SetSummaries>
 }

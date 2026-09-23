@@ -426,8 +426,8 @@ class TrainViewModel
             _countedZero.value = false
             repSourceTracker.onSetReset()
             _selectedExercise.value = exercise
-            loadLastSet(exercise.id)
-            loadMaxVolume(exercise.id)
+            // Befund 5.2: gebuendelter Refetch statt zwei Roundtrips.
+            refreshSetSummaries(exercise.id)
             loadRestPref(exercise.id)
             resetShadowEngine()
             loadActiveProfile()
@@ -456,20 +456,29 @@ class TrainViewModel
             }
         }
 
-        private fun loadLastSet(exerciseId: Long) {
+        /**
+         * Befund 5.2/5.4: gebuendelter Refetch nach Log/Undo — ein
+         * Repository-Aufruf, eine DB-Transaktion ([FlatSetRepository.getSetSummaries])
+         * statt drei getrennten Roundtrips. Schlaegt er fehl, sehen die
+         * Felder bewusst nach "leer" aus wie bisher — aber zusaetzlich geht
+         * ein sichtbares Ereignis an die UI (vorher war der Fehler
+         * ununterscheidbar von "noch keine Saetze").
+         */
+        private fun refreshSetSummaries(exerciseId: Long) {
             viewModelScope.launch {
-                when (val result = flatSetRepository.getLastSet(exerciseId)) {
-                    is AppResult.Success -> _lastSet.value = result.value
-                    is AppResult.Failure -> _lastSet.value = null
-                }
-            }
-        }
+                when (val result = flatSetRepository.getSetSummaries(exerciseId, RECENT_SETS_LIMIT)) {
+                    is AppResult.Success -> {
+                        _lastSet.value = result.value.lastSet
+                        _maxVolumeKg.value = result.value.maxVolumeMilliKg?.let { it / 1_000_000.0 }
+                        _recentSets.value = result.value.recentSets
+                    }
 
-        private fun loadMaxVolume(exerciseId: Long) {
-            viewModelScope.launch {
-                when (val result = flatSetRepository.getMaxVolumeForExercise(exerciseId)) {
-                    is AppResult.Success -> _maxVolumeKg.value = result.value?.let { it / 1_000_000.0 }
-                    is AppResult.Failure -> _maxVolumeKg.value = null
+                    is AppResult.Failure -> {
+                        _lastSet.value = null
+                        _maxVolumeKg.value = null
+                        _recentSets.value = emptyList()
+                        errorEvents.trySend(TrainErrorEvent.HistoryLoadFailed)
+                    }
                 }
             }
         }
@@ -511,9 +520,9 @@ class TrainViewModel
             viewModelScope.launch {
                 when (setLogController.logSet(exercise.id, weightMilliKg, reps)) {
                     is AppResult.Success -> {
-                        loadLastSet(exercise.id)
-                        loadMaxVolume(exercise.id)
-                        loadRecentSets()
+                        // Befund 5.2: ein gebuendelter Refetch (eine
+                        // Transaktion) statt drei getrennten Roundtrips.
+                        refreshSetSummaries(exercise.id)
                         // Live (confirmed) count for the shadow diff (11b).
                         liveRepCount += reps
                         // Paket C: Trace vom Controller nehmen (unveraenderlich).
@@ -597,13 +606,13 @@ class TrainViewModel
                         val undo = outcome.value
                         liveRepCount = (liveRepCount - undo.reps).coerceAtLeast(0)
                         repSourceTracker.onSetReset()
-                        loadLastSet(undo.exerciseId)
-                        loadMaxVolume(undo.exerciseId)
-                        loadRecentSets()
+                        refreshSetSummaries(undo.exerciseId)
                     }
 
                     is AppResult.Failure -> {
-                        Unit
+                        // Befund 5.4: vorher stumm — der Nutzer sah nur,
+                        // dass der Satz noch da ist, ohne Grund.
+                        errorEvents.trySend(TrainErrorEvent.UndoFailed)
                     }
                 }
             }
@@ -782,7 +791,7 @@ class TrainViewModel
 
         private fun loadRecentSets() {
             viewModelScope.launch {
-                when (val result = flatSetRepository.getRecentSets(5)) {
+                when (val result = flatSetRepository.getRecentSets(RECENT_SETS_LIMIT)) {
                     is AppResult.Success -> _recentSets.value = result.value
                     is AppResult.Failure -> _recentSets.value = emptyList()
                 }
@@ -1248,6 +1257,9 @@ class TrainViewModel
             const val MILLIKG_PER_KG = 1_000_000
             const val MAX_REASONABLE_WEIGHT_MILLIKG = 1_000L * MILLIKG_PER_KG
             const val MAX_REASONABLE_REPS = 500
+
+            /** Befund 5.2: Mini-Verlauf-Umfang des gebuendelten Refetchs. */
+            const val RECENT_SETS_LIMIT = 5
 
             /**
              * P2-Fix #19: erlaubte Abweichung zwischen bestaetigter Rep-Zahl

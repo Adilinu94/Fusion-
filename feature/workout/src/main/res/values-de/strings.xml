@@ -115,6 +115,8 @@
     <string name="train_error_exercise_create">Übung konnte nicht angelegt werden. Bitte erneut versuchen.</string>
     <string name="train_error_profile_load">Kalibrierung konnte nicht geladen werden. Bitte erneut versuchen.</string>
     <string name="train_error_learning_save">Verfeinerte Kalibrierung konnte nicht gespeichert werden.</string>
+    <string name="train_error_undo">Letzter Satz konnte nicht zurückgenommen werden. Bitte erneut versuchen.</string>
+    <string name="train_error_history">Satz-Verlauf konnte nicht geladen werden. Bitte erneut versuchen.</string>
     <!-- P2-17/RC-7: Satz-Report nach dem Stop (Snackbar). -->
     <string name="train_set_report">Satz beendet: %1$d erkannt · Rate %2$s Hz · %3$d Aussetzer · %4$d ZuPT</string>
     <string name="train_set_report_rejected">%1$d abgelehnt (%2$s)</string>

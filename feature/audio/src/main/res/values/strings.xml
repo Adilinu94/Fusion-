@@ -93,6 +93,7 @@
     <string name="audio_bitperfect_rates">Sample rates: %1$s</string>
     <string name="audio_bitperfect_encodings">Encodings: %1$s</string>
     <string name="audio_bitperfect_unavailable">No Bit-Perfect capable USB DAC connected (requires Android 14+).</string>
+    <string name="audio_bitperfect_not_applied">Requested, but the mixer has not confirmed bit-exact output yet (applies after playback restart).</string>
     <string name="audio_replaygain_enable">ReplayGain / loudness normalization</string>
     <string name="audio_replaygain_desc">Levels all tracks to -18 LUFS using the built-in loudness analysis. Tracks without analysis stay unchanged.</string>
 

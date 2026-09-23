@@ -33,6 +33,12 @@ data class BitPerfectSupport(
     val sampleRatesHz: List<Int> = emptyList(),
     /** Vom DAC unterstuetzte Kodierungen als Klartext (leer wenn unbekannt). */
     val encodings: List<String> = emptyList(),
+    /**
+     * Befund 4.5: true, sobald der AudioMixer die Attribute TATSAECHLICH
+     * angenommen hat — nicht schon beim Einschalten des Schalters. Die UI
+     * unterscheidet damit "angefordert" von "aktiv".
+     */
+    val mixerApplied: Boolean = false,
 ) {
     companion object {
         val UNAVAILABLE = BitPerfectSupport(available = false, deviceName = null)

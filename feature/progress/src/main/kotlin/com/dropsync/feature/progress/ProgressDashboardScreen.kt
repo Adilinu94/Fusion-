@@ -135,7 +135,11 @@ class ProgressViewModel
             retryTrigger
                 .flatMapLatest {
                     combine(
-                        flatSetRepository.observeAllSets(),
+                        // Befund 5.3: begrenzter Strom — das Dashboard braucht
+                        // nur die juengsten Saetze (10 recent + 7-Tage-Fenster
+                        // fuer Tiles und Charts); die volle Historie gehoert
+                        // der Alle-Saetze-Route mit Nachladen.
+                        flatSetRepository.observeRecentSets(FEED_SETS_LIMIT),
                         workoutRepository.observeExercises("de"),
                         workoutGoalRepository.weeklyTrainingGoal,
                         targetRepository.observeAllTargets(),
@@ -152,6 +156,15 @@ class ProgressViewModel
         /** C6: laedt die Projektion nach einem Fehler neu. */
         fun retry() {
             retryTrigger.value++
+        }
+
+        private companion object {
+            /**
+             * Befund 5.3: Dashboard-Schranke — ~28 Saetze/Tag ueber das
+             * 7-Tage-Fenster. Wer mehr loggt, sieht aeltere Tage nur in der
+             * Alle-Saetze-Route (dort mit Nachladen).
+             */
+            const val FEED_SETS_LIMIT = 200
         }
 
         private fun dashboardState(
@@ -841,7 +854,7 @@ private fun FreshPrRecordsRow(
 }
 
 /** Rekordwert im UI-Format: Last in kg, Reps ganzzahlig (E4c). */
-private fun formatPrValue(record: com.dropsync.domain.workout.PrRecord): String =
+internal fun formatPrValue(record: com.dropsync.domain.workout.PrRecord): String =
     when (record.valueUnit) {
         com.dropsync.core.model.PrValueUnit.MILLI_KG -> {
             ProgressFormatters.weight(record.valueLong / 1_000_000.0)
@@ -852,7 +865,7 @@ private fun formatPrValue(record: com.dropsync.domain.workout.PrRecord): String 
         }
     }
 
-private fun prTypeLabel(type: com.dropsync.core.model.PrType): Int =
+internal fun prTypeLabel(type: com.dropsync.core.model.PrType): Int =
     when (type) {
         com.dropsync.core.model.PrType.HIGHEST_LOAD -> R.string.progress_pr_type_highest_load
         com.dropsync.core.model.PrType.HIGHEST_SESSION_VOLUME -> R.string.progress_pr_type_session_volume

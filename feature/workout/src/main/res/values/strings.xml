@@ -115,6 +115,8 @@
     <string name="train_error_exercise_create">Could not create the exercise. Please try again.</string>
     <string name="train_error_profile_load">Could not load the calibration. Please try again.</string>
     <string name="train_error_learning_save">Could not save the refined calibration.</string>
+    <string name="train_error_undo">Could not undo the last set. Please try again.</string>
+    <string name="train_error_history">Could not load the set history. Please try again.</string>
     <!-- P2-17/RC-7: set report after stop (snackbar). -->
     <string name="train_set_report">Set finished: %1$d counted · rate %2$s Hz · %3$d gaps · %4$d ZUPT</string>
     <string name="train_set_report_rejected">%1$d rejected (%2$s)</string>

@@ -22,8 +22,11 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
@@ -56,6 +59,14 @@ class DropRestViewModel
         private val restTimerServiceStarter: RestTimerServiceStarter,
     ) : ViewModel() {
         val timerState: StateFlow<TimerState> = timerEngine.state
+
+        /**
+         * Befund 6.2: Start-Fehlschlag als Einmal-Ereignis — vorher kehrte
+         * `startDropRest` bei `AppResult.Failure` still zurueck und der
+         * Nutzer stand vor einem toten Knopf. Die Shell zeigt eine Snackbar.
+         */
+        private val _startFailed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val startFailed: SharedFlow<Unit> = _startFailed.asSharedFlow()
 
         /**
          * C11 (P-9): true, wenn eine ANDERE Timer-Sitzung laeuft (z. B. die
@@ -131,7 +142,10 @@ class DropRestViewModel
                             )
                     ) {
                         is AppResult.Success -> result.value
-                        is AppResult.Failure -> return@launch
+                        is AppResult.Failure -> {
+                            _startFailed.tryEmit(Unit)
+                            return@launch
+                        }
                     }
                 // Wiedergabe laeuft bereits (Gate-Bedingung): PREPARING -> RUNNING.
                 timerEngine.markRunning(session.id)

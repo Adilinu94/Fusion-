@@ -109,6 +109,13 @@
     <string name="library_scan_saf_failed">Ordner-Scan fehlgeschlagen.</string>
     <string name="library_m3u_import_done_detail">Playlist importiert: %1$d Titel, %2$d nicht aufgelöst, %3$d Web-Links übersprungen.</string>
     <string name="library_m3u_import_failed">Playlist-Datei konnte nicht gelesen werden.</string>
+    <string name="library_playlist_create_failed">Playlist konnte nicht angelegt werden. Bitte erneut versuchen.</string>
+    <string name="library_playlist_rename_failed">Playlist konnte nicht umbenannt werden. Bitte erneut versuchen.</string>
+    <string name="library_playlist_change_failed">Playlist-Änderung fehlgeschlagen. Bitte erneut versuchen.</string>
+    <string name="library_playlist_restore_failed">Wiederherstellen fehlgeschlagen. Bitte erneut versuchen.</string>
+    <string name="library_favorite_failed">Favorit konnte nicht gespeichert werden. Bitte erneut versuchen.</string>
+    <string name="library_search_failed">Suche fehlgeschlagen. Bitte erneut versuchen.</string>
+    <string name="library_play_failed">Wiedergabe konnte nicht gestartet werden. Bitte erneut versuchen.</string>
     <string name="library_categories">Kategorien</string>
     <string name="library_categories_title">Kategorien anzeigen</string>
     <string name="library_now_playing">Läuft gerade</string>

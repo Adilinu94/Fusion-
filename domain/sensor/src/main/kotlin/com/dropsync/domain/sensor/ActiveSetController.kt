@@ -97,6 +97,15 @@ class ActiveSetController(
     private var engineVersion: RepEngineVersion = RepEngineVersion.V2_RELIABLE
     private val bufferedSamples = mutableListOf<SensorSample>()
     private val bufferedRepEvents = mutableListOf<RepEvent>()
+
+    /**
+     * Befund 5.5: `cancel()` ist kooperativ — ein abgebrochener Collector
+     * kann noch in `add()` stehen, waehrend [abort]/[start] leeren. Ein
+     * einziges Lock fuer beide Puffer (keine Lock-Ordnung noetig) macht
+     * Pruefen+Anhaengen atomar und `clear()`/`toList()` konfliktfrei.
+     * Kurze kritische Abschnitte, nie suspend — kein Deadlock-Risiko.
+     */
+    private val bufferLock = Any()
     private var startedAtMs: Long = 0L
 
     /**
@@ -204,8 +213,13 @@ class ActiveSetController(
         _lastPlausibility.value = null
         // RC-7: gleiches gilt fuer den Diagnose-Snapshot des Vorgaengers.
         _lastDiagnostics.value = null
-        bufferedSamples.clear()
-        bufferedRepEvents.clear()
+        // Befund 5.5: unter dem Puffer-Lock — ein noch auslaufender
+        // Collector des Vorgaenger-Sets kann nicht zwischen Pruefung und
+        // Leeren schreiben.
+        synchronized(bufferLock) {
+            bufferedSamples.clear()
+            bufferedRepEvents.clear()
+        }
         _phase.value = ActiveSetPhase.COUNTDOWN
         _countdownRemaining.value = countdownSeconds
 
@@ -213,7 +227,7 @@ class ActiveSetController(
         eventJob =
             scope.launch {
                 activeEngine?.repEvents?.collect { event ->
-                    bufferedRepEvents.add(event)
+                    synchronized(bufferLock) { bufferedRepEvents.add(event) }
                     // C14 (T-14): die UI speist ihren Peak-Blitz aus dem
                     // echten Rep-Event statt aus einer Flanken-Heuristik.
                     _repEvents.tryEmit(event)
@@ -256,11 +270,22 @@ class ActiveSetController(
         return true
     }
 
+    /**
+     * Befund 5.5: Pruefung (Phase, Engine) und Anhaengen laufen atomar
+     * unter dem Puffer-Lock. Ein paralleler [abort] kann dazwischen weder
+     * leeren noch die Engine entfernen — kein Streusample im geleerten
+     * Puffer, keine `ConcurrentModificationException`. Die CPU-Arbeit der
+     * Engine bleibt bewusst AUSSERHALB des Locks.
+     */
     private fun onSample(sample: SensorSample) {
-        if (_phase.value != ActiveSetPhase.COUNTING) return
-        val engine = engine ?: return
-        bufferedSamples.add(sample)
-        engine.processSample(
+        val activeEngine =
+            synchronized(bufferLock) {
+                if (_phase.value != ActiveSetPhase.COUNTING) return
+                val current = engine ?: return
+                bufferedSamples.add(sample)
+                current
+            }
+        activeEngine.processSample(
             sample.timestampMs,
             sample.gx,
             sample.gy,
@@ -269,7 +294,7 @@ class ActiveSetController(
             sample.ay,
             sample.az,
         )
-        _countedReps.value = engine.repCount.value
+        _countedReps.value = activeEngine.repCount.value
     }
 
     /**
@@ -369,13 +394,20 @@ class ActiveSetController(
      * wo der Scope bereits gecancelt ist und ein suspend/join wirkungslos
      * waere. `runBlocking` auf Main ist tabu; die Collector sterben durch
      * `cancel()` und fassen den dann geleerten Zustand nicht mehr an.
+     *
+     * Befund 5.5: `cancel()` allein schliesst das Race nicht — ein gerade in
+     * [onSample] stehender Worker kann noch schreiben, waehrend hier
+     * geleert wird. Deshalb schliesst [abort] zuerst Phase (IDLE) und Engine
+     * (null): spaete Samples scheitern an der atomaren Pruefung in
+     * [onSample]. Das Leeren selbst laeuft unter [bufferLock], ein Join ist
+     * weiterhin nicht noetig und die onCleared-Tauglichkeit bleibt.
      */
     fun abort(reason: SetAbortReason) {
+        _phase.value = ActiveSetPhase.IDLE
+        engine = null
         cancelJobs()
         lastAbortReason = reason
-        engine = null
         streamProvenGood = false
-        _phase.value = ActiveSetPhase.IDLE
         _countdownRemaining.value = 0
         _countedReps.value = 0
         // Umbauplan 2026-09-04 Phase 7: die Zweitmeinung gehoert zum
@@ -392,8 +424,10 @@ class ActiveSetController(
         // diesem Abbruch (finishAndTakeTrace ruft hier CLEARED). Nur die
         // Zuordnung des laufenden Satzes wird geleert.
         appliedQualityPeriodMs = null
-        bufferedSamples.clear()
-        bufferedRepEvents.clear()
+        synchronized(bufferLock) {
+            bufferedSamples.clear()
+            bufferedRepEvents.clear()
+        }
         exerciseId = -1L
         deviceId = null
         profileRevision = 0

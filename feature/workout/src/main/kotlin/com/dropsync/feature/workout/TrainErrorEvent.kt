@@ -25,4 +25,14 @@ sealed interface TrainErrorEvent {
 
     /** C3: Pausen-Praeferenz der Uebung konnte nicht gespeichert werden. */
     data object RestPrefSaveFailed : TrainErrorEvent
+
+    /** Undo des letzten Satzes fehlgeschlagen (vorher stumm). */
+    data object UndoFailed : TrainErrorEvent
+
+    /**
+     * Satz-Verlauf (letzter Satz, Max-Volumen, Mini-Verlauf) konnte nicht
+     * geladen werden — bewusst NICHT dasselbe wie "noch keine Saetze"
+     * (bisher sah beides nach leerer Historie aus).
+     */
+    data object HistoryLoadFailed : TrainErrorEvent
 }

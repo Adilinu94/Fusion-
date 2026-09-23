@@ -211,6 +211,30 @@ internal fun LibraryContent(
             snackbarHostState.showSnackbar(message)
         }
     }
+
+    // Befund 6.2: Playlist-/Favoriten-/Such-/Abspielfehler (vorher stumm).
+    val playlistCreateFailedText = stringResource(R.string.library_playlist_create_failed)
+    val playlistRenameFailedText = stringResource(R.string.library_playlist_rename_failed)
+    val playlistChangeFailedText = stringResource(R.string.library_playlist_change_failed)
+    val playlistRestoreFailedText = stringResource(R.string.library_playlist_restore_failed)
+    val favoriteFailedText = stringResource(R.string.library_favorite_failed)
+    val searchFailedText = stringResource(R.string.library_search_failed)
+    val playFailedText = stringResource(R.string.library_play_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.playlistNotice.collect { notice ->
+            val message =
+                when (notice) {
+                    PlaylistNotice.CREATE_FAILED -> playlistCreateFailedText
+                    PlaylistNotice.RENAME_FAILED -> playlistRenameFailedText
+                    PlaylistNotice.CHANGE_FAILED -> playlistChangeFailedText
+                    PlaylistNotice.RESTORE_FAILED -> playlistRestoreFailedText
+                    PlaylistNotice.FAVORITE_FAILED -> favoriteFailedText
+                    PlaylistNotice.SEARCH_FAILED -> searchFailedText
+                    PlaylistNotice.PLAY_FAILED -> playFailedText
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
     val deleteLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {

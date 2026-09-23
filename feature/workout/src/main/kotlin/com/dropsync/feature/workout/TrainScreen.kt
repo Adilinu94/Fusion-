@@ -1294,12 +1294,16 @@ private fun TrainErrorSnackbars(
     val errorProfileLoad = stringResource(R.string.train_error_profile_load)
     val errorLearningSave = stringResource(R.string.train_error_learning_save)
     val errorRestPrefSave = stringResource(R.string.train_error_rest_pref_save)
+    val errorUndo = stringResource(R.string.train_error_undo)
+    val errorHistory = stringResource(R.string.train_error_history)
     LaunchedEffect(
         snackbarHostState,
         errorExerciseCreate,
         errorProfileLoad,
         errorLearningSave,
         errorRestPrefSave,
+        errorUndo,
+        errorHistory,
     ) {
         if (snackbarHostState == null) return@LaunchedEffect
         errorEvent.collect { event ->
@@ -1309,6 +1313,8 @@ private fun TrainErrorSnackbars(
                     TrainErrorEvent.ProfileLoadFailed -> errorProfileLoad
                     TrainErrorEvent.LearningSaveFailed -> errorLearningSave
                     TrainErrorEvent.RestPrefSaveFailed -> errorRestPrefSave
+                    TrainErrorEvent.UndoFailed -> errorUndo
+                    TrainErrorEvent.HistoryLoadFailed -> errorHistory
                 }
             snackbarHostState.showSnackbar(message)
         }

@@ -12,8 +12,9 @@
     <string name="progress_empty_open_training">Training öffnen</string>
     <string name="progress_section_records">Persönliche Bestwerte</string>
     <string name="progress_section_recent_sets">Letzte Sätze</string>
-    <string name="progress_row_best_volume">Bestes Volumen</string>
     <string name="progress_row_volume">%s Volumen</string>
+    <string name="progress_pr_row_detail">%1$s: %2$s</string>
+    <string name="progress_load_more">Mehr Sätze laden</string>
     <string name="progress_ring_of">von %d Trainings</string>
     <string name="progress_ring_missing_one">Noch ein Training diese Woche</string>
     <string name="progress_ring_missing_many">Noch %d Trainings diese Woche</string>
