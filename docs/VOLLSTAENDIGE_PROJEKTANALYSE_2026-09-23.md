@@ -758,3 +758,21 @@ Reihenfolge nach Risiko, nicht nach Bequemlichkeit. Jedes Paket ist ein eigener 
 - `docs/Kritische Befunde.md` ist ein **historisches** Review-Protokoll (12.08.2026) mit Ist-Stand-Nachtrag vom 30.08.2026 — die Tabelle im Kopf hat Vorrang darunter.
 - `docs/VERBESSERUNGSANALYSE_2026-09.md` (13.09.) ist überholt, wo dieses Dokument Widriges nennt; die dortige Empfehlung „kein Code geändert" gilt für dieses Dokument **nicht mehr**: zwischen 13.09. und 23.09. wurde an 228 Dateien gearbeitet.
 - Dieses Dokument ersetzt keine ADR; strategische Entscheidungen (Crossfade, Health Write-back, build-logic) brauchen eigene ADRs in `docs/adr/`.
+
+---
+
+# 12. Umsetzungs-Nachtrag (23.09.2026, gleicher Tag)
+
+Die Pakete 0–6 wurden am Analyse-Tag selbst umgesetzt. Stand je Paket:
+
+| Paket | Umfang | Commit(s) |
+|---|---|---|
+| 0 — Sicherung | Doku-Umzug, Build-Basis, CI-Gates, 9 Fachpakete | `d97a798` … `7ea1552` (13 Commits) |
+| 1 — CI ehrlich | ARM/CANCEL_LANDING beworben, `handlePlaySongAt` ehrlich, Baseline-Frist, Kover-Floor, Version aus Katalog | `94eab84` |
+| 2 — Stille Fehler | PlaylistNotice, UndoFailed/HistoryLoadFailed, `getSummaries`, abort-Race, ReplayGain-Race, Bit-Perfect-`mixerApplied`, AllSets-Limit | `3a7fb43` |
+| 3 — Trainerlebnis | Onboarding (Zurück/Berechtigung/Wiedereinstieg), Loading-States, Render-Cap 300 + `library_load_more`, Cluster-API als geplante Schicht markiert | `1eb4726` |
+| 4 — Designkonsistenz | Radius 24→20 konsolidiert, Sheets fontScale-fähig, sp-Literale → Typo-Skala, `DpOffset` gemessen, TempoSheet lokalisiert, Waveform/Charts an Reduced Motion, `BrandButtonSecondary` entfernt, `BrandCard` verdrahtet, Queue-Haptik, CalibrationWizard auf `FlowRepTopBar`, A-Z 48 dp, toter Spacer | `d40091c` |
+| 5 — Tests | `PlaybackServiceCommandsTest` (Dispatch + Package-Gating), `NavHostBackstackTest` in `:app`, Roborazzi für Dashboard/Settings/Library/Timer (Referenzen aufgenommen, Verify grün) | `0a0219c` |
+| 6 — Strategie | Crossfade: ADR-0022 Stufe 1 umgesetzt, Stufe 2 Spike offen; Bit-Perfect: `mixerApplied` erledigt (Paket 2); Health Write-back aufgeschoben (ADR-0026); build-logic terminiert vor Toolchain-Upgrade (ADR-0027) | dieser Commit |
+
+**Hardware-blockiert bleiben** (bewusst nicht in dieser Serie): Ground-Truth-Traces (5.6), Gate 11b mit Precision/Recall-Gates (8.4), Baseline-Profil-Datei, BT-Emulator-Tests, 200-%-TalkBack-Lauf. Diese Punkte warten auf Gerät.
