@@ -1,0 +1,32 @@
+# D6 (I-9): Supply-Chain — Abhaengigkeits-Updates als PRs statt still im
+# Lockfile. Gradle-Bumps muessen die Verifikations-Metadaten mitziehen:
+#   ./gradlew help --write-verification-metadata sha256
+# (siehe gradle/verification-metadata.xml; ohne Update bricht der Build mit
+# "Dependency verification failed").
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    groups:
+      # Kleine Updates buendeln, Major-Spruenge bleiben einzeln.
+      minor-und-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies

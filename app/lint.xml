@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Lint-Konfiguration (Paket 1.5): Bekannte, bewusste Abweichungen werden hier
+  dokumentiert statt ungegated zu bleiben. Ziel laut Analyse: Lint-Warnungen
+  = 0; sobald ein Befund behoben ist, wird seine Ignore-Zeile entfernt.
+-->
+<lint>
+    <!--
+      mipmap-anydpi-v26 ist bewusst so benannt: minSdk ist zwar 26, aber der
+      Ordnername dokumentiert die Mindest-API fuer adaptive Icons. Umbenennen
+      nach mipmap-anydpi bricht den v31-Splashscreen-Link (AAPT2 stuft die
+      Ressource ohne -v26 anders ein).
+    -->
+    <issue id="ObsoleteSdkInt" severity="ignore" />
+</lint>
