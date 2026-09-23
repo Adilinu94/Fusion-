@@ -166,76 +166,9 @@ internal fun LibraryContent(
     var songForPlaylist by remember { mutableStateOf<Song?>(null) }
     var pendingDelete by remember { mutableStateOf<List<Song>>(emptyList()) }
 
-    // UI-Befund 4.2.2: uebersprungene Duplikate sichtbar machen statt still.
-    LaunchedEffect(viewModel) {
-        viewModel.duplicateSkips.collect { skipped ->
-            snackbarHostState.showSnackbar(
-                context.getString(R.string.library_playlist_duplicates_skipped, skipped),
-            )
-        }
-    }
-
-    // UI-Befund 4.2.4: Ergebnis des SAF-Ordnerscans (null = Fehler).
-    val scanFailedText = stringResource(R.string.library_scan_saf_failed)
-    LaunchedEffect(viewModel) {
-        viewModel.folderScanResult.collect { result ->
-            val message =
-                if (result == null) {
-                    scanFailedText
-                } else {
-                    context.getString(
-                        R.string.library_scan_saf_done_detail,
-                        result.audioFiles,
-                        result.cueSheets,
-                        result.importedCueTracks,
-                    )
-                }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-
-    // UI-Befund 4.2.4: Ergebnis des M3U-Imports (null = Fehler).
-    val m3uFailedText = stringResource(R.string.library_m3u_import_failed)
-    LaunchedEffect(viewModel) {
-        viewModel.m3uImportResult.collect { result ->
-            val message =
-                if (result == null) {
-                    m3uFailedText
-                } else {
-                    context.getString(
-                        R.string.library_m3u_import_done_detail,
-                        result.importedCount,
-                        result.unresolved,
-                        result.skippedRemote,
-                    )
-                }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
-
-    // Befund 6.2: Playlist-/Favoriten-/Such-/Abspielfehler (vorher stumm).
-    val playlistCreateFailedText = stringResource(R.string.library_playlist_create_failed)
-    val playlistRenameFailedText = stringResource(R.string.library_playlist_rename_failed)
-    val playlistChangeFailedText = stringResource(R.string.library_playlist_change_failed)
-    val playlistRestoreFailedText = stringResource(R.string.library_playlist_restore_failed)
-    val favoriteFailedText = stringResource(R.string.library_favorite_failed)
-    val searchFailedText = stringResource(R.string.library_search_failed)
-    val playFailedText = stringResource(R.string.library_play_failed)
-    LaunchedEffect(viewModel) {
-        viewModel.playlistNotice.collect { notice ->
-            val message =
-                when (notice) {
-                    PlaylistNotice.CREATE_FAILED -> playlistCreateFailedText
-                    PlaylistNotice.RENAME_FAILED -> playlistRenameFailedText
-                    PlaylistNotice.CHANGE_FAILED -> playlistChangeFailedText
-                    PlaylistNotice.RESTORE_FAILED -> playlistRestoreFailedText
-                    PlaylistNotice.FAVORITE_FAILED -> favoriteFailedText
-                    PlaylistNotice.SEARCH_FAILED -> searchFailedText
-                    PlaylistNotice.PLAY_FAILED -> playFailedText
-                }
-            snackbarHostState.showSnackbar(message)
-        }
-    }
+    // UI-Befund 4.2.2/4.2.4 + Befund 6.2: alle ViewModel-Rueckmeldungen
+    // laufen als Snackbar (Extraktion, Detekt CyclomaticComplexMethod).
+    LibraryNoticeSnackbars(viewModel, snackbarHostState)
     val deleteLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
@@ -420,6 +353,84 @@ internal fun LibraryContent(
                 songForPlaylist = null
             },
         )
+    }
+}
+
+@Composable
+private fun LibraryNoticeSnackbars(
+    viewModel: LibraryViewModel,
+    snackbarHostState: SnackbarHostState,
+) {
+    val context = LocalContext.current
+    // UI-Befund 4.2.2: uebersprungene Duplikate sichtbar machen statt still.
+    LaunchedEffect(viewModel) {
+        viewModel.duplicateSkips.collect { skipped ->
+            snackbarHostState.showSnackbar(
+                context.getString(R.string.library_playlist_duplicates_skipped, skipped),
+            )
+        }
+    }
+
+    // UI-Befund 4.2.4: Ergebnis des SAF-Ordnerscans (null = Fehler).
+    val scanFailedText = stringResource(R.string.library_scan_saf_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.folderScanResult.collect { result ->
+            val message =
+                if (result == null) {
+                    scanFailedText
+                } else {
+                    context.getString(
+                        R.string.library_scan_saf_done_detail,
+                        result.audioFiles,
+                        result.cueSheets,
+                        result.importedCueTracks,
+                    )
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // UI-Befund 4.2.4: Ergebnis des M3U-Imports (null = Fehler).
+    val m3uFailedText = stringResource(R.string.library_m3u_import_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.m3uImportResult.collect { result ->
+            val message =
+                if (result == null) {
+                    m3uFailedText
+                } else {
+                    context.getString(
+                        R.string.library_m3u_import_done_detail,
+                        result.importedCount,
+                        result.unresolved,
+                        result.skippedRemote,
+                    )
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // Befund 6.2: Playlist-/Favoriten-/Such-/Abspielfehler (vorher stumm).
+    val playlistCreateFailedText = stringResource(R.string.library_playlist_create_failed)
+    val playlistRenameFailedText = stringResource(R.string.library_playlist_rename_failed)
+    val playlistChangeFailedText = stringResource(R.string.library_playlist_change_failed)
+    val playlistRestoreFailedText = stringResource(R.string.library_playlist_restore_failed)
+    val favoriteFailedText = stringResource(R.string.library_favorite_failed)
+    val searchFailedText = stringResource(R.string.library_search_failed)
+    val playFailedText = stringResource(R.string.library_play_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.playlistNotice.collect { notice ->
+            val message =
+                when (notice) {
+                    PlaylistNotice.CREATE_FAILED -> playlistCreateFailedText
+                    PlaylistNotice.RENAME_FAILED -> playlistRenameFailedText
+                    PlaylistNotice.CHANGE_FAILED -> playlistChangeFailedText
+                    PlaylistNotice.RESTORE_FAILED -> playlistRestoreFailedText
+                    PlaylistNotice.FAVORITE_FAILED -> favoriteFailedText
+                    PlaylistNotice.SEARCH_FAILED -> searchFailedText
+                    PlaylistNotice.PLAY_FAILED -> playFailedText
+                }
+            snackbarHostState.showSnackbar(message)
+        }
     }
 }
 

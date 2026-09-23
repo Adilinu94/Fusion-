@@ -264,7 +264,11 @@ class PlaybackService : MediaLibraryService() {
                         // Grund im Log statt im Nirwana.
                         val applied = bitPerfectGateway.applyPreferredMixerAttributes()
                         if (!applied) {
-                            Log.w(TAG, "Bit-Perfect angefordert, Mixer-Attribute nicht gesetzt (kein USB-DAC, API < 34 oder Geraet lehnt ab)")
+                            Log.w(
+                                TAG,
+                                "Bit-Perfect angefordert, Mixer-Attribute nicht gesetzt " +
+                                    "(kein USB-DAC, API < 34 oder Geraet lehnt ab)",
+                            )
                         }
                     } else {
                         bitPerfectGateway.clearPreferredMixerAttributes()

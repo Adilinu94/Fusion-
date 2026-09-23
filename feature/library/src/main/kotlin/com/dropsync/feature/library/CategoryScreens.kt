@@ -3,6 +3,7 @@ package com.dropsync.feature.library
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -125,54 +126,20 @@ internal fun SongCategoryScreen(
         if (searchOpen) {
             InlineSearchField(query = query, onQueryChange = { query = it })
         }
-        Box(modifier = Modifier.weight(1f)) {
-            when (config.viewMode) {
-                LibraryViewMode.GRID, LibraryViewMode.GRID_SMALL -> {
-                    SongGrid(
-                        songs = visible,
-                        contentPadding = contentPadding,
-                        columns = if (config.viewMode == LibraryViewMode.GRID) 2 else 3,
-                        onPlay = { index ->
-                            viewModel.play(sorted, fullIndex(index))
-                            onOpenNowPlaying()
-                        },
-                        selectionActive = selectionActive,
-                        selectedIds = selectedIds,
-                        onLongPress = { viewModel.startSelection(it.mediaStoreId) },
-                        onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
-                    )
-                }
-
-                else -> {
-                    SongColumn(
-                        songs = visible,
-                        favoriteIds = favoriteIds,
-                        contentPadding = contentPadding,
-                        onPlay = { index ->
-                            viewModel.play(sorted, fullIndex(index))
-                            onOpenNowPlaying()
-                        },
-                        onToggleFavorite = viewModel::toggleFavorite,
-                        onPlayNext = viewModel::playNext,
-                        onAddToQueue = viewModel::addToQueue,
-                        onDetectDrops = viewModel::detectDrops,
-                        onAddToPlaylist = onAddToPlaylist,
-                        compact = config.viewMode == LibraryViewMode.LIST_COMPACT,
-                        // Poweramp "Alle Titel": kein Herz/⋮ je Zeile, Titel volle
-                        // Breite; Aktionen laufen ueber Langdruck-Auswahl.
-                        showTrailingActions = false,
-                        selectionActive = selectionActive,
-                        selectedIds = selectedIds,
-                        onLongPress = { viewModel.startSelection(it.mediaStoreId) },
-                        onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
-                        // Phase 8 (re-verdrahtet in Paket 4.18): Mini-Waveform
-                        // je Zeile aus dem Analyse-Cache.
-                        waveformFor = viewModel::waveformFor,
-                        currentProgress = currentProgress,
-                    )
-                }
-            }
-        }
+        CategorySongList(
+            viewModel = viewModel,
+            config = config,
+            visible = visible,
+            sorted = sorted,
+            fullIndex = ::fullIndex,
+            favoriteIds = favoriteIds,
+            contentPadding = contentPadding,
+            selectionActive = selectionActive,
+            selectedIds = selectedIds,
+            currentProgress = currentProgress,
+            onAddToPlaylist = onAddToPlaylist,
+            onOpenNowPlaying = onOpenNowPlaying,
+        )
         // Befund 6.1: Nachladen — nur sichtbar, wenn die Liste laenger ist
         // als die komponierte Seite (begrenzte Listen zeigen nie einen Knopf).
         if (sorted.size > visibleLimit) {
@@ -213,6 +180,75 @@ internal fun SongCategoryScreen(
             size = formatSize(song.sizeBytes),
             onDismiss = { infoSong = null },
         )
+    }
+}
+
+/**
+ * Listenkoerper der Titelkategorie: Grid oder Spalte je Ansichtsmodus
+ * (Extraktion aus [SongCategoryScreen], Detekt LongMethod).
+ */
+@Composable
+private fun ColumnScope.CategorySongList(
+    viewModel: LibraryViewModel,
+    config: CategoryListConfig,
+    visible: List<Song>,
+    sorted: List<Song>,
+    fullIndex: (Int) -> Int,
+    favoriteIds: Set<Long>,
+    contentPadding: PaddingValues,
+    selectionActive: Boolean,
+    selectedIds: Set<Long>,
+    currentProgress: CurrentProgress?,
+    onAddToPlaylist: (Song) -> Unit,
+    onOpenNowPlaying: () -> Unit,
+) {
+    Box(modifier = Modifier.weight(1f)) {
+        when (config.viewMode) {
+            LibraryViewMode.GRID, LibraryViewMode.GRID_SMALL -> {
+                SongGrid(
+                    songs = visible,
+                    contentPadding = contentPadding,
+                    columns = if (config.viewMode == LibraryViewMode.GRID) 2 else 3,
+                    onPlay = { index ->
+                        viewModel.play(sorted, fullIndex(index))
+                        onOpenNowPlaying()
+                    },
+                    selectionActive = selectionActive,
+                    selectedIds = selectedIds,
+                    onLongPress = { viewModel.startSelection(it.mediaStoreId) },
+                    onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
+                )
+            }
+
+            else -> {
+                SongColumn(
+                    songs = visible,
+                    favoriteIds = favoriteIds,
+                    contentPadding = contentPadding,
+                    onPlay = { index ->
+                        viewModel.play(sorted, fullIndex(index))
+                        onOpenNowPlaying()
+                    },
+                    onToggleFavorite = viewModel::toggleFavorite,
+                    onPlayNext = viewModel::playNext,
+                    onAddToQueue = viewModel::addToQueue,
+                    onDetectDrops = viewModel::detectDrops,
+                    onAddToPlaylist = onAddToPlaylist,
+                    compact = config.viewMode == LibraryViewMode.LIST_COMPACT,
+                    // Poweramp "Alle Titel": kein Herz/⋮ je Zeile, Titel volle
+                    // Breite; Aktionen laufen ueber Langdruck-Auswahl.
+                    showTrailingActions = false,
+                    selectionActive = selectionActive,
+                    selectedIds = selectedIds,
+                    onLongPress = { viewModel.startSelection(it.mediaStoreId) },
+                    onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
+                    // Phase 8 (re-verdrahtet in Paket 4.18): Mini-Waveform
+                    // je Zeile aus dem Analyse-Cache.
+                    waveformFor = viewModel::waveformFor,
+                    currentProgress = currentProgress,
+                )
+            }
+        }
     }
 }
 
