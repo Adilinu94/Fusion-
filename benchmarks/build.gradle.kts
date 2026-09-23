@@ -61,3 +61,16 @@ dependencies {
     implementation(libs.androidx.test.ext.junit)
     implementation(project(":app"))
 }
+
+/*
+ * Paket 1.6 (B-UI-5): Die getestete App-Variante (benchmarkRelease aus dem
+ * Baseline-Profile-Plugin) ist absichtlich R8-minifiziert; AGP verlangt dann
+ * Shrinking auch im Test-APK. Fuer die Macrobenchmark-Messung ist das nicht
+ * noetig: das Modul laeuft self-instrumenting (siehe experimentalProperties),
+ * die Testklassen liegen unminifiziert im Test-APK. Der Check wirft sonst
+ * beim blossen `assembleBenchmarkRelease` (CI-Gate) einen Fehler, ohne dass
+ * je etwas gemessen wird. Bewusst und dokumentiert deaktiviert.
+ */
+tasks.matching { it.name.startsWith("checkTestedAppObfuscation") }.configureEach {
+    enabled = false
+}

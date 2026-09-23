@@ -1,5 +1,7 @@
 // :app — verdrahtet Navigation und Hilt; enthaelt keine Fachlogik (Bauplan 3.2/5).
 // AGP 9: Kotlin-Support ist im Android-Plugin eingebaut (kein kotlin.android).
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
@@ -52,6 +54,32 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            // B-SEC-2: Release-Signierung aus Umgebungsvariablen bzw. einer
+            // lokalen (nicht eingecheckten) keystore.properties. Ohne
+            // Konfiguration bleibt der Build unsigned und laeuft weiter durch
+            // (CI-Builds muessen nicht signieren).
+            val keystorePropertiesFile = rootProject.file("keystore.properties")
+            if (keystorePropertiesFile.exists()) {
+                val keystoreProperties =
+                    Properties().apply {
+                        keystorePropertiesFile.inputStream().use { load(it) }
+                    }
+                signingConfig =
+                    signingConfigs.create("release") {
+                        storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                        storePassword = keystoreProperties.getProperty("storePassword")
+                        keyAlias = keystoreProperties.getProperty("keyAlias")
+                        keyPassword = keystoreProperties.getProperty("keyPassword")
+                    }
+            } else if (System.getenv("RELEASE_STORE_FILE") != null) {
+                signingConfig =
+                    signingConfigs.create("release") {
+                        storeFile = rootProject.file(System.getenv("RELEASE_STORE_FILE"))
+                        storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                        keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                        keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+                    }
+            }
         }
     }
 
@@ -62,6 +90,14 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    // Paket 1.5: Lint-Konfiguration einbinden. Bekannte, bewusste Abweichungen
+    // stehen dokumentiert in lint.xml; Warnungen brechen den Build jetzt wie
+    // Fehler (Ist-Stand: 0 Warnungen), damit neue Warnungen nicht einziehen.
+    lint {
+        lintConfig = file("lint.xml")
+        warningsAsErrors = true
     }
 }
 
@@ -125,6 +161,9 @@ dependencies {
     baselineProfile(project(":benchmarks"))
 
     testImplementation(libs.junit4)
+    // Paket 1.6: erste :app-Unit-Tests (Onboarding/Navigation) brauchen
+    // den Test-Dispatcher fuer viewModelScope.
+    testImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(libs.junit4)
     androidTestImplementation(libs.hilt.android.testing)
     kspAndroidTest(libs.hilt.compiler)

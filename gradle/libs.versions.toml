@@ -27,7 +27,10 @@ targetSdk = "37"
 coreKtx = "1.19.0"
 lifecycle = "2.11.0"
 activityCompose = "1.13.0"
-composeBom = "2026.06.01"
+# Paket 4.16: 2026.08.00 verifiziert (Google-Maven-Metadaten 2026-09-14):
+# Compose 1.12.0, material3 1.4.0 (stabil). M3 Expressive (1.5.0) existiert
+# weiterhin nur als Alpha (alpha28) und bleibt deshalb aussen vor.
+composeBom = "2026.08.00"
 navigationCompose = "2.9.8"
 room = "2.8.4"
 media3 = "1.11.0"
@@ -61,6 +64,8 @@ espresso = "3.7.0"
 # Screenshot-Tests (C1): Roborazzi rendert Compose ohne Emulator/Geraet.
 # (Paparazzi 1.x kennt AGP 9 nicht mehr — BaseExtension entfernt.)
 roborazzi = "1.74.0"
+# D3: Coverage-Gate der Kern-Module (domain:*/data:*).
+kover = "0.9.9"
 
 [libraries]
 # AndroidX Core & Lifecycle
@@ -145,4 +150,5 @@ room = { id = "androidx.room", version.ref = "room" }
 spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }
 detekt = { id = "dev.detekt", version.ref = "detekt" }
 roborazzi = { id = "io.github.takahirom.roborazzi", version.ref = "roborazzi" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }
 androidx-baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark" }

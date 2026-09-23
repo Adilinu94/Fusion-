@@ -2,6 +2,11 @@
 # Detekt 2.0 (alpha.6): Property-Namen der neuen DSL. buildUponDefaultConfig
 # = true, nur Abweichungen vom Default dokumentiert. Ziel: neue Code-Smells
 # blockieren, Altlasten stehen in baseline.xml.
+#
+# D2 (I-5): Die Qualitaetsregeln gelten fuer PRODUKTIVCODE; Tests sind
+# ausgenommen, wo sie nur Rauschen erzeugen (grosse Testklassen mit vielen
+# Faellen, Fake-Sammeldateien). Die CI-Bremse
+# (tools/detekt_baseline_count.py) haelt die Baseline-Anzahl fest.
 complexity:
   LongMethod:
     # TrainScreen/PlaybackService sind gross, aber strukturiert; die Baseline
@@ -16,6 +21,10 @@ complexity:
     allowedComplexity: 20
   NestedBlockDepth:
     allowedDepth: 6
+  LargeClass:
+    # D2: Testklassen sammeln bewusst viele Faelle; die Groessenregel gilt
+    # dem Produktivcode.
+    excludes: ['**/src/test/**', '**/src/androidTest/**']
 
 exceptions:
   SwallowedException:
@@ -47,3 +56,7 @@ naming:
     ignoreAnnotated: ['Composable']
   TopLevelPropertyNaming:
     active: false
+  MatchingDeclarationName:
+    # D2: Fake-/Helfer-Sammeldateien in Tests heissen nach ihrem Zweck, nicht
+    # nach der ersten Deklaration; die Regel gilt dem Produktivcode.
+    excludes: ['**/src/test/**', '**/src/androidTest/**']

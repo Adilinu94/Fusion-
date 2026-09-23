@@ -35,3 +35,9 @@ graphify-out/
 # dauerhaft gebrauchten Referenzbilder liegen kuratiert unter
 # docs/design/reference/, die Auswertungen als Dokument unter docs/qa/.
 ui-test/
+keystore.properties
+
+# Versehentlich extrahierte Artefakte (keine Quellen): einzelne .class-Datei
+# im Repo-Root sowie Tooling-Konfiguration ausserhalb des Projekts.
+androidx/
+.commandcode/
