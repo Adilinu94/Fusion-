@@ -32,6 +32,20 @@ class FakeLibraryBrowseRepository : LibraryBrowseRepository {
     /** C4: steuerbare Titel je Playlist (Abdeckung/Detail/Verwenden). */
     val songsByPlaylist = mutableMapOf<Long, MutableStateFlow<List<Song>>>()
 
+    /** Browse-Test: steuerbare Alben-/Interpreten-/Ordner-Listen. */
+    val albumsFlow = MutableStateFlow<List<Album>>(emptyList())
+
+    val artistsFlow = MutableStateFlow<List<Artist>>(emptyList())
+
+    val foldersFlow = MutableStateFlow<List<LibraryFolder>>(emptyList())
+
+    /** Browse-Test: steuerbare Songs je Album/Interpret/Ordner. */
+    val songsByAlbumMap = mutableMapOf<String, Flow<List<Song>>>()
+
+    val songsByArtistMap = mutableMapOf<String, Flow<List<Song>>>()
+
+    val songsByFolderMap = mutableMapOf<String, Flow<List<Song>>>()
+
     /** C4: setzt die Titel einer Playlist (legt den Eintrag bei Bedarf an). */
     fun setSongsOfPlaylist(
         playlistId: Long,
@@ -60,20 +74,21 @@ class FakeLibraryBrowseRepository : LibraryBrowseRepository {
         return AppResult.Success(songs)
     }
 
-    override val albums: Flow<List<Album>> = flowOf(emptyList())
-    override val artists: Flow<List<Artist>> = flowOf(emptyList())
+    override val albums: Flow<List<Album>> get() = albumsFlow
+    override val artists: Flow<List<Artist>> get() = artistsFlow
     override val genres: Flow<List<Genre>> = flowOf(emptyList())
-    override val folders: Flow<List<LibraryFolder>> = flowOf(emptyList())
+    override val folders: Flow<List<LibraryFolder>> get() = foldersFlow
     override val playStats: Flow<List<SongPlayStat>> = flowOf(emptyList())
     override val favorites: Flow<List<Song>> = flowOf(emptyList())
 
-    override fun songsByAlbum(album: String): Flow<List<Song>> = flowOf(emptyList())
+    override fun songsByAlbum(album: String): Flow<List<Song>> = songsByAlbumMap[album] ?: flowOf(emptyList())
 
-    override fun songsByArtist(artist: String): Flow<List<Song>> = flowOf(emptyList())
+    override fun songsByArtist(artist: String): Flow<List<Song>> = songsByArtistMap[artist] ?: flowOf(emptyList())
 
     override fun songsByGenre(genre: String): Flow<List<Song>> = flowOf(emptyList())
 
-    override fun songsByFolder(relativePath: String): Flow<List<Song>> = flowOf(emptyList())
+    override fun songsByFolder(relativePath: String): Flow<List<Song>> =
+        songsByFolderMap[relativePath] ?: flowOf(emptyList())
 
     override fun recentlyAdded(limit: Int): Flow<List<Song>> = flowOf(emptyList())
 
