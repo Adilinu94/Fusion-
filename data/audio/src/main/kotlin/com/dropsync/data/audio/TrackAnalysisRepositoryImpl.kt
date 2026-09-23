@@ -5,17 +5,12 @@ import android.util.Log
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.dropsync.core.common.AppResult
-import com.dropsync.core.common.Clock
-import com.dropsync.core.database.dao.MarkerDao
 import com.dropsync.core.database.dao.SongDao
 import com.dropsync.core.database.dao.TrackAnalysisDao
-import com.dropsync.core.database.entity.MarkerSongLinkEntity
 import com.dropsync.core.database.entity.SongEntity
-import com.dropsync.core.database.entity.SongMarkerEntity
-import com.dropsync.core.model.LinkMethod
-import com.dropsync.core.model.MarkerSource
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.AnalysisProfile
+import com.dropsync.domain.audio.DownbeatConfidence
 import com.dropsync.domain.audio.MixConfidence
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalysisRepository
@@ -43,8 +38,9 @@ import kotlinx.coroutines.sync.withPermit
  *   WorkManager-Dispatch davor. Ein Wechsel auf einen anderen Titel bricht
  *   den ueberholten Lauf ab (Cancel-und-Ueberholen statt KEEP-Schlange).
  * - **Aufschiebbar ueber [scheduler]:** Mix-Metadaten,
- *   [requestAnalysisForNewSongs] (Import-Bulk) und [requestOnsetDetection].
- *   Dort ist Latenz gleichgueltig und Prozess-Ueberleben nuetzlich.
+ *   [requestAnalysisForNewSongs] (Import-Bulk als Volldurchgang inklusive
+ *   Onset-Kandidaten) und [requestOnsetDetection]. Dort ist Latenz
+ *   gleichgueltig und Prozess-Ueberleben nuetzlich.
  *
  * Prozess-Tod im In-Process-Pfad ist unkritisch: das Ergebnis lebt
  * ausschliesslich im DB-Cache und der Lauf ist idempotent wiederholbar —
@@ -107,6 +103,13 @@ class TrackAnalysisRepositoryImpl(
                         keyConfidence = it.keyConfidence?.takeIf { mixCurrent },
                         integratedLufs = it.integratedLufs?.takeIf { mixCurrent },
                         truePeakDb = it.truePeakDb?.takeIf { mixCurrent },
+                        // B4: Rohwerte bleiben in der DB, das Snap-Gate
+                        // sitzt an der Leseseite (Muster MixConfidence).
+                        downbeatOffsetMs =
+                            DownbeatConfidence
+                                .acceptOffset(it.downbeatOffsetMs, it.downbeatConfidence)
+                                ?.takeIf { mixCurrent },
+                        downbeatConfidence = it.downbeatConfidence?.takeIf { mixCurrent },
                     )
                 }
         }
@@ -220,8 +223,15 @@ class TrackAnalysisRepositoryImpl(
             // Import-Bulk bleibt vollstaendig aufschiebbar: hunderte
             // In-Process-Laeufe wuerden dem aktuellen Titel die CPU nehmen.
             if (!waveformCurrent) {
-                scheduler.scheduleWaveformThenMix(song.mediaStoreId, alsoNeedsMix = !mixCurrent)
+                // A10: EIN Volldurchgang statt der frueheren Kette
+                // Waveform -> Metadaten (zwei Decodes pro Titel). Er
+                // liefert Waveform, Mix-Metadaten und Onset-Kandidaten;
+                // die Kandidaten warten als unbestaetigte
+                // AUTO_DETECTED-Marker auf die Review.
+                scheduler.scheduleFullAnalysis(song.mediaStoreId)
             } else if (!mixCurrent) {
+                // Nur die Mix-Stufe veraltet: die Waveform ist schon da,
+                // ein Volldurchgang wuerde sie unnoetig neu dekodieren.
                 scheduler.scheduleMixMetadata(song.mediaStoreId)
             }
         }
@@ -278,11 +288,9 @@ class TrackAnalysisWorker(
 
         fun trackAnalysisPersister(): TrackAnalysisPersister
 
+        fun onsetCandidateWriter(): OnsetCandidateWriter
+
         fun songDao(): SongDao
-
-        fun markerDao(): MarkerDao
-
-        fun clock(): Clock
     }
 
     override suspend fun doWork(): Result {
@@ -312,7 +320,7 @@ class TrackAnalysisWorker(
                     if (profile == AnalysisProfile.WAVEFORM_AND_ONSETS ||
                         profile == AnalysisProfile.FULL
                     ) {
-                        writeOnsetCandidates(deps, entity, result.value.onsetCandidatesMs)
+                        deps.onsetCandidateWriter().replacePending(entity, result.value.onsetCandidatesMs)
                     }
                     Result.success()
                 }
@@ -332,57 +340,9 @@ class TrackAnalysisWorker(
         }
     }
 
-    /**
-     * Schreibt Onset-Kandidaten als SongMarker(source = AUTO_DETECTED,
-     * isEnabled = false) + Link (Phase 5). Ein erneuter Lauf ersetzt die
-     * alten, noch unbestaetigten Kandidaten desselben Songs; bestaetigte
-     * Marker bleiben unberuehrt. Nie Automatik: aktiv wird ein Kandidat
-     * erst durch die bestaetigende Aktion in der Review-Liste.
-     */
-    private suspend fun writeOnsetCandidates(
-        deps: Dependencies,
-        song: SongEntity,
-        onsetCandidatesMs: List<Long>,
-    ) {
-        val markerDao = deps.markerDao()
-        markerDao.deletePendingBySourceForSong(song.mediaStoreId, MarkerSource.AUTO_DETECTED.name)
-        // Derselbe Fingerprint, den die Bibliothek fuer den Song fuehrt.
-        val fingerprint =
-            listOf(
-                song.relativePath,
-                song.displayName,
-                song.sizeBytes.toString(),
-                song.durationMs.toString(),
-            ).joinToString(FINGERPRINT_SEPARATOR)
-        onsetCandidatesMs.forEachIndexed { index, positionMs ->
-            val markerId =
-                markerDao.insert(
-                    SongMarkerEntity(
-                        sourceFingerprint = fingerprint,
-                        label = "Drop ${index + 1}",
-                        positionMs = positionMs,
-                        source = MarkerSource.AUTO_DETECTED.name,
-                        isEnabled = false,
-                        createdAtEpochMs = deps.clock().epochMillis(),
-                    ),
-                )
-            markerDao.insertLink(
-                MarkerSongLinkEntity(
-                    markerId = markerId,
-                    songId = song.mediaStoreId,
-                    linkMethod = LinkMethod.AUTO_DETECTED.name,
-                    linkedAtEpochMs = deps.clock().epochMillis(),
-                ),
-            )
-        }
-    }
-
     companion object {
         const val KEY_SONG_ID = "song_id"
         const val KEY_PROFILE = "profile"
-
-        /** Trennzeichen des Bibliotheks-Fingerprints (US, 0x1F). */
-        private const val FINGERPRINT_SEPARATOR = "\u001F"
     }
 }
 

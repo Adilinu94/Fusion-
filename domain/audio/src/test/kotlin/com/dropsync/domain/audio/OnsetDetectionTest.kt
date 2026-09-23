@@ -83,6 +83,25 @@ class OnsetDetectionTest {
     }
 
     @Test
+    fun `standardmaessig hoechstens drei Kandidaten`() {
+        // Fuenf deutliche Spruenge im Abstand von 400 Fenstern (10 s):
+        // der Default (A10, DEFAULT_MAX_CANDIDATES) deckelt auf drei —
+        // die Produkterwartung "meist zwei Drops" plus Reserve.
+        val energy =
+            buildList {
+                var level = 0.05
+                repeat(5) {
+                    repeat(400) { add(level) }
+                    level += 0.18
+                }
+            }
+
+        val onsets = OnsetDetection.detectOnsets(energy, windowMs)
+
+        assertEquals(3, onsets.size)
+    }
+
+    @Test
     fun `leere oder zu kurze Eingabe liefert keine Kandidaten`() {
         assertTrue(OnsetDetection.detectOnsets(emptyList(), windowMs).isEmpty())
         assertTrue(OnsetDetection.detectOnsets(listOf(0.5), windowMs).isEmpty())

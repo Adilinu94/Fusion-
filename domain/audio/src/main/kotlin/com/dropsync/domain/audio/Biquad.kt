@@ -134,6 +134,21 @@ class BiquadFilter(
         z2 = 0.0
     }
 
+    /**
+     * Einzelwert-Verarbeitung fuer Streaming-Akkumulatoren (z. B.
+     * `DownbeatAccumulator`); gleicher Zustand und gleiche Koeffizienten
+     * wie [processInterleaved]. Bewusst separat statt als Schleife ueber
+     * [processInterleaved]: der EQ-Hotpath soll keinen Aufruf-Overhead je
+     * Sample bekommen.
+     */
+    fun process(sample: Double): Double {
+        val c = coefficients
+        val output = c.b0 * sample + z1
+        z1 = c.b1 * sample - c.a1 * output + z2
+        z2 = c.b2 * sample - c.a2 * output
+        return output
+    }
+
     fun processInterleaved(
         samples: DoubleArray,
         count: Int,

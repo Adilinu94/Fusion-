@@ -106,6 +106,14 @@ class AudioPipeline
         /** Prozessorkette fuer den DefaultAudioSink (Reihenfolge ADR-0005). */
         fun audioProcessors(): Array<AudioProcessor> = arrayOf(masterProcessor)
 
+        /**
+         * ReplayGain-Zugang (Befund 2.10): der Service setzt pro
+         * Titelwechsel den Normalisierungsgain; null deaktiviert.
+         */
+        fun setReplayGainDb(db: Double?) {
+            masterProcessor.setReplayGainDb(db)
+        }
+
         private val mutableDuckingGain = MutableStateFlow(1.0)
 
         /** Aktueller Cue-Ducking-Gain am Preamp-Knoten (1.0 = kein Ducking). */

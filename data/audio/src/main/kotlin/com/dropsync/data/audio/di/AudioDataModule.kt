@@ -4,6 +4,7 @@ import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.EqPresetDao
+import com.dropsync.core.database.dao.MarkerDao
 import com.dropsync.core.database.dao.TrackAnalysisDao
 import com.dropsync.data.audio.AudioEngineRepositoryImpl
 import com.dropsync.data.audio.AudioPipeline
@@ -11,6 +12,7 @@ import com.dropsync.data.audio.BitPerfectGateway
 import com.dropsync.data.audio.DeferredAnalysisScheduler
 import com.dropsync.data.audio.DeviceProfileStore
 import com.dropsync.data.audio.DspSettingsStore
+import com.dropsync.data.audio.OnsetCandidateWriter
 import com.dropsync.data.audio.OutputDeviceMonitor
 import com.dropsync.data.audio.OutputProfileController
 import com.dropsync.data.audio.TrackAnalysisPersister
@@ -84,6 +86,17 @@ object AudioDataModule {
     ): TrackAnalysisPersister =
         TrackAnalysisPersister(
             dao = trackAnalysisDao,
+            clock = clock,
+        )
+
+    @Provides
+    @Singleton
+    fun provideOnsetCandidateWriter(
+        markerDao: MarkerDao,
+        clock: Clock,
+    ): OnsetCandidateWriter =
+        OnsetCandidateWriter(
+            markerDao = markerDao,
             clock = clock,
         )
 

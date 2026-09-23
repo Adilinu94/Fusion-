@@ -174,6 +174,15 @@ internal fun SystemEffectsSection(
             onCheckedChange = { on -> viewModel.update { it.copy(useSystemEffects = on) } },
             description = stringResource(R.string.audio_musicfx_desc),
         )
+        // ReplayGain (Befund 2.10): Normalisierung auf -18 LUFS aus der
+        // vorhandenen Loudness-Analyse; Titel ohne Analyse bleiben, wie
+        // sie sind.
+        SwitchRow(
+            label = stringResource(R.string.audio_replaygain_enable),
+            checked = config.replayGainEnabled,
+            onCheckedChange = { on -> viewModel.update { it.copy(replayGainEnabled = on) } },
+            description = stringResource(R.string.audio_replaygain_desc),
+        )
     }
 }
 

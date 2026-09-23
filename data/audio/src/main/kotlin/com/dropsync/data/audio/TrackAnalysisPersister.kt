@@ -49,6 +49,8 @@ class TrackAnalysisPersister(
                 keyConfidence = analysis.keyConfidence,
                 integratedLufs = analysis.integratedLufs,
                 truePeakDb = analysis.truePeakDb,
+                downbeatOffsetMs = analysis.downbeatOffsetMs,
+                downbeatConfidence = analysis.downbeatConfidence,
                 mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
                 analyzedAtEpochMs = now,
             ) > 0
@@ -79,6 +81,8 @@ class TrackAnalysisPersister(
                 keyConfidence = if (includesMix) analysis.keyConfidence else previous?.keyConfidence,
                 integratedLufs = if (includesMix) analysis.integratedLufs else previous?.integratedLufs,
                 truePeakDb = if (includesMix) analysis.truePeakDb else previous?.truePeakDb,
+                downbeatOffsetMs = if (includesMix) analysis.downbeatOffsetMs else previous?.downbeatOffsetMs,
+                downbeatConfidence = if (includesMix) analysis.downbeatConfidence else previous?.downbeatConfidence,
             ),
         )
         return true
@@ -107,6 +111,8 @@ class TrackAnalysisPersister(
                 keyConfidence = null,
                 integratedLufs = null,
                 truePeakDb = null,
+                downbeatOffsetMs = null,
+                downbeatConfidence = null,
                 mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
                 analyzedAtEpochMs = now,
             )
@@ -128,6 +134,8 @@ class TrackAnalysisPersister(
                 keyConfidence = previous?.keyConfidence,
                 integratedLufs = previous?.integratedLufs,
                 truePeakDb = previous?.truePeakDb,
+                downbeatOffsetMs = previous?.downbeatOffsetMs,
+                downbeatConfidence = previous?.downbeatConfidence,
             ),
         )
     }

@@ -249,6 +249,53 @@ class TrackAnalysisPriorityPathTest {
             assertTrue(scheduler.prewarmScheduled.isEmpty())
         }
 
+    @Test
+    fun `import-bulk plant fuer neue titel den volldurchgang`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+
+            repo.requestAnalysisForNewSongs(listOf(song(1L), song(2L)))
+            advanceUntilIdle()
+
+            // A10: EIN Decode pro neuem Titel (Waveform + Mix + Onsets)
+            // statt der frueheren Kette aus zwei Decodes.
+            assertEquals(listOf(1L, 2L), scheduler.fullScheduled)
+            assertTrue(scheduler.mixScheduled.isEmpty())
+            // Der Import-Bulk bleibt vollstaendig aufschiebbar.
+            assertTrue(analyzer.calls.isEmpty())
+        }
+
+    @Test
+    fun `import-bulk plant nur metadaten wenn die waveform schon aktuell ist`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+            // Waveform aktuell, Mix-Stufe veraltet: ein Volldurchgang
+            // wuerde die Waveform unnoetig neu dekodieren.
+            dao.put(currentEntity(songId = 2L).copy(mixAnalyzerVersion = 0))
+
+            repo.requestAnalysisForNewSongs(listOf(song(2L)))
+            advanceUntilIdle()
+
+            assertEquals(listOf(2L), scheduler.mixScheduled)
+            assertTrue(scheduler.fullScheduled.isEmpty())
+        }
+
+    @Test
+    fun `import-bulk plant nichts fuer vollstaendig gecachte titel`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+            dao.put(currentEntity(songId = 2L))
+
+            repo.requestAnalysisForNewSongs(listOf(song(2L)))
+            advanceUntilIdle()
+
+            assertTrue(scheduler.fullScheduled.isEmpty())
+            assertTrue(scheduler.mixScheduled.isEmpty())
+        }
+
     private fun song(id: Long) =
         Song(
             mediaStoreId = id,
@@ -340,6 +387,8 @@ private class FakePriorityDao : TrackAnalysisDao {
         keyConfidence: Float?,
         integratedLufs: Float?,
         truePeakDb: Float?,
+        downbeatOffsetMs: Long?,
+        downbeatConfidence: Float?,
         mixAnalyzerVersion: Int,
         analyzedAtEpochMs: Long,
     ): Int {
@@ -352,6 +401,8 @@ private class FakePriorityDao : TrackAnalysisDao {
                 keyConfidence = keyConfidence,
                 integratedLufs = integratedLufs,
                 truePeakDb = truePeakDb,
+                downbeatOffsetMs = downbeatOffsetMs,
+                downbeatConfidence = downbeatConfidence,
                 mixAnalyzerVersion = mixAnalyzerVersion,
                 analyzedAtEpochMs = analyzedAtEpochMs,
             ),
@@ -380,7 +431,7 @@ private object FixedPriorityClock : Clock {
 /** Haelt fest, was in die aufschiebbare Lane gegeben wurde. */
 private class RecordingScheduler : DeferredAnalysisScheduler {
     val mixScheduled = mutableListOf<Long>()
-    val chainScheduled = mutableListOf<Pair<Long, Boolean>>()
+    val fullScheduled = mutableListOf<Long>()
     val prewarmScheduled = mutableListOf<Long>()
     val onsetScheduled = mutableListOf<Long>()
 
@@ -388,11 +439,8 @@ private class RecordingScheduler : DeferredAnalysisScheduler {
         mixScheduled += songId
     }
 
-    override fun scheduleWaveformThenMix(
-        songId: Long,
-        alsoNeedsMix: Boolean,
-    ) {
-        chainScheduled += songId to alsoNeedsMix
+    override fun scheduleFullAnalysis(songId: Long) {
+        fullScheduled += songId
     }
 
     override fun schedulePrewarmWaveform(songId: Long) {

@@ -57,6 +57,13 @@ class MasterDspProcessor : BaseAudioProcessor() {
     @Volatile
     private var restDuckingGain: Double = 1.0
 
+    // ReplayGain (Befund 2.10): linearer Normalisierungsgain des
+    // aktuellen Titels; null = keine Analyse/ausgeschaltet -> 1.0.
+    // Wird pro Titelwechsel vom Service gesetzt (nicht audio-sicher,
+    // aber der Wechsel passiert nie mitten im Block).
+    @Volatile
+    private var replayGainDb: Double? = null
+
     private var inputEncoding: PcmEncoding = PcmEncoding.PCM_16
     private var sampleRateHz = 0
     private var channelCount = 0
@@ -102,6 +109,15 @@ class MasterDspProcessor : BaseAudioProcessor() {
      */
     fun setRestDuckingGain(gain: Double) {
         restDuckingGain = gain.coerceIn(0.0, 1.0)
+    }
+
+    /**
+     * ReplayGain-Normalisierung des aktuellen Titels in dB (Befund 2.10).
+     * `null` schaltet die Normalisierung aus (Titel ohne Analyse).
+     * Wirkt nur, wenn `DspConfig.replayGainEnabled` gesetzt ist.
+     */
+    fun setReplayGainDb(db: Double?) {
+        replayGainDb = db
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -157,6 +173,11 @@ class MasterDspProcessor : BaseAudioProcessor() {
             }
         }
 
+        // ReplayGain-Normalisierung (Befund 2.10): konstanter linearer
+        // Gain des aktuellen Titels, unabhaengig von config.enabled —
+        // wie das Ducking am Preamp-Knoten.
+        applyReplayGain(samples, count)
+
         val active = config.enabled
         if (active) {
             processTonal(samples, count)
@@ -198,6 +219,25 @@ class MasterDspProcessor : BaseAudioProcessor() {
             val output = replaceOutputBuffer(outCount * Float.SIZE_BYTES)
             PcmCodec.encodeFloat(outSamples, outCount, output)
             output.flip()
+        }
+    }
+
+    /**
+     * ReplayGain-Normalisierung (Befund 2.10): konstanter linearer Gain des
+     * aktuellen Titels, unabhaengig von `config.enabled` — wie das Ducking am
+     * Preamp-Knoten. Ausgelagert, damit [queueInput] unter der
+     * Komplexitaetsgrenze bleibt.
+     */
+    private fun applyReplayGain(
+        data: DoubleArray,
+        count: Int,
+    ) {
+        if (!config.replayGainEnabled) return
+        val db = replayGainDb ?: return
+        val gain = AudioMath.dbToLinear(db)
+        if (gain == 1.0) return
+        for (i in 0 until count) {
+            data[i] *= gain
         }
     }
 

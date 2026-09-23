@@ -88,11 +88,13 @@
     <!-- Bit-Perfect -->
     <string name="audio_bitperfect_title">Bit-Perfect</string>
     <string name="audio_bitperfect_enable">Bit-Perfect-Ausgabe</string>
-    <string name="audio_bitperfect_desc">Nur USB-DAC ab Android 14. Umgeht derzeit nur die DSP-Kette. Bitgenaue Mixer-Ausgabe ist noch nicht umgesetzt. Über Bluetooth unmöglich.</string>
+    <string name="audio_bitperfect_desc">Nur USB-DAC ab Android 14. Umgeht die DSP-Kette und fordert bitgenaue Mixer-Attribute vom USB-Ausgang an (greift nach Neustart der Wiedergabe). Über Bluetooth unmöglich.</string>
     <string name="audio_bitperfect_device">Gerät: %1$s</string>
     <string name="audio_bitperfect_rates">Abtastraten: %1$s</string>
     <string name="audio_bitperfect_encodings">Kodierungen: %1$s</string>
     <string name="audio_bitperfect_unavailable">Kein Bit-Perfect-fähiger USB-DAC verbunden (benötigt Android 14+).</string>
+    <string name="audio_replaygain_enable">ReplayGain / Lautheits-Normalisierung</string>
+    <string name="audio_replaygain_desc">Gleicht alle Titel auf −18 LUFS über die integrierte Lautheits-Analyse an. Titel ohne Analyse bleiben unverändert.</string>
 
     <!-- Ausgabeprofil -->
     <string name="audio_profile_title">Ausgabeprofil</string>

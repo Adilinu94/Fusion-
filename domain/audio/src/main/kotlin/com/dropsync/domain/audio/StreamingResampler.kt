@@ -130,16 +130,17 @@ class StreamingResampler(
         var sum = 0.0
         var weightSum = 0.0
         for (k in center - halfTaps + 1..center + halfTaps) {
-            if (k < 0 || k >= data.size) continue
-            val x = (at - k) * cutoff
-            val sinc = if (x == 0.0) 1.0 else sin(PI * x) / (PI * x)
-            // Hann-Fenster ueber der Tap-Distanz.
+            val inBounds = k >= 0 && k < data.size
             val distance = (at - k) / halfTaps
-            if (distance <= -1.0 || distance >= 1.0) continue
-            val window = 0.5 * (1.0 + kotlin.math.cos(PI * distance))
-            val weight = sinc * window
-            sum += data[k] * weight
-            weightSum += weight
+            // Hann-Fenster ueber der Tap-Distanz; ausserhalb liegt kein Beitrag.
+            if (inBounds && distance > -1.0 && distance < 1.0) {
+                val x = (at - k) * cutoff
+                val sinc = if (x == 0.0) 1.0 else sin(PI * x) / (PI * x)
+                val window = 0.5 * (1.0 + kotlin.math.cos(PI * distance))
+                val weight = sinc * window
+                sum += data[k] * weight
+                weightSum += weight
+            }
         }
         // Normalisierung ueber die Fenstersumme haelt den DC-Gain bei 1.
         return if (weightSum == 0.0) 0.0 else sum / weightSum

@@ -25,26 +25,33 @@ interface DeferredAnalysisScheduler {
     fun scheduleMixMetadata(songId: Long)
 
     /**
-     * Waveform und danach Metadaten als Kette — fuer den Import-Bulk, der
-     * bewusst NICHT in-process laeuft (hunderte Titel wuerden dem
-     * sichtbaren Titel die CPU nehmen).
+     * Volldurchgang fuer den Import-Bulk (A10): Waveform, Mix-Metadaten
+     * und Onset-Kandidaten in EINEM Decode. Ersetzt die fruehere Kette
+     * `WAVEFORM_ONLY -> MIX_METADATA`, die pro importiertem Titel zwei
+     * volle Decodes kostete. Der Import-Bulk laeuft bewusst NICHT
+     * in-process (hunderte Titel wuerden dem sichtbaren Titel die CPU
+     * nehmen) und braucht die Zwei-Stufen-Latenz der Prioritaets-Lane
+     * nicht.
      */
-    fun scheduleWaveformThenMix(
-        songId: Long,
-        alsoNeedsMix: Boolean,
-    )
+    fun scheduleFullAnalysis(songId: Long)
 
     /**
      * Nur die Waveform, ohne Mix-Metadaten: Prewarming der naechsten
      * Queue-Titel (Umbauplan Phase 4). Getrennt von
-     * [scheduleWaveformThenMix], weil Prewarming die Anzeige vorbereitet
+     * [scheduleFullAnalysis], weil Prewarming die Anzeige vorbereitet
      * und nicht die Bibliothek vervollstaendigt — ein zusaetzlicher
      * Metadatenlauf je vorbereitetem Titel waere Arbeit fuer Werte, die
      * noch niemand sehen will.
      */
     fun schedulePrewarmWaveform(songId: Long)
 
-    /** Vom Nutzer angestossene Onset-Erkennung (Volldurchgang). */
+    /**
+     * Vom Nutzer angestossene Onset-Erkennung (Volldurchgang). Importierte
+     * Titel bekommen Kandidaten automatisch ueber [scheduleFullAnalysis];
+     * dieser Aufruf bleibt fuer den manuellen Weg ("Drops automatisch
+     * erkennen") und fuer Wiederholungen, wenn die Kandidaten schon
+     * weggeraeumt wurden.
+     */
     fun scheduleOnsetDetection(songId: Long)
 }
 
@@ -65,27 +72,14 @@ class WorkManagerAnalysisScheduler(
             )
     }
 
-    override fun scheduleWaveformThenMix(
-        songId: Long,
-        alsoNeedsMix: Boolean,
-    ) {
-        val continuation =
-            WorkManager
-                .getInstance(context)
-                .beginUniqueWork(
-                    "track_analysis_$songId",
-                    ExistingWorkPolicy.KEEP,
-                    request(songId, AnalysisProfile.WAVEFORM_ONLY),
-                )
-        if (alsoNeedsMix) {
-            // Die Kette garantiert die Reihenfolge: Stufe 2 aktualisiert eine
-            // Zeile, die Stufe 1 erst anlegen muss.
-            continuation
-                .then(request(songId, AnalysisProfile.MIX_METADATA))
-                .enqueue()
-        } else {
-            continuation.enqueue()
-        }
+    override fun scheduleFullAnalysis(songId: Long) {
+        WorkManager
+            .getInstance(context)
+            .enqueueUniqueWork(
+                "track_analysis_$songId",
+                ExistingWorkPolicy.KEEP,
+                request(songId, AnalysisProfile.FULL),
+            )
     }
 
     override fun scheduleOnsetDetection(songId: Long) {
@@ -99,7 +93,7 @@ class WorkManagerAnalysisScheduler(
     }
 
     /**
-     * Derselbe Work-Name wie [scheduleWaveformThenMix] plus
+     * Derselbe Work-Name wie [scheduleFullAnalysis] plus
      * [ExistingWorkPolicy.KEEP]: laeuft fuer den Titel schon eine Analyse,
      * wird der Prewarm verworfen statt zu duplizieren. Genau das ist hier
      * richtig — ein Prewarm hat nie Vorrang.

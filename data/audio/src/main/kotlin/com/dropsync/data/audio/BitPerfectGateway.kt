@@ -93,4 +93,58 @@ class BitPerfectGateway
                 AudioFormat.ENCODING_PCM_FLOAT -> "32-Bit Float"
                 else -> "Encoding $encoding"
             }
+
+        /**
+         * Verdrahtung (Befund 2.8): aktiviert Bit-Perfect am ersten
+         * USB-Ausgang via `setPreferredMixerAttributes` (>= API 34). Wird
+         * nach Service-Neustart beim ersten Track-Start gerufen; die Wahl
+         * des Attributs ueberlaesst der AudioMixer dem Geraet.
+         *
+         * @return true, wenn die Attribute gesetzt werden konnten.
+         */
+        fun applyPreferredMixerAttributes(): Boolean {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return false
+            val usbDevice =
+                audioManager
+                    .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                            it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                    } ?: return false
+            val mixerAttributes =
+                audioManager.getSupportedMixerAttributes(usbDevice).firstOrNull() ?: return false
+            return runCatching {
+                audioManager.setPreferredMixerAttributes(
+                    android.media.AudioAttributes
+                        .Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    usbDevice,
+                    mixerAttributes,
+                )
+            }.getOrDefault(false)
+        }
+
+        /** Gibt die bevorzugten Mixer-Attribute wieder frei (Ausschalten). */
+        fun clearPreferredMixerAttributes() {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+            val usbDevice =
+                audioManager
+                    .getDevices(AudioManager.GET_DEVICES_OUTPUTS)
+                    .firstOrNull {
+                        it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
+                            it.type == AudioDeviceInfo.TYPE_USB_HEADSET
+                    } ?: return
+            runCatching {
+                audioManager.clearPreferredMixerAttributes(
+                    android.media.AudioAttributes
+                        .Builder()
+                        .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                        .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .build(),
+                    usbDevice,
+                )
+            }
+        }
     }

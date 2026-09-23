@@ -7,7 +7,7 @@ import com.dropsync.domain.audio.OutputDeviceKind
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
@@ -31,7 +31,8 @@ class OutputProfileControllerTest {
                 MutableStateFlow(
                     OutputDeviceSnapshot(OutputDeviceKind.SPEAKER, "Lautsprecher", null),
                 )
-            val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+            val job = SupervisorJob()
+            val scope = CoroutineScope(job + Dispatchers.IO)
             val controller =
                 OutputProfileController(
                     deviceSnapshots = devices,
@@ -57,7 +58,14 @@ class OutputProfileControllerTest {
             awaitUntil { controller.activeProfileKey.value == "BLUETOOTH_A2DP:aa_bb" }
             awaitUntil { settingsStore.config.first().preampDb == -4.0 }
             assertEquals(-4.0, settingsStore.config.first().preampDb, 1e-9)
-            scope.cancel()
+            // Letzter Save-Through: erst wenn die Aenderung im Profil steht,
+            // ist kein Schreibvorgang mehr unterwegs. Ein Abbruch mitten im
+            // DataStore-Write laesst den Temp-File-Rename scheitern und
+            // landet als uncaught exception im NAECHSTEN Test (flaky suite,
+            // kein Fehler des Controllers).
+            settingsStore.save(DspConfig(preampDb = 7.0))
+            awaitUntil { profileStore.read("BLUETOOTH_A2DP:aa_bb")?.preampDb == 7.0 }
+            job.cancelAndJoin()
         }
 
     /** Echtzeit-Polling, weil DataStore auf echtem IO emittiert. */

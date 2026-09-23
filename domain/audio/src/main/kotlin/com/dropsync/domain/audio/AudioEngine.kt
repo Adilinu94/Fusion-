@@ -67,6 +67,13 @@ data class DspConfig(
      */
     val bitPerfectEnabled: Boolean = false,
     /**
+     * ReplayGain/Loudness-Normalisierung (Befund 2.10): Die Loudness-
+     * Analyse (integratedLufs) liegt pro Titel vor; wenn aktiv, gleicht
+     * der Processor den Pegel auf die ReplayGain-Referenz (-18 LUFS) an.
+     * Titel ohne Analyse bleiben unveraendert.
+     */
+    val replayGainEnabled: Boolean = false,
+    /**
      * Ducking der Pausenmusik in dB (Design Phase 7): -12..0, Default -8.
      * Kombiniert mit dem Cue-Ducking ueber `min()` - es duckt nie doppelt,
      * der staerkere Wert gewinnt.

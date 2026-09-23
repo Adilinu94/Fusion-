@@ -56,6 +56,11 @@ interface TrackAnalysisRepository {
      * Batches statt N Einzel-Queries bei Tausenden von Titeln).
      * Vollstaendig aufschiebbar: hunderte Titel duerfen dem laufenden
      * Song nie die CPU nehmen.
+     *
+     * Neue Titel bekommen dabei ohne Nutzeraktion auch Drop-Vorschlaege
+     * (A10): die Kandidaten landen als unbestaetigte
+     * `AUTO_DETECTED`-Marker in der Review-Liste — sichtbar, aber nie
+     * automatisch aktiv.
      */
     suspend fun requestAnalysisForNewSongs(songs: List<Song>)
 
@@ -124,6 +129,16 @@ data class TrackAnalysis(
     val integratedLufs: Float? = null,
     /** True-Peak-Naeherung in dBFS; null wenn kein Peak vorhanden. */
     val truePeakDb: Float? = null,
+    /**
+     * Phase des Beat-Rasters in ms (B4/RC-22): Position des Kick/Bass
+     * innerhalb eines Beat-Intervalls, aus der Low-Band-Energie
+     * geschaetzt ([DownbeatAccumulator]). **Kein musikalischer
+     * Taktanfang** (Umbauplan Phase 3.2). null = unbekannt; dann rastet
+     * das Marker-Snap nicht (statt auf ein geratenes Raster).
+     */
+    val downbeatOffsetMs: Long? = null,
+    /** Konfidenz der Raster-Schaetzung 0..1; null wenn kein Offset. */
+    val downbeatConfidence: Float? = null,
 )
 
 /** Ein Waveform-Bucket: Mono-Min/Max, auf Int8 normalisiert. */
@@ -151,8 +166,13 @@ object WaveformCodec {
     /** Version des Analyse-Algorithmus; invalidiert den Cache bei Aenderung. */
     const val ANALYZER_VERSION: Int = 4
 
-    /** Version der unabhaengig gecachten BPM-/Key-/Lautheitsanalyse. */
-    const val MIX_ANALYZER_VERSION: Int = 1
+    /**
+     * Version der unabhaengig gecachten BPM-/Key-/Lautheitsanalyse.
+     *
+     * 2: Raster-Offset (B4) ergaenzt — Mix-Metadaten alter Laeufe werden
+     *    neu berechnet, die Waveform bleibt gueltig (ADR-0015).
+     */
+    const val MIX_ANALYZER_VERSION: Int = 2
 
     fun pack(buckets: List<WaveformBucket>): ByteArray {
         val bytes = ByteArray(buckets.size * 2)

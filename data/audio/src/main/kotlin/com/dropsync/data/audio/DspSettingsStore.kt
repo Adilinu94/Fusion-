@@ -1,10 +1,12 @@
 package com.dropsync.data.audio
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.doublePreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,7 +25,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.dspDataStore by preferencesDataStore(name = "audio_dsp")
+private val Context.dspDataStore by preferencesDataStore(
+    name = "audio_dsp",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * Persistenz der DSP-Konfiguration (Plan Phase 2). EQ-Baender liegen als
@@ -59,6 +64,7 @@ class DspSettingsStore
         private val mixPresetKey = stringPreferencesKey("mix_preset")
         private val useSystemEffectsKey = booleanPreferencesKey("use_system_effects")
         private val bitPerfectKey = booleanPreferencesKey("bit_perfect_enabled")
+        private val replayGainKey = booleanPreferencesKey("replay_gain_enabled")
 
         val config: Flow<DspConfig> = context.dspDataStore.data.map(::readConfig)
 
@@ -87,6 +93,7 @@ class DspSettingsStore
                 prefs[mixPresetKey] = sanitized.mixPreset.name
                 prefs[useSystemEffectsKey] = sanitized.useSystemEffects
                 prefs[bitPerfectKey] = sanitized.bitPerfectEnabled
+                prefs[replayGainKey] = sanitized.replayGainEnabled
             }
         }
 
@@ -126,6 +133,7 @@ class DspSettingsStore
                     mixPreset = enumOr(prefs[mixPresetKey], MixPreset.FADE),
                     useSystemEffects = prefs[useSystemEffectsKey] ?: false,
                     bitPerfectEnabled = prefs[bitPerfectKey] ?: false,
+                    replayGainEnabled = prefs[replayGainKey] ?: false,
                 ),
             )
 

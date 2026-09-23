@@ -13,6 +13,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.AnalysisProfile
 import com.dropsync.domain.audio.ChromaAccumulator
+import com.dropsync.domain.audio.DownbeatAccumulator
 import com.dropsync.domain.audio.EnergyAccumulator
 import com.dropsync.domain.audio.LoudnessAccumulator
 import com.dropsync.domain.audio.OnsetDetection
@@ -98,6 +99,10 @@ class TrackAnalyzerImpl(
             // Mix-Metadaten (Phase 1) laufen additiv im selben Durchgang.
             val tempo = if (includesMix) TempoAccumulator(sampleRateHz = sampleRate) else null
             val chroma = if (includesMix) ChromaAccumulator(sampleRateHz = sampleRate) else null
+            // B4: Raster-Offset fuer das Marker-Snap. Puffert die
+            // Low-Band-Huellkurve und wertet sie in finalize mit dem
+            // finalen BPM aus (das steht erst am Ende fest).
+            val downbeat = if (includesMix) DownbeatAccumulator(sampleRateHz = sampleRate) else null
             // Lautheit/True-Peak laufen additiv (Offtrack Phase 8); die
             // Werte werden persistiert, aber erst nach Opt-in angewendet.
             val loudness = if (includesMix) LoudnessAccumulator(sampleRateHz = sampleRate) else null
@@ -107,7 +112,7 @@ class TrackAnalyzerImpl(
             try {
                 codec.configure(format, null, null, 0)
                 codec.start()
-                timing = drainDecoder(extractor, codec, waveform, energy, tempo, chroma, loudness)
+                timing = drainDecoder(extractor, codec, waveform, energy, tempo, chroma, downbeat, loudness)
             } finally {
                 codec.release()
             }
@@ -115,6 +120,8 @@ class TrackAnalyzerImpl(
             val finalizeStartNs = System.nanoTime()
             val tempoEstimate = tempo?.finishEstimate()
             val keyEstimate = chroma?.finishEstimate()
+            // B4: braucht das FINALE BPM (erst hier bekannt).
+            val downbeatEstimate = downbeat?.finish(tempoEstimate?.bpm)
             val analysis =
                 TrackAnalysis(
                     waveformBuckets = waveform?.finish().orEmpty(),
@@ -137,6 +144,8 @@ class TrackAnalyzerImpl(
                     keyConfidence = keyEstimate?.confidence,
                     integratedLufs = loudness?.integratedLufs(),
                     truePeakDb = loudness?.let { truePeakDb(it.truePeakLinear()) },
+                    downbeatOffsetMs = downbeatEstimate?.offsetMs,
+                    downbeatConfidence = downbeatEstimate?.confidence,
                 )
             val finalizeMs = (System.nanoTime() - finalizeStartNs) / NS_PER_MS
             val totalMs = (System.nanoTime() - totalStartNs) / NS_PER_MS
@@ -172,6 +181,7 @@ class TrackAnalyzerImpl(
         energy: EnergyAccumulator?,
         tempo: TempoAccumulator?,
         chroma: ChromaAccumulator?,
+        downbeat: DownbeatAccumulator?,
         loudness: LoudnessAccumulator?,
     ): AnalysisTiming {
         val bufferInfo = MediaCodec.BufferInfo()
@@ -248,7 +258,7 @@ class TrackAnalyzerImpl(
                                 repeat(outputChannels) { ch ->
                                     sum += floats.get(frame * outputChannels + ch).toDouble()
                                 }
-                                feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
+                                feed(sum / outputChannels, waveform, energy, tempo, chroma, downbeat, loudness)
                             }
                             accumulateNs += System.nanoTime() - accumulateStartNs
                             sampleCount += frames
@@ -261,7 +271,7 @@ class TrackAnalyzerImpl(
                                 repeat(outputChannels) { ch ->
                                     sum += shorts.get(frame * outputChannels + ch) / 32_768.0
                                 }
-                                feed(sum / outputChannels, waveform, energy, tempo, chroma, loudness)
+                                feed(sum / outputChannels, waveform, energy, tempo, chroma, downbeat, loudness)
                             }
                             accumulateNs += System.nanoTime() - accumulateStartNs
                             sampleCount += frames
@@ -288,12 +298,14 @@ class TrackAnalyzerImpl(
         energy: EnergyAccumulator?,
         tempo: TempoAccumulator?,
         chroma: ChromaAccumulator?,
+        downbeat: DownbeatAccumulator?,
         loudness: LoudnessAccumulator?,
     ) {
         waveform?.accept(monoSample)
         energy?.accept(monoSample)
         tempo?.accept(monoSample)
         chroma?.accept(monoSample)
+        downbeat?.accept(monoSample)
         loudness?.accept(monoSample)
     }
 

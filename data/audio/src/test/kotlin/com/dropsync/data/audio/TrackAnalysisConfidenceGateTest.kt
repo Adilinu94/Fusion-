@@ -7,6 +7,7 @@ import com.dropsync.core.database.dao.TrackAnalysisDao
 import com.dropsync.core.database.entity.TrackAnalysisEntity
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.AnalysisProfile
+import com.dropsync.domain.audio.DownbeatConfidence
 import com.dropsync.domain.audio.MixConfidence
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalyzer
@@ -178,23 +179,71 @@ class TrackAnalysisConfidenceGateTest {
             assertNull(requireNotNull(repository.observeAnalysis(SONG_ID).first()).bpm)
         }
 
+    @Test
+    fun `unsicherer raster-offset faellt weg der rohwert bleibt`() =
+        runTest {
+            // B4: Das Snap-Gate sitzt an der Leseseite; genau auf der
+            // Schwelle haelt der Offset, knapp darunter faellt er.
+            dao.emit(
+                entity(
+                    downbeatOffsetMs = 137L,
+                    downbeatConfidence = DownbeatConfidence.MIN_SNAP_CONFIDENCE,
+                ),
+            )
+            assertEquals(
+                137L,
+                requireNotNull(repository.observeAnalysis(SONG_ID).first()).downbeatOffsetMs,
+            )
+
+            dao.emit(
+                entity(
+                    downbeatOffsetMs = 137L,
+                    downbeatConfidence = DownbeatConfidence.MIN_SNAP_CONFIDENCE - 0.01f,
+                ),
+            )
+            val gated = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            assertNull(gated.downbeatOffsetMs)
+            // Die Rohkonfidenz bleibt sichtbar (spaetere Kalibrierung
+            // braucht keine Neuanalyse).
+            assertNotNull(gated.downbeatConfidence)
+        }
+
+    @Test
+    fun `veraltete mix-version verbirgt auch den raster-offset`() =
+        runTest {
+            dao.emit(
+                entity(
+                    downbeatOffsetMs = 137L,
+                    downbeatConfidence = 0.9f,
+                    mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION - 1,
+                ),
+            )
+
+            assertNull(requireNotNull(repository.observeAnalysis(SONG_ID).first()).downbeatOffsetMs)
+        }
+
     private fun entity(
         bpm: Float? = null,
         bpmConfidence: Float? = null,
         camelotKey: String? = null,
         keyConfidence: Float? = null,
+        downbeatOffsetMs: Long? = null,
+        downbeatConfidence: Float? = null,
+        mixAnalyzerVersion: Int = WaveformCodec.MIX_ANALYZER_VERSION,
     ) = TrackAnalysisEntity(
         songId = SONG_ID,
         waveformData = byteArrayOf(-10, 10, -20, 20),
         bucketCount = 2,
         analyzerVersion = WaveformCodec.ANALYZER_VERSION,
-        mixAnalyzerVersion = WaveformCodec.MIX_ANALYZER_VERSION,
+        mixAnalyzerVersion = mixAnalyzerVersion,
         analyzedAtEpochMs = 1_000L,
         peakLinear = 0.8,
         bpm = bpm,
         bpmConfidence = bpmConfidence,
         camelotKey = camelotKey,
         keyConfidence = keyConfidence,
+        downbeatOffsetMs = downbeatOffsetMs,
+        downbeatConfidence = downbeatConfidence,
     )
 
     private companion object {
@@ -220,10 +269,7 @@ private object FixedClock : Clock {
 private object NoopScheduler : DeferredAnalysisScheduler {
     override fun scheduleMixMetadata(songId: Long) = Unit
 
-    override fun scheduleWaveformThenMix(
-        songId: Long,
-        alsoNeedsMix: Boolean,
-    ) = Unit
+    override fun scheduleFullAnalysis(songId: Long) = Unit
 
     override fun schedulePrewarmWaveform(songId: Long) = Unit
 
@@ -249,6 +295,8 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
         keyConfidence: Float?,
         integratedLufs: Float?,
         truePeakDb: Float?,
+        downbeatOffsetMs: Long?,
+        downbeatConfidence: Float?,
         mixAnalyzerVersion: Int,
         analyzedAtEpochMs: Long,
     ): Int {
@@ -261,6 +309,8 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
                 keyConfidence = keyConfidence,
                 integratedLufs = integratedLufs,
                 truePeakDb = truePeakDb,
+                downbeatOffsetMs = downbeatOffsetMs,
+                downbeatConfidence = downbeatConfidence,
                 mixAnalyzerVersion = mixAnalyzerVersion,
                 analyzedAtEpochMs = analyzedAtEpochMs,
             )

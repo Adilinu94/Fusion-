@@ -22,8 +22,13 @@ object OnsetDetection {
      */
     const val DEFAULT_MIN_SPACING_MS: Long = 5_000L
 
-    /** Begrenzung auf die staerksten N Kandidaten pro Track (3-5). */
-    const val DEFAULT_MAX_CANDIDATES: Int = 5
+    /**
+     * Begrenzung auf die staerksten N Kandidaten pro Track. Drei statt
+     * frueher fuenf (A10): die Produkterwartung ist "meist zwei Drops",
+     * drei lassen Luft fuer einen dritten und halten die Review-Liste
+     * trotzdem kurz — jeder weitere Kandidat ist ein Fehlalarm mehr.
+     */
+    const val DEFAULT_MAX_CANDIDATES: Int = 3
 
     /**
      * Absoluter Mindestsprung der RMS-Energie (normalisiert auf [0..1]):
