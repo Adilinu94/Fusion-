@@ -9,7 +9,13 @@ import androidx.room.PrimaryKey
 /** Trainingssession (Abschnitt 6); Zeitzone fuer Kalenderansichten. */
 @Entity(
     tableName = "workout_sessions",
-    indices = [Index(value = ["started_at_epoch_ms"])],
+    indices = [
+        Index(value = ["started_at_epoch_ms"]),
+        // D5/A5: die Session-Suche filtert nach status ('ACTIVE' fuer die
+        // laufende, 'COMPLETED' fuer "letzte Session"); EXPLAIN-Nachweis im
+        // Migrationstest, v14 -> v15.
+        Index(value = ["status"]),
+    ],
 )
 data class WorkoutSessionEntity(
     @PrimaryKey(autoGenerate = true)
@@ -337,8 +343,13 @@ data class PersonalRecordEntity(
     /** Stabiler String aus PrType. */
     @ColumnInfo(name = "type")
     val type: String,
+    /**
+     * A1/5.7: null bei PRs aus dem flachen Satz-Log — dort gibt es keine
+     * Session (jeder flache Satz zaehlt als eigene Mini-Session). Der
+     * Session-Pfad traegt weiter die echte Session-ID.
+     */
     @ColumnInfo(name = "achieved_session_id")
-    val achievedSessionId: Long,
+    val achievedSessionId: Long?,
     @ColumnInfo(name = "achieved_cluster_id")
     val achievedClusterId: Long?,
     @ColumnInfo(name = "value_long")

@@ -1,6 +1,10 @@
 package com.dropsync.app
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -26,10 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.LocalReducedMotion
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 
 /**
  * First-Run-Onboarding (Ausbauplan B3): drei Seiten ohne Wischzwang —
@@ -53,13 +61,26 @@ fun OnboardingScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        AnimatedContent(targetState = page, label = "onboarding-page") { current ->
+        // Reduced Motion: Seitenwechsel ohne Transition (sofortiger Inhalt).
+        // transitionSpec ist kein @Composable-Kontext: Wert vorher einfangen.
+        val reducedMotion = LocalReducedMotion.current
+        AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                if (reducedMotion) {
+                    (fadeIn(snap()) togetherWith fadeOut(snap()))
+                } else {
+                    fadeIn() togetherWith fadeOut()
+                }
+            },
+            label = "onboarding-page",
+        ) { current ->
             val (icon, titleRes, descRes) = ONBOARDING_PAGES[current]
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(
                     painterResource(icon),
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = rememberAccentTextColor(),
                     modifier = Modifier.size(72.dp),
                 )
                 Spacer(Modifier.height(24.dp))
@@ -78,7 +99,17 @@ fun OnboardingScreen(
             }
         }
         Spacer(Modifier.height(32.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // C5 (U-8): Die Punkte sind Zierde — TalkBack bekommt stattdessen
+        // einen Satz ("Seite 2 von 3").
+        val pageIndicator =
+            stringResource(R.string.onboarding_page_indicator, page + 1, ONBOARDING_PAGES.size)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier =
+                Modifier.semantics(mergeDescendants = true) {
+                    contentDescription = pageIndicator
+                },
+        ) {
             ONBOARDING_PAGES.indices.forEach { index ->
                 Surface(
                     color =

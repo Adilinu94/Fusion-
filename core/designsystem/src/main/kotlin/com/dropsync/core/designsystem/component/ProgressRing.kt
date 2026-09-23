@@ -2,6 +2,7 @@ package com.dropsync.core.designsystem.component
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 
 /**
  * Kreisfoermiger Fortschrittsring (Design.txt "Progress Ring / Spring").
@@ -44,14 +46,21 @@ fun ProgressRing(
     excessColor: Color = MaterialTheme.colorScheme.secondary,
     content: @Composable BoxScope.() -> Unit = {},
 ) {
+    // Reduced Motion: Ring springt direkt auf den Endwert.
+    val ringSpec =
+        if (rememberReducedMotion()) {
+            snap<Float>()
+        } else {
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow)
+        }
     val animated by animateFloatAsState(
         targetValue = progress.coerceIn(0f, 1f),
-        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = ringSpec,
         label = "progressRing",
     )
     val animatedExcess by animateFloatAsState(
         targetValue = excessProgress.coerceIn(0f, 1f),
-        animationSpec = spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessLow),
+        animationSpec = ringSpec,
         label = "progressRingExcess",
     )
     Box(modifier = modifier.size(ringSize), contentAlignment = Alignment.Center) {

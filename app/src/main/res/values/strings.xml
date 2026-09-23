@@ -29,4 +29,10 @@
     <string name="onboarding_next">Next</string>
     <string name="onboarding_start">Get started</string>
     <string name="onboarding_skip">Skip</string>
+    <!-- C5 (U-8): the dots are decoration; TalkBack gets a sentence. -->
+    <string name="onboarding_page_indicator">Page %1$d of %2$d</string>
+
+    <!-- C2: Skip waehrend eines scharfen DropSync-Plans (5.10). -->
+    <string name="app_dropsync_skipped">DropSync skipped</string>
+    <string name="app_undo">Undo</string>
 </resources>

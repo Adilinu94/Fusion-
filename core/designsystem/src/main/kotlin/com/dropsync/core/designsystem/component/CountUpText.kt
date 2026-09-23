@@ -1,6 +1,7 @@
 package com.dropsync.core.designsystem.component
 
 import androidx.compose.animation.core.animateIntAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -9,6 +10,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 
 /**
  * Zahl, die beim Erscheinen/Aendern hochzaehlt (Design.txt "Count-Up") - fuer
@@ -26,7 +28,7 @@ fun CountUpText(
 ) {
     val animated by animateIntAsState(
         targetValue = targetValue,
-        animationSpec = tween(durationMillis = durationMillis),
+        animationSpec = if (rememberReducedMotion()) snap() else tween(durationMillis = durationMillis),
         label = "countUp",
     )
     Text(text = formatter(animated), style = style, color = color, modifier = modifier)

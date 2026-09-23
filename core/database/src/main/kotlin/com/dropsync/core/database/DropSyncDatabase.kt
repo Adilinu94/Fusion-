@@ -93,7 +93,7 @@ import com.dropsync.core.database.entity.WorkoutSessionEntity
         FlatSetEntity::class,
         ExerciseTargetEntity::class,
     ],
-    version = 11,
+    version = 15,
     exportSchema = true,
 )
 abstract class DropSyncDatabase : RoomDatabase() {

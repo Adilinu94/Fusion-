@@ -25,6 +25,10 @@ interface FlatSetDao {
     @Query("SELECT * FROM flat_sets WHERE exercise_id = :exerciseId ORDER BY logged_at_epoch_ms DESC")
     fun observeForExercise(exerciseId: Long): Flow<List<FlatSetEntity>>
 
+    /** Alle Saetze einer Uebung fuer die PR-Neuberechnung (A1). */
+    @Query("SELECT * FROM flat_sets WHERE exercise_id = :exerciseId ORDER BY logged_at_epoch_ms")
+    suspend fun getForExercise(exerciseId: Long): List<FlatSetEntity>
+
     /** Alle Saetze, neueste zuerst (Verlauf). */
     @Query("SELECT * FROM flat_sets ORDER BY logged_at_epoch_ms DESC")
     fun observeAll(): Flow<List<FlatSetEntity>>

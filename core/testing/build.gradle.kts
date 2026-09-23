@@ -18,12 +18,17 @@ kotlin {
 
 dependencies {
     api(project(":core:common"))
-    // Fakes implementieren Domain-Schnittstellen (Sensor/Workout/Timer/Health).
+    // Fakes implementieren Domain-Schnittstellen (Sensor/Workout/Timer/Health/Settings).
     api(project(":core:model"))
     api(project(":domain:sensor"))
     api(project(":domain:workout"))
     api(project(":domain:timer"))
     api(project(":domain:health"))
+    api(project(":domain:settings"))
+    // Drop-Auto-Schalter (MP-13): Feature-Workout-Tests brauchen den Port.
+    api(project(":domain:playback"))
+    // C7: FakeLibraryBrowseRepository fuer Settings-/Workout-Tests.
+    api(project(":domain:library"))
 
     api(libs.kotlinx.coroutines.test)
     api(libs.junit4)

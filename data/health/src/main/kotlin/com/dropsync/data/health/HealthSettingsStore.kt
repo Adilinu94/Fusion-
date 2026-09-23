@@ -1,8 +1,10 @@
 package com.dropsync.data.health
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -12,7 +14,10 @@ import kotlinx.coroutines.flow.map
 import javax.inject.Inject
 import javax.inject.Singleton
 
-private val Context.healthDataStore by preferencesDataStore(name = "health_sync")
+private val Context.healthDataStore by preferencesDataStore(
+    name = "health_sync",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * Sync-Schalter (B5, Google-Vorgabe „Sync with Health Connect"): Ablauf wie

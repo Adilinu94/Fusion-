@@ -162,6 +162,13 @@ interface PlayStatDao {
     @Query("SELECT * FROM play_stats WHERE song_id = :songId")
     suspend fun getStat(songId: Long): PlayStatEntity?
 
+    /**
+     * D5/A1: Statistiken fuer mehrere Titel in EINER IN-Query — der Shuffle
+     * braucht sonst je Titel eine eigene Abfrage (N+1).
+     */
+    @Query("SELECT * FROM play_stats WHERE song_id IN (:songIds)")
+    suspend fun getStats(songIds: List<Long>): List<PlayStatEntity>
+
     /** Alle Statistiken; Grundlage der Sortierung nach Zaehler/zuletzt gespielt. */
     @Query("SELECT * FROM play_stats")
     fun observeAll(): Flow<List<PlayStatEntity>>
@@ -248,6 +255,10 @@ interface PlaylistDao {
     @Query("SELECT * FROM playlist_items WHERE playlist_id = :playlistId ORDER BY position")
     suspend fun getItemsOnce(playlistId: Long): List<PlaylistItemEntity>
 
+    /** Song-IDs, die bereits in der Playlist stehen (Duplikat-Schutz, UI-Befund 4.2.2). */
+    @Query("SELECT song_id FROM playlist_items WHERE playlist_id = :playlistId")
+    suspend fun getSongIdsOnce(playlistId: Long): List<Long>
+
     @Query("SELECT COALESCE(MAX(position), -1) FROM playlist_items WHERE playlist_id = :playlistId")
     suspend fun maxPosition(playlistId: Long): Int
 
@@ -256,4 +267,18 @@ interface PlaylistDao {
             "WHERE pi.playlist_id = :playlistId ORDER BY pi.position",
     )
     fun observeSongsOfPlaylist(playlistId: Long): Flow<List<SongEntity>>
+
+    /**
+     * D5/A7: Titel aller Playlists mit diesem Label in EINER Abfrage — die
+     * Planung lud vorher je Playlist eine eigene Query (N+1). Reihenfolge
+     * wie die Einzelabfragen: Playlistname, dann Position; Duplikate ueber
+     * mehrere Playlists entfernt der Aufrufer (distinctBy Song-ID).
+     */
+    @Query(
+        "SELECT s.* FROM songs s " +
+            "INNER JOIN playlist_items pi ON pi.song_id = s.media_store_id " +
+            "INNER JOIN playlists p ON p.id = pi.playlist_id " +
+            "WHERE p.label = :label ORDER BY p.name COLLATE NOCASE, pi.position",
+    )
+    suspend fun getSongsForLabelOnce(label: String): List<SongEntity>
 }

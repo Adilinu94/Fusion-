@@ -7,6 +7,8 @@ import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.model.AccentColor
@@ -20,6 +22,14 @@ internal val BrandBlack = Color(0xFF101010)
 internal val BrandWhite = Color(0xFFF7FBFF)
 internal val BrandLime = Color(0xFFDFFF2F)
 
+/**
+ * C8 (5.2): Lime ist als Schrift/Icon auf hellem Grund unlesbar (~1,1:1);
+ * fuer Text und Symbole im hellen Modus gilt dieser abgedunkelte Ton
+ * (>= 4,5:1 auf Weiss). Fuellflaechen (Buttons, Fortschritt, Waveform)
+ * bleiben [BrandLime].
+ */
+internal val BrandLimeTextLight = Color(0xFF667500)
+
 // Erweiterte Palette der Flowtimer-Integration (CONTEXT E4d): Violett traegt
 // die semantische Rolle "Ziele" (secondary), der Grund hellt auf 141414 auf,
 // genau ein heller Tile pro Screen laeuft in Helllila (secondaryContainer).
@@ -28,6 +38,13 @@ internal val BrandLime = Color(0xFFDFFF2F)
 internal val BrandViolet = Color(0xFF756FFA)
 internal val BrandGround = Color(0xFF141414)
 internal val BrandLilac = Color(0xFFE7E6FB)
+
+/** C8: Violett fuer Text/Icons im hellen Modus (>= 4,5:1 auf Weiss). */
+internal val BrandVioletTextLight = Color(0xFF5A54D6)
+
+// C8: heller Lime-Ton fuer den Now-Playing-Tile (primaryContainer).
+internal val LimeContainerLight = Color(0xFFF2FFC2)
+internal val LimeContainerDark = Color(0xFF262B0E)
 
 private val SoftGray = Color(0xFFF5F5F5)
 private val BorderGray = Color(0xFFEAEAEA)
@@ -67,8 +84,12 @@ internal val LightColors =
     lightColorScheme(
         primary = BrandLime,
         onPrimary = BrandBlack,
-        secondary = BrandBlack,
+        primaryContainer = LimeContainerLight,
+        onPrimaryContainer = BrandBlack,
+        secondary = BrandVioletTextLight,
         onSecondary = BrandWhite,
+        secondaryContainer = BrandLilac,
+        onSecondaryContainer = BrandGround,
         tertiary = BrandBlack,
         onTertiary = BrandWhite,
         background = BrandWhite,
@@ -88,6 +109,8 @@ internal val DarkColors =
     darkColorScheme(
         primary = BrandLime,
         onPrimary = BrandBlack,
+        primaryContainer = LimeContainerDark,
+        onPrimaryContainer = BrandLime,
         secondary = BrandViolet,
         onSecondary = BrandGround,
         secondaryContainer = BrandLilac,
@@ -119,6 +142,17 @@ private val BrandShapes =
     )
 
 /**
+ * C8 (5.2): Akzentfarbe fuer Text und Symbole auf neutralem Grund.
+ * Hell: abgedunkeltes Lime (AA auf Weiss), Dunkel: Marken-Lime. Fuell-
+ * flaechen (Buttons, Fortschritt, Waveform) bleiben `colorScheme.primary`.
+ */
+val LocalAccentTextColor = staticCompositionLocalOf { BrandLime }
+
+/** Bequemer Lesezugriff auf [LocalAccentTextColor] (Muster ReducedMotion). */
+@Composable
+fun rememberAccentTextColor(): Color = LocalAccentTextColor.current
+
+/**
  * FlowRep-Designsystem (Bauplan 2.6, Phase 1 A).
  *
  * Markenidentitaet: feste Schwarz/Weiss/Lime-Palette, Lime nur fuer primaere
@@ -146,10 +180,20 @@ fun FlowRepTheme(
 ) {
     val (primary, onPrimary) = accentPair(accent)
     val base = if (darkTheme) DarkColors else LightColors
-    MaterialTheme(
-        colorScheme = base.copy(primary = primary, onPrimary = onPrimary),
-        shapes = BrandShapes,
-        typography = DropSyncTypography,
-        content = content,
-    )
+    // C8: Akzent-Textfarbe je Modus; der blaue Akzent bleibt in beiden Modi
+    // lesbar, Lime wird hell abgedunkelt.
+    val accentText =
+        when {
+            accent != AccentColor.LIME -> primary
+            darkTheme -> BrandLime
+            else -> BrandLimeTextLight
+        }
+    CompositionLocalProvider(LocalAccentTextColor provides accentText) {
+        MaterialTheme(
+            colorScheme = base.copy(primary = primary, onPrimary = onPrimary),
+            shapes = BrandShapes,
+            typography = DropSyncTypography,
+            content = content,
+        )
+    }
 }

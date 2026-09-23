@@ -50,6 +50,16 @@ data class TrackAnalysisEntity(
     /** True-Peak-Naeherung in dBFS (Offtrack Phase 8). */
     @ColumnInfo(name = "true_peak_db")
     val truePeakDb: Float? = null,
+    /**
+     * Phase des Beat-Rasters in ms (B4/RC-22; kein Taktanfang, siehe
+     * `DownbeatAccumulator`). null = unbekannt/Altbestand; das Snap
+     * rastet dann nicht.
+     */
+    @ColumnInfo(name = "downbeat_offset_ms")
+    val downbeatOffsetMs: Long? = null,
+    /** Konfidenz der Raster-Schaetzung 0..1 (B4/RC-22). */
+    @ColumnInfo(name = "downbeat_confidence")
+    val downbeatConfidence: Float? = null,
 ) {
     // ByteArray braucht inhaltsbasierte Gleichheit (data class vergleicht Referenzen).
     override fun equals(other: Any?): Boolean {
@@ -67,7 +77,9 @@ data class TrackAnalysisEntity(
             camelotKey == other.camelotKey &&
             keyConfidence == other.keyConfidence &&
             integratedLufs == other.integratedLufs &&
-            truePeakDb == other.truePeakDb
+            truePeakDb == other.truePeakDb &&
+            downbeatOffsetMs == other.downbeatOffsetMs &&
+            downbeatConfidence == other.downbeatConfidence
     }
 
     override fun hashCode(): Int {
@@ -84,6 +96,8 @@ data class TrackAnalysisEntity(
         result = 31 * result + (keyConfidence?.hashCode() ?: 0)
         result = 31 * result + (integratedLufs?.hashCode() ?: 0)
         result = 31 * result + (truePeakDb?.hashCode() ?: 0)
+        result = 31 * result + (downbeatOffsetMs?.hashCode() ?: 0)
+        result = 31 * result + (downbeatConfidence?.hashCode() ?: 0)
         return result
     }
 }

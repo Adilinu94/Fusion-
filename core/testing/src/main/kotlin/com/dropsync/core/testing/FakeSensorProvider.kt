@@ -1,5 +1,6 @@
 package com.dropsync.core.testing
 
+import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
@@ -81,6 +82,12 @@ class FakeCalibrationProfileRepository(
     var noteValidatedSetCalls = 0
     var rollbackCalls = 0
 
+    /** T-10: steuerbarer Fehler fuer [load]; null = Erfolg. */
+    var loadFailure: AppError? = null
+
+    /** T-10: steuerbarer Fehler fuer [save]; null = Erfolg. */
+    var saveFailure: AppError? = null
+
     fun put(profile: CalibrationProfile) {
         profiles[profile.exerciseId to profile.deviceId] = profile
     }
@@ -88,7 +95,10 @@ class FakeCalibrationProfileRepository(
     override suspend fun load(
         exerciseId: Long,
         deviceId: String,
-    ): AppResult<CalibrationProfile?> = AppResult.Success(profiles[exerciseId to deviceId])
+    ): AppResult<CalibrationProfile?> {
+        loadFailure?.let { return AppResult.failure(it) }
+        return AppResult.Success(profiles[exerciseId to deviceId])
+    }
 
     override suspend fun loadHistory(
         exerciseId: Long,
@@ -99,6 +109,7 @@ class FakeCalibrationProfileRepository(
         )
 
     override suspend fun save(profile: CalibrationProfile): AppResult<Unit> {
+        saveFailure?.let { return AppResult.failure(it) }
         profiles[profile.exerciseId to profile.deviceId] = profile
         saved += profile
         return AppResult.Success(Unit)

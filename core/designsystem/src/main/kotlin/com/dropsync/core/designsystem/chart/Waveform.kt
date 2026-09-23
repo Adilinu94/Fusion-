@@ -26,6 +26,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.input.pointer.pointerInput
@@ -33,6 +34,7 @@ import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.flow.collectLatest
@@ -180,6 +182,19 @@ private const val PROGRESS_SNAP_THRESHOLD = 0.05f
 
 /** Maximaler Abstand (als Anteil der Breite) zum Start des Marker-Drags. */
 private const val MARKER_DRAG_SLOP = 0.03f
+
+/**
+ * Trefferzone fuer den Marker-Tap (P2-21, UI-Handbuch 14.4): etwas
+ * grosszuegiger als der Drag-Slop, damit der Finger den duennen Tick
+ * sicher trifft, ohne das normale Seek-Tippen zu verschlucken.
+ */
+private const val MARKER_TAP_SLOP = 0.04f
+
+/** Radius des Ziel-Diamanten (P2-21) in dp. */
+private val MARKER_TARGET_RADIUS = 4.dp
+
+/** Deckkraft der Vorschlags-Ticks relativ zur Markerfarbe (P2-21). */
+private const val SUGGESTION_ALPHA = 0.45f
 
 /**
  * Breite der Marker-Ticks: 3 dp bleiben optisch duenn, zusammen mit der
@@ -599,6 +614,12 @@ object RunningWaveformMapping {
  * [progressFraction] ist eine Lambda (P1-Fix, siehe [Waveform]): die Position
  * wird erst im Zeichenblock gelesen, damit der 200-ms-Ticker nicht die
  * Composition des ganzen Player-Screens invalidiert.
+ *
+ * P2-21: [suggestionFractions] zeichnet unbestaetigte Onset-Vorschlaege als
+ * gedaempfte Ticks, [targetFraction] markiert das bevorzugte DropSync-Ziel
+ * mit einem Diamanten ueber dem Tick. Ist [onMarkerTap] gesetzt, gewinnt der
+ * Marker-Tap gegen den Seek — ein Tipp in die Trefferzone oeffnet das
+ * Marker-Sheet statt zu springen (UI-Handbuch 14.4).
  */
 @Composable
 fun RunningWaveform(
@@ -610,6 +631,10 @@ fun RunningWaveform(
     markerFractions: List<Float> = emptyList(),
     onLongPress: ((Float) -> Unit)? = null,
     onMoveMarker: ((Float) -> Unit)? = null,
+    suggestionFractions: List<Float> = emptyList(),
+    targetFraction: Float? = null,
+    onMarkerTap: ((Float) -> Unit)? = null,
+    markerTapSlopFraction: Float = MARKER_TAP_SLOP,
     contentDescription: String? = null,
     playedColor: Color = Color(0xFF009FE3),
     upcomingColor: Color = Color(0xFF65C0E4),
@@ -661,6 +686,13 @@ fun RunningWaveform(
                         steps = 0,
                     )
                 stateDescription = "$percent%"
+                // C9 (P-8, UI-Handbuch 19.4): Slider-Fallback — TalkBack
+                // kann den Fortschritt setzen ("nach rechts wischen"), auch
+                // ohne Zeigergeste. Der Wert kommt in Prozent (0..100).
+                setProgress { target ->
+                    onSeek((target / 100f).coerceIn(0f, 1f))
+                    true
+                }
             }
         } else {
             modifier
@@ -692,10 +724,30 @@ fun RunningWaveform(
     Canvas(
         modifier =
             semanticsModifier
-                .pointerInput(amplitudes, onLongPress != null) {
+                .pointerInput(
+                    amplitudes,
+                    onLongPress != null,
+                    onMarkerTap != null,
+                    markerFractions,
+                    suggestionFractions,
+                ) {
                     detectTapGestures(
                         onTap = { offset ->
-                            onSeek(globalFractionAt(offset.x, size.width.toFloat()))
+                            val width = size.width.toFloat()
+                            val fraction = globalFractionAt(offset.x, width)
+                            // P2-21: erst der Marker-Tap, dann der Seek.
+                            val markerHit =
+                                onMarkerTap != null &&
+                                    WaveformMapping.nearestMarkerIndex(
+                                        markerFractions + suggestionFractions,
+                                        fraction,
+                                        markerTapSlopFraction,
+                                    ) >= 0
+                            if (markerHit && onMarkerTap != null) {
+                                onMarkerTap.invoke(fraction)
+                            } else {
+                                onSeek(fraction)
+                            }
                         },
                         onLongPress =
                             onLongPress?.let { callback ->
@@ -808,6 +860,26 @@ fun RunningWaveform(
             )
         }
 
+        // Vorschlaege (P2-21, UI-Handbuch 14.3): unbestaetigte Onset-Kandidaten
+        // als gedaempfte, duennere Ticks UNTER den aktiven Markern.
+        val suggestionStroke = (MARKER_TICK_WIDTH.toPx() * 0.66f).coerceAtLeast(1f)
+        suggestionFractions.forEach { suggestion ->
+            val x = suggestion.coerceIn(0f, 1f) * virtual - scroll
+            if (x in 0f..width) {
+                drawLine(
+                    color =
+                        markerColor.copy(
+                            alpha =
+                                appear * SUGGESTION_ALPHA *
+                                    RunningWaveformMapping.edgeAlpha(x, width, fade),
+                        ),
+                    start = Offset(x, baseline - topHeight),
+                    end = Offset(x, baseline + gap + mirrorHeight),
+                    strokeWidth = suggestionStroke,
+                )
+            }
+        }
+
         // Marker als Overlay, nicht als Teil der Balkenschleife.
         markerFractions.forEach { marker ->
             val x = marker.coerceIn(0f, 1f) * virtual - scroll
@@ -818,6 +890,26 @@ fun RunningWaveform(
                     end = Offset(x, baseline + gap + mirrorHeight),
                     strokeWidth = MARKER_TICK_WIDTH.toPx(),
                 )
+            }
+        }
+
+        // Bevorzugtes DropSync-Ziel (P2-21): Diamant ueber dem Tick, damit
+        // das Ziel nicht nur ueber die Legende unterscheidbar ist.
+        targetFraction?.let { target ->
+            val x = target.coerceIn(0f, 1f) * virtual - scroll
+            if (x in 0f..width) {
+                val radius = MARKER_TARGET_RADIUS.toPx()
+                val centerY = radius + 1.dp.toPx()
+                val alpha = appear * RunningWaveformMapping.edgeAlpha(x, width, fade)
+                val diamond =
+                    Path().apply {
+                        moveTo(x, centerY - radius)
+                        lineTo(x + radius, centerY)
+                        lineTo(x, centerY + radius)
+                        lineTo(x - radius, centerY)
+                        close()
+                    }
+                drawPath(path = diamond, color = markerColor.copy(alpha = alpha))
             }
         }
     }

@@ -114,6 +114,51 @@ class ThemeColorSnapshotTest {
         assertEquals(24, Spacing.space24.value.toInt())
         assertEquals(32, Spacing.space32.value.toInt())
     }
+
+    // ---- C8 (U-1/U-12): Kontrast im hellen Modus ----
+
+    @Test
+    fun `C8 Lime-Text im hellen Modus erfuellt AA auf Weiss`() {
+        val ratio = contrastRatio(BrandLimeTextLight, BrandWhite)
+        org.junit.Assert.assertTrue(
+            "Kontrast $ratio unterschreitet 4.5:1 (WCAG AA)",
+            ratio >= 4.5,
+        )
+    }
+
+    @Test
+    fun `C8 Lime-Text bleibt auf dem hellen Tile lesbar`() {
+        val ratio = contrastRatio(BrandLimeTextLight, LimeContainerLight)
+        org.junit.Assert.assertTrue(
+            "Kontrast $ratio unterschreitet 4.5:1 (WCAG AA)",
+            ratio >= 4.5,
+        )
+    }
+
+    @Test
+    fun `C8 Ziel-Violett im hellen Modus erfuellt AA auf Weiss`() {
+        val ratio = contrastRatio(BrandVioletTextLight, BrandWhite)
+        org.junit.Assert.assertTrue(
+            "Kontrast $ratio unterschreitet 4.5:1 (WCAG AA)",
+            ratio >= 4.5,
+        )
+        assertEquals(BrandVioletTextLight, LightColors.secondary)
+        assertEquals(BrandLilac, LightColors.secondaryContainer)
+    }
+
+    @Test
+    fun `C8 Lime bleibt Fuellfarbe in beiden Modi`() {
+        assertEquals(BrandLime, LightColors.primary)
+        assertEquals(BrandLime, DarkColors.primary)
+    }
+
+    @Test
+    fun `C8 primaryContainer ist je Modus gesetzt statt M3-Lila`() {
+        assertEquals(LimeContainerLight, LightColors.primaryContainer)
+        assertEquals(BrandBlack, LightColors.onPrimaryContainer)
+        assertEquals(LimeContainerDark, DarkColors.primaryContainer)
+        assertEquals(BrandLime, DarkColors.onPrimaryContainer)
+    }
 }
 
 /** Relative Luminanz nach WCAG 2.x (sRGB, gamma-entzerrt). */

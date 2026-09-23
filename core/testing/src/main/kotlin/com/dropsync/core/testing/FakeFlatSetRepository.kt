@@ -15,7 +15,10 @@ class FakeFlatSetRepository : FlatSetRepository {
 
     override fun observeSetsForExercise(exerciseId: Long): Flow<List<FlatSet>> = flowOf(emptyList())
 
-    override fun observeAllSets(): Flow<List<FlatSet>> = flowOf(emptyList())
+    /** C6: steuerbarer Satz-Strom (Fehler-/Ladepfade testen). */
+    var allSetsFlow: Flow<List<FlatSet>> = flowOf(emptyList())
+
+    override fun observeAllSets(): Flow<List<FlatSet>> = allSetsFlow
 
     override suspend fun getLastSet(exerciseId: Long): AppResult<FlatSet?> = AppResult.Success(null)
 

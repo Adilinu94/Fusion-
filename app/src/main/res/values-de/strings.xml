@@ -3,7 +3,7 @@
     <string name="nav_train">Train</string>
     <string name="nav_music">Musik</string>
     <string name="nav_history">Verlauf</string>
-    <string name="nav_settings">Optionen</string>
+    <string name="nav_settings">Einstellungen</string>
 
     <!-- TalkBack-Zustandsansage der Hauptnavigation (B-UI-3). Stand vorher
          hartcodiert deutsch in DropSyncApp.kt. -->
@@ -27,4 +27,10 @@
     <string name="onboarding_next">Weiter</string>
     <string name="onboarding_start">Los geht’s</string>
     <string name="onboarding_skip">Überspringen</string>
+    <!-- C5 (U-8): Die Punkte sind Zierde; TalkBack bekommt einen Satz. -->
+    <string name="onboarding_page_indicator">Seite %1$d von %2$d</string>
+
+    <!-- C2: Skip waehrend eines scharfen DropSync-Plans (5.10). -->
+    <string name="app_dropsync_skipped">DropSync übersprungen</string>
+    <string name="app_undo">Rückgängig</string>
 </resources>

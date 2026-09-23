@@ -19,6 +19,8 @@ kotlin {
 
 dependencies {
     implementation(libs.kotlinx.coroutines.core)
+    // DataStore-Core (JVM): zentraler CorruptionHandler fuer alle Stores.
+    implementation(libs.androidx.datastore.preferences)
 
     testImplementation(libs.junit4)
     testImplementation(libs.kotlinx.coroutines.test)

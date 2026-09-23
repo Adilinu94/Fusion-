@@ -1,6 +1,8 @@
 package com.dropsync.core.designsystem.component
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -23,6 +25,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 
 // Marken-Buttons gemaess Design.txt: Pill (radius 999), Hoehe 56, Bold-Label.
 // Statt Web-Hover ein dezenter Press-Scale (Motion-Sprache "springy").
@@ -32,7 +35,14 @@ private val PillShape = RoundedCornerShape(percent = 50)
 @Composable
 private fun rememberPressScale(source: MutableInteractionSource): Float {
     val pressed by source.collectIsPressedAsState()
-    val scale by animateFloatAsState(targetValue = if (pressed) 0.97f else 1f, label = "pressScale")
+    val reducedMotion = rememberReducedMotion()
+    // Reduced Motion: kein Press-Scale (Endwert sofort), nur die
+    // Ripple-/State-Farbe bleibt als Rueckmeldung.
+    val scale by animateFloatAsState(
+        targetValue = if (pressed && !reducedMotion) 0.97f else 1f,
+        animationSpec = if (reducedMotion) snap() else spring(),
+        label = "pressScale",
+    )
     return scale
 }
 

@@ -368,6 +368,10 @@ interface WorkoutDao {
     @Query("SELECT * FROM personal_records WHERE exercise_id = :exerciseId")
     fun observePersonalRecordsForExercise(exerciseId: Long): Flow<List<PersonalRecordEntity>>
 
+    /** Alle PRs ueber alle Uebungen (Dashboard-PR-Zeile, Befund 3.14/153). */
+    @Query("SELECT * FROM personal_records")
+    fun observeAllPersonalRecords(): Flow<List<PersonalRecordEntity>>
+
     /**
      * Satzabschluss als eine Transaktion (Schritt 3.4): Segmente,
      * Clusterstatus und neue PRs werden zusammen gespeichert oder gar

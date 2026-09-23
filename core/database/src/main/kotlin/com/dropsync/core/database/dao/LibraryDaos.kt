@@ -6,6 +6,7 @@ import androidx.room.Embedded
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
 import androidx.room.Upsert
 import com.dropsync.core.database.entity.MarkerSongLinkEntity
 import com.dropsync.core.database.entity.SongEntity
@@ -55,10 +56,10 @@ interface SongDao {
 }
 
 /**
- * Onset-Kandidat (Phase 5) samt Zielsong aus der Linkzeile; Grundlage der
- * Review-Liste in den Einstellungen.
+ * Marker samt Zielsong aus der Linkzeile; Grundlage der Review-Liste
+ * (Pending-Abfrage) und der Batch-Abfrage der Planung (D5/A7).
  */
-data class PendingMarkerRow(
+data class LinkedMarkerRow(
     @Embedded val marker: SongMarkerEntity,
     @ColumnInfo(name = "linked_song_id")
     val linkedSongId: Long,
@@ -107,6 +108,13 @@ interface MarkerDao {
     )
     suspend fun getEnabledMarkersForSong(songId: Long): List<SongMarkerEntity>
 
+    /** Benennt einen Marker um (P2-21): nur das Label aendert sich. */
+    @Query("UPDATE song_markers SET label = :label WHERE id = :id")
+    suspend fun renameMarker(
+        id: Long,
+        label: String,
+    )
+
     /** Loescht den Marker; die Linkzeile faellt per ON DELETE CASCADE mit. */
     @Query("DELETE FROM song_markers WHERE id = :markerId")
     suspend fun deleteMarker(markerId: Long)
@@ -117,7 +125,41 @@ interface MarkerDao {
             "INNER JOIN marker_song_links l ON l.marker_id = m.id " +
             "WHERE m.source = :source AND m.is_enabled = 0 ORDER BY l.song_id, m.position_ms",
     )
-    fun observePendingBySource(source: String): Flow<List<PendingMarkerRow>>
+    fun observePendingBySource(source: String): Flow<List<LinkedMarkerRow>>
+
+    /**
+     * D5/A7: aktive Marker fuer mehrere Songs in EINER Abfrage — die
+     * Planung lud vorher je Work-Titel eine eigene Query (N+1). Reihenfolge
+     * wie [getEnabledMarkersForSong]: je Song nach Position.
+     */
+    @Query(
+        "SELECT m.*, l.song_id AS linked_song_id FROM song_markers m " +
+            "INNER JOIN marker_song_links l ON l.marker_id = m.id " +
+            "WHERE l.song_id IN (:songIds) AND m.is_enabled = 1 ORDER BY l.song_id, m.position_ms",
+    )
+    suspend fun getEnabledMarkersForSongs(songIds: List<Long>): List<LinkedMarkerRow>
+
+    /**
+     * D5/A8: aktive Marker eines Songs als Flow — das Gate beobachtet
+     * damit Marker-Aenderungen (Room invalidiert), statt sie im
+     * 500-ms-Takt neu zu laden.
+     */
+    @Query(
+        "SELECT m.* FROM song_markers m INNER JOIN marker_song_links l ON l.marker_id = m.id " +
+            "WHERE l.song_id = :songId AND m.is_enabled = 1 ORDER BY m.position_ms",
+    )
+    fun observeEnabledMarkersForSong(songId: Long): Flow<List<SongMarkerEntity>>
+
+    /**
+     * C4: Song-IDs mit mindestens einem aktiven Marker — Grundlage der
+     * Drop-Abdeckung ("9/12 Drops") auf Music Home und in der Playlist.
+     * Eine Query statt einer Zaehlung je Titel (kein N+1).
+     */
+    @Query(
+        "SELECT DISTINCT l.song_id FROM marker_song_links l " +
+            "INNER JOIN song_markers m ON m.id = l.marker_id WHERE m.is_enabled = 1",
+    )
+    fun observeSongsWithEnabledMarkers(): Flow<List<Long>>
 
     /**
      * Entfernt unbestaetigte Kandidaten einer Quelle fuer einen Song:
@@ -131,6 +173,35 @@ interface MarkerDao {
         songId: Long,
         source: String,
     )
+
+    /**
+     * D5/A3: Ersetzt die unbestaetigten Kandidaten eines Songs in EINER
+     * Transaktion — loeschen, dann Marker + Link je Kandidat einfuegen.
+     * Vorher lief das ohne Transaktion: brach ein Insert ab, blieb eine halb
+     * ersetzte Kandidatenliste stehen. Die Link-Methode und die Uhrzeit
+     * kommen vom Aufrufer (eine Uhrzeit fuer den ganzen Lauf).
+     */
+    @Transaction
+    suspend fun replacePendingCandidates(
+        songId: Long,
+        source: String,
+        markers: List<SongMarkerEntity>,
+        linkMethod: String,
+        linkedAtEpochMs: Long,
+    ) {
+        deletePendingBySourceForSong(songId, source)
+        markers.forEach { marker ->
+            val markerId = insert(marker)
+            insertLink(
+                MarkerSongLinkEntity(
+                    markerId = markerId,
+                    songId = songId,
+                    linkMethod = linkMethod,
+                    linkedAtEpochMs = linkedAtEpochMs,
+                ),
+            )
+        }
+    }
 }
 
 @Dao

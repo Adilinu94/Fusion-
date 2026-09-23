@@ -1,8 +1,12 @@
 package com.dropsync.app
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -12,11 +16,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +42,7 @@ import androidx.compose.material3.NavigationRailItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -52,6 +59,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -59,6 +67,9 @@ import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -71,7 +82,9 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.LocalReducedMotion
 import com.dropsync.core.designsystem.theme.LocalWindowSizeClass
+import com.dropsync.core.designsystem.theme.isReducedMotion
 import com.dropsync.feature.audio.AudioSettingsScreen
 import com.dropsync.feature.library.LibraryScreen
 import com.dropsync.feature.player.MiniPlayer
@@ -87,68 +100,58 @@ import com.dropsync.feature.workout.TrainScreen
 import kotlinx.coroutines.delay
 
 /**
- * Hauptnavigation mit vier Zielen (Fusion-Design 2026-08-07):
- * Music (Start), Train, Verlauf, Einstellungen. Kompakt: Bottom Navigation;
- * ab Medium: Navigation Rail per Window Size Classes.
- */
-enum class TopLevelDestination(
-    val route: String,
-    val iconRes: Int,
-    val labelRes: Int,
-) {
-    MUSIC("music", BrandIcons.NavMusic, R.string.nav_music),
-    TRAIN("train", BrandIcons.NavTrain, R.string.nav_train),
-    HISTORY("history", BrandIcons.NavHistory, R.string.nav_history),
-    SETTINGS("settings", BrandIcons.NavSettings, R.string.nav_settings),
-}
-
-/**
  * Unterseite der Einstellungen (kein viertes Hauptziel): Audio/DSP-Regler.
  * Erreichbar ueber den Audio-Einstieg in [SettingsScreen].
  */
-private const val ROUTE_AUDIO_SETTINGS = "audio_settings"
+internal const val ROUTE_AUDIO_SETTINGS = "audio_settings"
 
 /**
  * Standalone-Resttimer (B-ARCH-2 / P2-17, Nutzerentscheidung "Verdrahten"):
  * kein Hauptziel, erreichbar per Tap auf die Countdown-Anzeige der
  * Train-Pausenkonsole. Teilt sich die TimerEngine mit dem Train-Tab.
  */
-private const val ROUTE_TIMER = "timer"
+internal const val ROUTE_TIMER = "timer"
 
 /**
  * Now-Playing-Screen (Marker/Waveform-Plan Phase 1), erreichbar per Tap
  * auf den Mini-Player; kein viertes Hauptziel.
  */
-private const val ROUTE_NOW_PLAYING = "now_playing"
+internal const val ROUTE_NOW_PLAYING = "now_playing"
 
 /**
  * Alle-Saetze-Route hinter dem Progress-Dashboard (UI-Vertrag Verlauf):
  * die volle Satz-Liste als eigene Route, Android-Back gilt normal.
  */
-private const val ROUTE_ALL_SETS = "progress/all_sets"
+internal const val ROUTE_ALL_SETS = "progress/all_sets"
 
 /**
  * Uebungsbibliothek (Schritt 7): Ort der Uebungs- und Ziel-Pflege
  * (Entscheidung 13), erreichbar vom Train-Tab und dem Dashboard.
  */
-private const val ROUTE_EXERCISE_LIBRARY = "exercise_library"
+internal const val ROUTE_EXERCISE_LIBRARY = "exercise_library"
 
 /** Guided-Calibration-Wizard (Phase 4 Schritt 3), aus dem Train-Tab. */
-private const val ROUTE_CALIBRATION = "calibration/{exerciseId}/{deviceId}"
-private const val ARG_EXERCISE_ID = "exerciseId"
-private const val ARG_DEVICE_ID = "deviceId"
+internal const val ROUTE_CALIBRATION = "calibration/{exerciseId}/{deviceId}"
+internal const val ARG_EXERCISE_ID = "exerciseId"
+internal const val ARG_DEVICE_ID = "deviceId"
 
 @Composable
 fun DropSyncApp(windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
     val useRail = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
+    // Reduced Motion: einmal am Activity-Kontext lesen und app-weit
+    // bereitstellen (Befund: nur das Dashboard wertete den Systemwert aus).
+    val reducedMotion = LocalContext.current.isReducedMotion()
     // B3: First-Run-Onboarding — null, solange DataStore laedt (kein Flackern
     // fuer bestehende Nutzer), danach genau einmal bis zum Abschluss.
     val onboardingViewModel: OnboardingViewModel = hiltViewModel()
     val onboardingSeen by onboardingViewModel.seen.collectAsStateWithLifecycle()
     // C2: Breakpoint fuer alle Screens bereitstellen (Now-Playing, Train,
     // Dashboard lesen ihn ueber `rememberWindowWidthSizeClass`).
-    CompositionLocalProvider(LocalWindowSizeClass provides windowSizeClass) {
+    CompositionLocalProvider(
+        LocalWindowSizeClass provides windowSizeClass,
+        LocalReducedMotion provides reducedMotion,
+    ) {
         when (onboardingSeen) {
             null -> {
                 Box(modifier = Modifier.fillMaxSize())
@@ -213,6 +216,23 @@ private fun DropSyncContent(
     // Aktionen) — Screens zeigen darueber, kein eigener Host je Screen.
     val appSnackbar = remember { SnackbarHostState() }
 
+    // C2 (5.10): Ein Skip waehrend eines scharfen Plans wird sichtbar
+    // zurueckgenommen und laesst sich per Undo neu armieren. Das Ereignis
+    // kommt aus dem ViewModel (auch fuer Bluetooth-/Queue-Skips).
+    val skippedText = stringResource(R.string.app_dropsync_skipped)
+    val undoText = stringResource(R.string.app_undo)
+    LaunchedEffect(playerViewModel) {
+        playerViewModel.skipOverridden.collect {
+            val result =
+                appSnackbar.showSnackbar(
+                    message = skippedText,
+                    actionLabel = undoText,
+                    withDismissAction = true,
+                )
+            if (result == SnackbarResult.ActionPerformed) playerViewModel.undoOverride()
+        }
+    }
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         snackbarHost = { SnackbarHost(hostState = appSnackbar) },
@@ -251,6 +271,9 @@ private fun DropSyncNavHost(
     playerViewModel: PlayerViewModel,
     snackbarHostState: SnackbarHostState,
 ) {
+    // In Transition-Lambdas ist kein @Composable-Kontext: Reduced-Motion
+    // hier einmal vor dem NavHost einfangen.
+    val reducedMotion = LocalReducedMotion.current
     NavHost(
         navController = navController,
         startDestination = TopLevelDestination.MUSIC.route,
@@ -260,46 +283,21 @@ private fun DropSyncNavHost(
         // MiniPlayer->Now-Playing benoetigt den Player als Overlay/Sheet in
         // der Shell statt einer Route (Movement-Scope erreicht den Mini-
         // Player ausserhalb des NavHost nicht) — als Folgearbeit notiert.
-        enterTransition = {
-            if (targetState.destination.route == ROUTE_NOW_PLAYING) {
-                slideInVertically(
-                    animationSpec =
-                        spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        ),
-                    initialOffsetY = { it },
-                ) + fadeIn()
-            } else {
-                fadeIn()
-            }
-        },
+        enterTransition = { libraryEnterTransition(targetState.destination.route, reducedMotion) },
         exitTransition = { fadeOut() },
         popEnterTransition = { fadeIn() },
-        popExitTransition = {
-            if (targetState.destination.route == ROUTE_NOW_PLAYING) {
-                slideOutVertically(
-                    animationSpec =
-                        spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMediumLow,
-                        ),
-                    targetOffsetY = { it },
-                ) + fadeOut()
-            } else {
-                fadeOut()
-            }
-        },
+        popExitTransition = { libraryPopExitTransition(targetState.destination.route, reducedMotion) },
     ) {
         composable(TopLevelDestination.TRAIN.route) {
             // FlowRep Train-Tab: flaches Satz-Log (Phase 2).
             TrainScreen(
                 contentPadding = contentPadding,
                 onOpenCalibration = { exerciseId, deviceId ->
-                    navController.navigate("calibration/$exerciseId/$deviceId")
+                    navController.navigate(calibrationRoute(exerciseId, deviceId))
                 },
                 onOpenLibrary = { navController.navigate(ROUTE_EXERCISE_LIBRARY) { launchSingleTop = true } },
                 onOpenTimer = { navController.navigate(ROUTE_TIMER) { launchSingleTop = true } },
+                snackbarHostState = snackbarHostState,
             )
         }
         composable(TopLevelDestination.MUSIC.route) {
@@ -359,6 +357,11 @@ private fun DropSyncNavHost(
                 onBack = { navController.popBackStack() },
                 viewModel = playerViewModel,
                 snackbarHostState = snackbarHostState,
+                // C10 (P-10): Review-Liste liegt auf Music Home; der
+                // Overflow verlinkt dorthin (Tab-Wechsel, kein neuer Screen).
+                onOpenMarkerReview = {
+                    navController.navigateTopLevel(TopLevelDestination.MUSIC.route)
+                },
             )
         }
         composable(
@@ -410,21 +413,19 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
         val tabWidth = maxWidth / destinations.size
         // Gleitender Indikator: Feder-Physik laesst die Pille sichtbar von
         // einem Tab zum naechsten gleiten (kein harter Sprung). Etwas
-        // Bounce, damit der Wechsel modern und lebendig wirkt.
+        // Bounce, damit der Wechsel modern und lebendig wirkt. Bei Reduced
+        // Motion springt die Pille ohne Feder (Ausbauplan Paket 0.3).
+        val reducedMotion = LocalReducedMotion.current
         val indicatorOffset by animateDpAsState(
             targetValue = tabWidth * indicatorIndex,
-            animationSpec =
-                spring(
-                    dampingRatio = Spring.DampingRatioMediumBouncy,
-                    stiffness = Spring.StiffnessMediumLow,
-                ),
+            animationSpec = navIndicatorSpec(reducedMotion),
             label = "bottom-nav-indicator",
         )
 
         Box(
             modifier =
                 Modifier
-                    .offset(x = indicatorOffset)
+                    .offset { IntOffset(indicatorOffset.roundToPx(), 0) }
                     .width(tabWidth)
                     .height(72.dp)
                     .padding(4.dp)
@@ -441,76 +442,111 @@ private fun FlowRepGlassNavigation(navController: NavHostController) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             destinations.forEachIndexed { index, destination ->
-                val label = stringResource(destination.labelRes)
                 val isSelected = index == selectedIndex
-                // TalkBack-Ansage aus den Ressourcen (B-UI-3): hartcodiert
-                // sprach die Navigation auch auf englischen Geraeten deutsch.
-                val stateLabel =
-                    stringResource(
-                        if (isSelected) R.string.nav_state_selected else R.string.nav_state_not_selected,
-                    )
-                // Leichter Pop auf dem aktiven Icon, passend zur gleitenden
-                // Pille; inaktive Icons bleiben ruhig.
-                val iconScale by animateFloatAsState(
-                    targetValue = if (isSelected) 1.12f else 1f,
-                    animationSpec =
-                        spring(
-                            dampingRatio = Spring.DampingRatioMediumBouncy,
-                            stiffness = Spring.StiffnessMedium,
+                GlassNavigationTab(
+                    label = stringResource(destination.labelRes),
+                    iconRes = destination.iconRes,
+                    isSelected = isSelected,
+                    reducedMotion = reducedMotion,
+                    // TalkBack-Ansage aus den Ressourcen (B-UI-3): hartcodiert
+                    // sprach die Navigation auch auf englischen Geraeten deutsch.
+                    stateLabel =
+                        stringResource(
+                            if (isSelected) R.string.nav_state_selected else R.string.nav_state_not_selected,
                         ),
-                    label = "bottom-nav-icon-scale",
+                    onClick = { navController.navigateTopLevel(destination.route) },
                 )
-                Column(
-                    modifier =
-                        Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .padding(vertical = 6.dp)
-                            .semantics {
-                                selected = isSelected
-                                stateDescription = stateLabel
-                            }.clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                                role = Role.Tab,
-                                onClick = { navController.navigateTopLevel(destination.route) },
-                            ),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = androidx.compose.foundation.layout.Arrangement.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(destination.iconRes),
-                        contentDescription = null,
-                        modifier =
-                            Modifier
-                                .size(30.dp)
-                                .graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                },
-                        tint =
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = label,
-                        style = MaterialTheme.typography.labelSmall,
-                        color =
-                            if (isSelected) {
-                                MaterialTheme.colorScheme.onPrimary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                    )
-                }
             }
         }
+    }
+}
+
+/** Indikator-Animation der Glas-Navigation; Reduced Motion springt ohne Feder. */
+@Composable
+private fun navIndicatorSpec(reducedMotion: Boolean): AnimationSpec<Dp> =
+    if (reducedMotion) {
+        snap()
+    } else {
+        spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        )
+    }
+
+/** Ein Tab der Glas-Navigation inkl. Icon-Pop und TalkBack-Zustand. */
+@Composable
+private fun RowScope.GlassNavigationTab(
+    label: String,
+    iconRes: Int,
+    isSelected: Boolean,
+    reducedMotion: Boolean,
+    stateLabel: String,
+    onClick: () -> Unit,
+) {
+    // Leichter Pop auf dem aktiven Icon, passend zur gleitenden Pille;
+    // inaktive Icons bleiben ruhig. Bei Reduced Motion entfaellt der Pop.
+    val iconScale by animateFloatAsState(
+        targetValue = if (isSelected) 1.12f else 1f,
+        animationSpec =
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                )
+            },
+        label = "bottom-nav-icon-scale",
+    )
+    Column(
+        modifier =
+            Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(vertical = 6.dp)
+                .semantics {
+                    selected = isSelected
+                    stateDescription = stateLabel
+                }.clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Tab,
+                    onClick = onClick,
+                ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center,
+    ) {
+        Icon(
+            painter = painterResource(iconRes),
+            contentDescription = null,
+            modifier =
+                Modifier
+                    .size(30.dp)
+                    .graphicsLayer {
+                        scaleX = iconScale
+                        scaleY = iconScale
+                    },
+            tint =
+                if (isSelected) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+        )
+        Spacer(modifier = Modifier.height(2.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall,
+            color =
+                if (isSelected) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
 }
 
@@ -546,9 +582,66 @@ private fun NavHostController.navigateTopLevel(route: String) {
 }
 
 /**
+ * Enter-Transition des NavHost (Paket 4.16 ausgelagert): Now-Playing kommt
+ * als Sheet von unten, alle anderen Ziele blenden weich ein; bei Reduced
+ * Motion ohne Slide.
+ */
+private fun libraryEnterTransition(
+    targetRoute: String?,
+    reducedMotion: Boolean,
+): EnterTransition =
+    if (targetRoute == ROUTE_NOW_PLAYING) {
+        if (reducedMotion) {
+            fadeIn(snap())
+        } else {
+            slideInVertically(
+                animationSpec =
+                    spring(
+                        dampingRatio = Spring.DampingRatioLowBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                initialOffsetY = { it },
+            ) + fadeIn()
+        }
+    } else {
+        fadeIn()
+    }
+
+/** Pop-Exit-Transition des NavHost; Gegenstueck zu [libraryEnterTransition]. */
+private fun libraryPopExitTransition(
+    targetRoute: String?,
+    reducedMotion: Boolean,
+): ExitTransition =
+    if (targetRoute == ROUTE_NOW_PLAYING) {
+        if (reducedMotion) {
+            fadeOut(snap())
+        } else {
+            slideOutVertically(
+                animationSpec =
+                    spring(
+                        dampingRatio = Spring.DampingRatioNoBouncy,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                targetOffsetY = { it },
+            ) + fadeOut()
+        }
+    } else {
+        fadeOut()
+    }
+
+/**
  * Oeffnet den Now-Playing-Screen; [launchSingleTop] verhindert, dass
  * wiederholte Titel-Taps mehrere identische Eintraege stapeln.
  */
 private fun NavHostController.openNowPlaying() {
     navigate(ROUTE_NOW_PLAYING) { launchSingleTop = true }
 }
+
+/**
+ * Baut die Kalibrierungs-Route (Paket 1.6): als eigene Funktion, damit die
+ * Argument-Formatierung unit-testbar ist (vorher inline im Callback).
+ */
+internal fun calibrationRoute(
+    exerciseId: Long,
+    deviceId: String,
+): String = "calibration/$exerciseId/$deviceId"

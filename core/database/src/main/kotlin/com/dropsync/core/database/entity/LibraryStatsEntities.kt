@@ -94,7 +94,11 @@ data class PlaylistEntity(
         ),
     ],
     indices = [
-        Index(value = ["playlist_id"]),
+        // D5/A6: die Playlist-Queries lesen nach Position sortiert; der
+        // zusammengesetzte Index ersetzt den einspaltigen playlist_id-Index
+        // (linke Praefix-Abdeckung bleibt) und spart den Temp-B-Tree.
+        // EXPLAIN-Nachweis im Migrationstest, v14 -> v15.
+        Index(value = ["playlist_id", "position"]),
         Index(value = ["song_id"]),
     ],
 )

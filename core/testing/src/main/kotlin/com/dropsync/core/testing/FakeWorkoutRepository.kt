@@ -1,5 +1,6 @@
 package com.dropsync.core.testing
 
+import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.RestMode
 import com.dropsync.core.model.SetRole
@@ -25,6 +26,9 @@ import kotlinx.coroutines.flow.flowOf
  * über [FakeFlatSetRepository]. Rein JVM.
  */
 class FakeWorkoutRepository : WorkoutRepository {
+    /** T-10: steuerbarer Fehler fuer [createCustomExercise]; null = Erfolg. */
+    var createExerciseFailure: AppError? = null
+
     override val activeSession: Flow<WorkoutSessionInfo?> = flowOf(null)
 
     override fun observeExercises(locale: String): Flow<List<ExerciseInfo>> = flowOf(emptyList())
@@ -75,7 +79,10 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override fun observeExerciseLibrary(locale: String): Flow<List<ExerciseLibraryItem>> = flowOf(emptyList())
 
-    override suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long> = AppResult.Success(0L)
+    override suspend fun createCustomExercise(input: CustomExerciseInput): AppResult<Long> {
+        createExerciseFailure?.let { return AppResult.failure(it) }
+        return AppResult.Success(0L)
+    }
 
     override suspend fun getExerciseDetail(
         exerciseId: Long,
@@ -88,13 +95,24 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     override suspend fun restoreExercise(exerciseId: Long): AppResult<Unit> = AppResult.Success(Unit)
 
-    override suspend fun getRestPref(exerciseId: Long): AppResult<RestPref?> = AppResult.Success(null)
+    /** C3: gemerkte Pausen-Praeferenzen je Uebung (Tests). */
+    val restPrefs = mutableMapOf<Long, RestPref>()
+
+    /** C3: Ergebnis-Hook fuer [setRestPref] (Fehlerpfade testen). */
+    var setRestPrefResult: AppResult<Unit> = AppResult.Success(Unit)
+
+    override suspend fun getRestPref(exerciseId: Long): AppResult<RestPref?> = AppResult.Success(restPrefs[exerciseId])
 
     override suspend fun setRestPref(
         exerciseId: Long,
         restSeconds: Int,
         restMode: RestMode,
-    ): AppResult<Unit> = AppResult.Success(Unit)
+    ): AppResult<Unit> {
+        if (setRestPrefResult is AppResult.Success) {
+            restPrefs[exerciseId] = RestPref(restSeconds, restMode)
+        }
+        return setRestPrefResult
+    }
 
     override suspend fun swapSessionExercise(
         sessionExerciseId: Long,
@@ -105,6 +123,8 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun repeatLastSession(): AppResult<Long> = AppResult.Success(0L)
 
     override fun observePersonalRecords(exerciseId: Long): Flow<List<PrRecord>> = flowOf(emptyList())
+
+    override fun observeAllPersonalRecords(): Flow<List<PrRecord>> = flowOf(emptyList())
 
     override suspend fun getSessionMusic(sessionId: Long): AppResult<List<PlayedTrackInfo>> =
         AppResult.Success(emptyList())

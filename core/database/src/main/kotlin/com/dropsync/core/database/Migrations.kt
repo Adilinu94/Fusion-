@@ -221,6 +221,111 @@ val MIGRATION_10_11 =
         }
     }
 
+/**
+ * A1/5.7: Der flache Satz-Pfad wird PR-faehig. Flache Saetze haben keine
+ * `workout_session`; deshalb wird `personal_records.achieved_session_id`
+ * nullable. SQLite kann eine NOT-NULL-Bedingung nicht per ALTER TABLE
+ * entfernen — die Tabelle wird neu aufgebaut und die Zeilen werden
+ * uebernommen (kein Datenverlust; Room validiert danach das Schema).
+ */
+val MIGRATION_11_12 =
+    object : Migration(11, 12) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `personal_records_new` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`exercise_id` INTEGER NOT NULL, " +
+                    "`type` TEXT NOT NULL, " +
+                    "`achieved_session_id` INTEGER, " +
+                    "`achieved_cluster_id` INTEGER, " +
+                    "`value_long` INTEGER NOT NULL, " +
+                    "`value_unit` TEXT NOT NULL, " +
+                    "`comparable_load_milli_kg` INTEGER, " +
+                    "`achieved_at_epoch_ms` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`exercise_id`) REFERENCES `exercises`(`id`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE, " +
+                    "FOREIGN KEY(`achieved_session_id`) REFERENCES `workout_sessions`(`id`) " +
+                    "ON UPDATE NO ACTION ON DELETE CASCADE)",
+            )
+            db.execSQL(
+                "INSERT INTO `personal_records_new` " +
+                    "(`id`, `exercise_id`, `type`, `achieved_session_id`, `achieved_cluster_id`, " +
+                    "`value_long`, `value_unit`, `comparable_load_milli_kg`, `achieved_at_epoch_ms`) " +
+                    "SELECT `id`, `exercise_id`, `type`, `achieved_session_id`, `achieved_cluster_id`, " +
+                    "`value_long`, `value_unit`, `comparable_load_milli_kg`, `achieved_at_epoch_ms` " +
+                    "FROM `personal_records`",
+            )
+            db.execSQL("DROP TABLE `personal_records`")
+            db.execSQL("ALTER TABLE `personal_records_new` RENAME TO `personal_records`")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_personal_records_exercise_id` " +
+                    "ON `personal_records` (`exercise_id`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_personal_records_achieved_session_id` " +
+                    "ON `personal_records` (`achieved_session_id`)",
+            )
+        }
+    }
+
+/**
+ * B4/RC-22: fuegt `track_analysis` die Spalten `downbeat_offset_ms` und
+ * `downbeat_confidence` hinzu (Phase des Beat-Rasters fuer das
+ * Marker-Snap). Additiv, nullable, ohne Default; Altzeilen bleiben als
+ * Waveform-Fallback gueltig und bekommen keinen Snap (kein geratenes
+ * Raster). Der Mix-Versions-Bump (1 -> 2) stoesst die Neuberechnung der
+ * Metadatenstufe an, ohne die Waveform neu zu dekodieren (ADR-0015).
+ */
+val MIGRATION_12_13 =
+    object : Migration(12, 13) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `downbeat_offset_ms` INTEGER")
+            db.execSQL("ALTER TABLE `track_analysis` ADD COLUMN `downbeat_confidence` REAL")
+        }
+    }
+
+/**
+ * D5/A4: Index auf `song_markers(source, is_enabled)` — die
+ * Pending-Kandidaten-Abfrage (`observePendingBySource`) filtert genau diese
+ * beiden Spalten und lief vorher als Scan. Additiv, kein Datenumbau.
+ */
+val MIGRATION_13_14 =
+    object : Migration(13, 14) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_song_markers_source_is_enabled` " +
+                    "ON `song_markers` (`source`, `is_enabled`)",
+            )
+        }
+    }
+
+/**
+ * D5/A5+A6: zwei Indizes nach EXPLAIN-Messung (Nachweis im
+ * Migrationstest, vorher/nachher):
+ * - `workout_sessions(status)`: die Session-Suche filtert nach status;
+ *   ohne Index ein Full-Scan (typisch 0-1 ACTIVE-Zeilen bei vielen
+ *   abgeschlossenen).
+ * - `playlist_items(playlist_id, position)` ersetzt den einspaltigen
+ *   playlist_id-Index: die Playlist-Queries sortieren nach Position, der
+ *   zusammengesetzte Index liefert die Ordnung mit (kein Temp-B-Tree);
+ *   die linke Praefix-Abdeckung fuer FK/Filter bleibt erhalten.
+ * Additiv bzw. index-only, kein Datenumbau.
+ */
+val MIGRATION_14_15 =
+    object : Migration(14, 15) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_workout_sessions_status` " +
+                    "ON `workout_sessions` (`status`)",
+            )
+            db.execSQL("DROP INDEX IF EXISTS `index_playlist_items_playlist_id`")
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playlist_items_playlist_id_position` " +
+                    "ON `playlist_items` (`playlist_id`, `position`)",
+            )
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
     arrayOf(
@@ -234,4 +339,8 @@ val DROPSYNC_MIGRATIONS: Array<Migration> =
         MIGRATION_8_9,
         MIGRATION_9_10,
         MIGRATION_10_11,
+        MIGRATION_11_12,
+        MIGRATION_12_13,
+        MIGRATION_13_14,
+        MIGRATION_14_15,
     )

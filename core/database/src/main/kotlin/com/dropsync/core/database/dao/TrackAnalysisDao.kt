@@ -19,6 +19,7 @@ interface TrackAnalysisDao {
         "UPDATE track_analysis SET bpm = :bpm, bpm_confidence = :bpmConfidence, " +
             "camelot_key = :camelotKey, key_confidence = :keyConfidence, " +
             "integrated_lufs = :integratedLufs, true_peak_db = :truePeakDb, " +
+            "downbeat_offset_ms = :downbeatOffsetMs, downbeat_confidence = :downbeatConfidence, " +
             "mix_analyzer_version = :mixAnalyzerVersion, analyzed_at_epoch_ms = :analyzedAtEpochMs " +
             "WHERE song_id = :songId",
     )
@@ -30,6 +31,8 @@ interface TrackAnalysisDao {
         keyConfidence: Float?,
         integratedLufs: Float?,
         truePeakDb: Float?,
+        downbeatOffsetMs: Long?,
+        downbeatConfidence: Float?,
         mixAnalyzerVersion: Int,
         analyzedAtEpochMs: Long,
     ): Int

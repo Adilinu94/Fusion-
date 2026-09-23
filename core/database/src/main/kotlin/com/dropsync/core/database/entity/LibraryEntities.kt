@@ -74,10 +74,17 @@ data class SongEntity(
  * Index auf `source_fingerprint` (Verbesserungsplan B-DB-1):
  * `SongMarkerDao.getByFingerprint` sucht exakt darauf, und der Onset-Import
  * ruft das je Kandidat auf.
+ *
+ * D5/A4: Index auf `(source, is_enabled)` — die Pending-Kandidaten-Abfrage
+ * (`observePendingBySource`) filtert genau diese beiden Spalten; der
+ * EXPLAIN-Nachweis steht in `MigrationTest`.
  */
 @Entity(
     tableName = "song_markers",
-    indices = [Index(value = ["source_fingerprint"])],
+    indices = [
+        Index(value = ["source_fingerprint"]),
+        Index(value = ["source", "is_enabled"]),
+    ],
 )
 data class SongMarkerEntity(
     @PrimaryKey(autoGenerate = true)
