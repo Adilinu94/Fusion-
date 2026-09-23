@@ -1,10 +1,10 @@
 package com.dropsync.data.library.di
 
 import android.content.Context
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
+import com.dropsync.core.common.datastore.createResilientPreferencesDataStore
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.FavoriteDao
@@ -15,6 +15,7 @@ import com.dropsync.core.database.dao.PlaylistDao
 import com.dropsync.core.database.dao.SafFileDao
 import com.dropsync.core.database.dao.SongDao
 import com.dropsync.data.library.DataStoreScanStateStore
+import com.dropsync.data.library.DropTargetStore
 import com.dropsync.data.library.LibraryBrowseRepositoryImpl
 import com.dropsync.data.library.LibraryRepositoryImpl
 import com.dropsync.data.library.LibraryViewPreferencesStore
@@ -26,6 +27,7 @@ import com.dropsync.data.library.SafFolderGateway
 import com.dropsync.data.library.SafFolderGatewayImpl
 import com.dropsync.data.library.ScanStateStore
 import com.dropsync.domain.audio.TrackAnalysisRepository
+import com.dropsync.domain.library.DropTargetRepository
 import com.dropsync.domain.library.ImportValidator
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
@@ -59,7 +61,7 @@ object LibraryDataModule {
         @ApplicationContext context: Context,
     ): ScanStateStore =
         DataStoreScanStateStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(DataStoreScanStateStore.DATA_STORE_NAME)
             },
         )
@@ -76,7 +78,7 @@ object LibraryDataModule {
         @ApplicationContext context: Context,
     ): LibraryViewPreferencesRepository =
         LibraryViewPreferencesStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(LibraryViewPreferencesStore.DATA_STORE_NAME)
             },
         )
@@ -87,7 +89,7 @@ object LibraryDataModule {
         @ApplicationContext context: Context,
     ): MusicFolderFilterRepository =
         MusicFolderFilterStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(MusicFolderFilterStore.DATA_STORE_NAME)
             },
         )
@@ -105,6 +107,7 @@ object LibraryDataModule {
         safGateway: SafFolderGateway,
         folderFilter: MusicFolderFilterRepository,
         trackAnalysisRepository: TrackAnalysisRepository,
+        browseDao: LibraryBrowseDao,
     ): LibraryRepository =
         LibraryRepositoryImpl(
             gateway = gateway,
@@ -117,6 +120,7 @@ object LibraryDataModule {
             safGateway = safGateway,
             folderFilter = folderFilter,
             trackAnalysisRepository = trackAnalysisRepository,
+            browseDao = browseDao,
         )
 
     @Provides
@@ -138,6 +142,17 @@ object LibraryDataModule {
             songDao = songDao,
             transactionRunner = transactionRunner,
             dispatchers = dispatchers,
+        )
+
+    @Provides
+    @Singleton
+    fun provideDropTargetRepository(
+        @ApplicationContext context: Context,
+    ): DropTargetRepository =
+        DropTargetStore(
+            createResilientPreferencesDataStore {
+                context.preferencesDataStoreFile(DropTargetStore.DATA_STORE_NAME)
+            },
         )
 
     @Provides

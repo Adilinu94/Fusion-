@@ -29,6 +29,7 @@ class LibraryRepositoryImplTest {
             safGateway = FakeSafFolderGateway(),
             folderFilter = folderFilter,
             trackAnalysisRepository = trackAnalysis,
+            browseDao = FakeLibraryBrowseDao(),
         )
 
     private fun song(

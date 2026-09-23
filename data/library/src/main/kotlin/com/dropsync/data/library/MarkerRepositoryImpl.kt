@@ -56,6 +56,78 @@ class MarkerRepositoryImpl(
             rows.map { it.marker.toDomain(linkedSongId = it.linkedSongId) }
         }
 
+    override val songsWithEnabledMarkers: Flow<Set<Long>> =
+        markerDao.observeSongsWithEnabledMarkers().map { it.toSet() }
+
+    override suspend fun setMarkerEnabled(
+        markerId: Long,
+        enabled: Boolean,
+    ): AppResult<Unit> =
+        withContext(dispatchers.io) {
+            val marker =
+                markerDao.getById(markerId)
+                    ?: return@withContext AppResult.failure(AppError.MarkerUnmatched(null))
+            try {
+                markerDao.update(markerId, marker.label, marker.positionMs, isEnabled = enabled)
+                AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("setMarkerEnabled"))
+            }
+        }
+
+    override suspend fun restoreMarker(marker: SongMarker): AppResult<Unit> =
+        withContext(dispatchers.io) {
+            val songId =
+                marker.linkedSongId
+                    ?: return@withContext AppResult.failure(AppError.MarkerUnmatched(null))
+            val song =
+                songDao.getById(songId)
+                    ?: return@withContext AppResult.failure(AppError.MediaUnavailable(songId))
+            val fingerprint =
+                listOf(
+                    song.relativePath,
+                    song.displayName,
+                    song.sizeBytes.toString(),
+                    song.durationMs.toString(),
+                ).joinToString(SEPARATOR.toString())
+            val linkMethod =
+                if (marker.source == MarkerSource.AUTO_DETECTED) {
+                    LinkMethod.AUTO_DETECTED
+                } else {
+                    LinkMethod.MANUAL
+                }
+            try {
+                transactionRunner {
+                    val id =
+                        markerDao.insert(
+                            SongMarkerEntity(
+                                sourceFingerprint = fingerprint,
+                                label = marker.label,
+                                positionMs = marker.positionMs,
+                                source = marker.source.name,
+                                isEnabled = marker.isEnabled,
+                                createdAtEpochMs = clock.epochMillis(),
+                            ),
+                        )
+                    markerDao.insertLink(
+                        MarkerSongLinkEntity(
+                            markerId = id,
+                            songId = songId,
+                            linkMethod = linkMethod.name,
+                            linkedAtEpochMs = clock.epochMillis(),
+                        ),
+                    )
+                }
+                AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("restoreMarker"))
+            }
+        }
+
     override suspend fun confirmMarker(markerId: Long): AppResult<Unit> =
         withContext(dispatchers.io) {
             val marker =
@@ -86,6 +158,27 @@ class MarkerRepositoryImpl(
                 throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("moveMarker"))
+            }
+        }
+
+    override suspend fun renameMarker(
+        markerId: Long,
+        newLabel: String,
+    ): AppResult<Unit> =
+        withContext(dispatchers.io) {
+            markerDao.getById(markerId)
+                ?: return@withContext AppResult.failure(AppError.MarkerUnmatched(null))
+            val label = newLabel.trim()
+            if (label.isEmpty()) {
+                return@withContext AppResult.failure(AppError.Unknown("renameMarker: leeres Label"))
+            }
+            try {
+                markerDao.renameMarker(markerId, label)
+                AppResult.success(Unit)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("renameMarker"))
             }
         }
 
@@ -245,6 +338,30 @@ class MarkerRepositoryImpl(
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("getEnabledMarkersForSong"))
             }
+        }
+
+    override suspend fun getEnabledMarkersForSongs(songIds: List<Long>): AppResult<Map<Long, List<SongMarker>>> =
+        withContext(dispatchers.io) {
+            if (songIds.isEmpty()) return@withContext AppResult.success(emptyMap())
+            try {
+                val markersBySong =
+                    markerDao
+                        .getEnabledMarkersForSongs(songIds)
+                        .groupBy(
+                            keySelector = { it.linkedSongId },
+                            valueTransform = { it.marker.toDomain(linkedSongId = it.linkedSongId) },
+                        )
+                AppResult.success(markersBySong)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("getEnabledMarkersForSongs"))
+            }
+        }
+
+    override fun observeEnabledMarkersForSong(songId: Long): Flow<List<SongMarker>> =
+        markerDao.observeEnabledMarkersForSong(songId).map { entities ->
+            entities.map { it.toDomain(linkedSongId = songId) }
         }
 
     override suspend fun createManualMarker(

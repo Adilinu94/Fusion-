@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -40,72 +39,55 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.domain.library.SongSort
 
 /**
- * Kopfzeile eines Kategorie-Screens (Poweramp): grosser, getoenter Icon-Kreis,
- * Kategoriename und optionale Meta-Zeile ("n Titel | Gesamtdauer"). Der
- * Zurueck-Link steht darueber.
+ * C12 (U-10): Inhaltskopf eines Kategorie-Screens (Poweramp): grosser,
+ * getoenter Icon-Kreis, Kategoriename und optionale Meta-Zeile. Der
+ * Zurueck-Link lebt jetzt in der gemeinsamen [FlowRepTopBar] darueber —
+ * eine Kopfzeile statt drei Eigenbauten.
  */
 @Composable
 internal fun CategoryHeader(
     iconRes: Int,
     title: String,
     subtitle: String?,
-    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(modifier = modifier.fillMaxWidth().statusBarsPadding()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(start = 4.dp, top = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    Row(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier =
+                Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
         ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    painterResource(BrandIcons.Back),
-                    contentDescription = stringResource(R.string.library_back),
-                )
-            }
-            Text(
-                text = stringResource(R.string.library_title),
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            Icon(
+                painterResource(iconRes),
+                contentDescription = null,
+                tint = rememberAccentTextColor(),
+                modifier = Modifier.size(28.dp),
             )
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier =
-                    Modifier
-                        .size(56.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    painterResource(iconRes),
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(28.dp),
-                )
-            }
-            Spacer(Modifier.width(16.dp))
-            Column {
+        Spacer(Modifier.width(16.dp))
+        Column {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (subtitle != null) {
                 Text(
-                    text = title,
-                    style = MaterialTheme.typography.headlineSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (subtitle != null) {
-                    Text(
-                        text = subtitle,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
     }
@@ -140,7 +122,7 @@ internal fun LibraryToolbar(
                 Icon(
                     Icons.Outlined.Shuffle,
                     contentDescription = stringResource(R.string.library_shuffle),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = rememberAccentTextColor(),
                 )
             }
         }
@@ -149,7 +131,7 @@ internal fun LibraryToolbar(
                 Icon(
                     painterResource(BrandIcons.Play),
                     contentDescription = stringResource(R.string.library_play_all),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = rememberAccentTextColor(),
                 )
             }
         }
@@ -158,7 +140,7 @@ internal fun LibraryToolbar(
                 Icon(
                     painterResource(BrandIcons.Search),
                     contentDescription = stringResource(R.string.library_search_hint),
-                    tint = MaterialTheme.colorScheme.primary,
+                    tint = rememberAccentTextColor(),
                 )
             }
         }
@@ -172,7 +154,7 @@ internal fun LibraryToolbar(
             Icon(
                 painterResource(BrandIcons.More),
                 contentDescription = stringResource(R.string.library_list_options),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = rememberAccentTextColor(),
             )
         }
     }
@@ -375,7 +357,7 @@ private fun RowScope.SelectionAction(
         Icon(
             painterResource(iconRes),
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
+            tint = rememberAccentTextColor(),
         )
         Text(
             text = stringResource(labelRes),

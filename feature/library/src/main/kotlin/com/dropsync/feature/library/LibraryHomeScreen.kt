@@ -45,6 +45,7 @@ import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.designsystem.theme.CategoryTints
 import com.dropsync.core.designsystem.theme.Spacing
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.playback.PlaybackState
@@ -61,10 +62,15 @@ internal fun LibraryHomeScreen(
     queueCount: Int,
     playbackState: PlaybackState,
     pendingMarkers: List<SongMarker>,
+    dropSyncCards: List<DropSyncCard>,
     songs: List<Song>,
     contentPadding: PaddingValues,
     onOpen: (LibraryCategory) -> Unit,
     onOpenNowPlaying: () -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
+    onUseDropSync: (Long) -> Unit,
+    onDetectDrops: (Long) -> Unit,
+    onPreviewMarker: (SongMarker) -> Unit,
     onConfirmMarker: (Long) -> Unit,
     onDiscardMarker: (Long) -> Unit,
     onRescan: () -> Unit,
@@ -153,14 +159,19 @@ internal fun LibraryHomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     featured.forEach { category ->
+                        val supporting =
+                            if (category == LibraryCategory.QUEUE) {
+                                if (queueCount == 0) {
+                                    stringResource(R.string.library_queue_empty)
+                                } else {
+                                    stringResource(R.string.library_queue_ready, queueCount)
+                                }
+                            } else {
+                                stringResource(R.string.library_featured_training)
+                            }
                         FeaturedMusicCard(
                             category = category,
-                            supporting =
-                                if (category == LibraryCategory.QUEUE) {
-                                    if (queueCount == 0) "Noch keine Titel" else "$queueCount Titel bereit"
-                                } else {
-                                    "Training und Pausen"
-                                },
+                            supporting = supporting,
                             onClick = { onOpen(category) },
                             modifier = Modifier.weight(1f),
                         )
@@ -180,6 +191,17 @@ internal fun LibraryHomeScreen(
                 )
             }
         }
+        if (dropSyncCards.isNotEmpty()) {
+            item {
+                DropSyncSection(
+                    cards = dropSyncCards,
+                    onOpenPlaylist = onOpenPlaylist,
+                    onUseDropSync = onUseDropSync,
+                    onDetectDrops = onDetectDrops,
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                )
+            }
+        }
         if (pendingMarkers.isNotEmpty()) {
             item {
                 MarkerReviewSection(
@@ -187,6 +209,7 @@ internal fun LibraryHomeScreen(
                     songs = songs,
                     onConfirm = onConfirmMarker,
                     onDiscard = onDiscardMarker,
+                    onPreview = onPreviewMarker,
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -195,7 +218,7 @@ internal fun LibraryHomeScreen(
             item {
                 Column(modifier = Modifier.padding(horizontal = 16.dp)) {
                     FlowRepSectionHeader(
-                        title = "Für jetzt",
+                        title = stringResource(R.string.library_section_for_now),
                         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
                     )
                     quickAccess.forEach { category ->
@@ -212,7 +235,7 @@ internal fun LibraryHomeScreen(
             item {
                 Column(modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 16.dp)) {
                     FlowRepSectionHeader(
-                        title = "Bibliothek",
+                        title = stringResource(R.string.library_section_library),
                         modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
                     )
                     libraryCategories.forEach { category ->
@@ -267,7 +290,7 @@ private fun NowPlayingCard(
                 Text(
                     text = stringResource(R.string.library_now_playing),
                     style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = rememberAccentTextColor(),
                 )
                 Text(text = title, style = MaterialTheme.typography.titleMedium, maxLines = 1)
                 Text(
@@ -280,18 +303,19 @@ private fun NowPlayingCard(
             Icon(
                 painter = painterResource(BrandIcons.Play),
                 contentDescription = stringResource(R.string.library_open_now_playing),
-                tint = MaterialTheme.colorScheme.primary,
+                tint = rememberAccentTextColor(),
             )
         }
     }
 }
 
 @Composable
-private fun MarkerReviewSection(
+internal fun MarkerReviewSection(
     markers: List<SongMarker>,
     songs: List<Song>,
     onConfirm: (Long) -> Unit,
     onDiscard: (Long) -> Unit,
+    onPreview: (SongMarker) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     FlowRepSurface(modifier = modifier) {
@@ -319,12 +343,122 @@ private fun MarkerReviewSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    // C4 (U-3): erst hoeren, dann entscheiden.
+                    TextButton(onClick = { onPreview(marker) }) {
+                        Text(stringResource(R.string.library_marker_listen))
+                    }
                     TextButton(onClick = { onDiscard(marker.id) }) {
                         Text(stringResource(R.string.library_marker_discard))
                     }
                     TextButton(onClick = { onConfirm(marker.id) }) {
                         Text(stringResource(R.string.library_marker_confirm))
                     }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * C4 (U-2): Work-/Rest-Einstiege direkt auf Music Home. Jede Karte nennt
+ * die Drop-Abdeckung, offene Kandidaten und bietet "DropSync verwenden";
+ * ohne Marker fuehrt ein CTA direkt in die Erkennung.
+ */
+@Composable
+internal fun DropSyncSection(
+    cards: List<DropSyncCard>,
+    onOpenPlaylist: (Long) -> Unit,
+    onUseDropSync: (Long) -> Unit,
+    onDetectDrops: (Long) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        FlowRepSectionHeader(
+            title = stringResource(R.string.library_dropsync_section),
+            modifier = Modifier.padding(start = 4.dp),
+        )
+        cards.forEach { card ->
+            DropSyncCardItem(
+                card = card,
+                onOpen = { onOpenPlaylist(card.playlistId) },
+                onUse = { onUseDropSync(card.playlistId) },
+                onDetect = { onDetectDrops(card.playlistId) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun DropSyncCardItem(
+    card: DropSyncCard,
+    onOpen: () -> Unit,
+    onUse: () -> Unit,
+    onDetect: () -> Unit,
+) {
+    Surface(
+        onClick = onOpen,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(Spacing.radiusCard),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = stringResource(card.label.labelRes()),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = rememberAccentTextColor(),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    text = card.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    maxLines = 1,
+                )
+            }
+            if (card.coverage.totalSongs == 0) {
+                Text(
+                    text = stringResource(R.string.library_dropsync_no_songs),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (card.coverage.songsWithDrop == 0) {
+                Text(
+                    text = stringResource(R.string.library_dropsync_no_markers),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                TextButton(onClick = onDetect) {
+                    Text(stringResource(R.string.library_dropsync_detect))
+                }
+            } else {
+                Text(
+                    text =
+                        stringResource(
+                            R.string.library_dropsync_coverage,
+                            card.coverage.songsWithDrop,
+                            card.coverage.totalSongs,
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                if (card.coverage.pendingReviews > 0) {
+                    Text(
+                        text =
+                            stringResource(
+                                R.string.library_dropsync_pending,
+                                card.coverage.pendingReviews,
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+            }
+            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                TextButton(onClick = onUse, enabled = card.coverage.totalSongs > 0) {
+                    Text(stringResource(R.string.library_dropsync_use))
                 }
             }
         }

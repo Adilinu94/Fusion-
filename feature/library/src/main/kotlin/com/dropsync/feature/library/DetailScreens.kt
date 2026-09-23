@@ -35,6 +35,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.CoverImage
+import com.dropsync.core.designsystem.component.FlowRepTopBar
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.designsystem.theme.OverlayTokens
 import com.dropsync.core.designsystem.theme.Spacing
@@ -66,6 +67,7 @@ internal fun CollectionSongScreen(
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val currentProgress by viewModel.currentProgress.collectAsStateWithLifecycle()
     var showOptions by remember { mutableStateOf(false) }
     var infoSong by remember { mutableStateOf<Song?>(null) }
 
@@ -90,11 +92,16 @@ internal fun CollectionSongScreen(
                 onBack = onBack,
             )
         } else {
+            // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+            FlowRepTopBar(
+                title = title,
+                onBack = onBack,
+                backContentDescription = stringResource(R.string.library_back),
+            )
             CategoryHeader(
                 iconRes = headerIcon,
                 title = title,
                 subtitle = subtitleArtist?.let { "$it  |  $meta" } ?: meta,
-                onBack = onBack,
             )
         }
         LibraryToolbar(
@@ -125,6 +132,9 @@ internal fun CollectionSongScreen(
                 selectedIds = selectedIds,
                 onLongPress = { viewModel.startSelection(it.mediaStoreId) },
                 onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
+                // Phase 8 (re-verdrahtet in Paket 4.18): Mini-Waveform je Zeile.
+                waveformFor = viewModel::waveformFor,
+                currentProgress = currentProgress,
             )
         }
         SelectionActionsBar(
@@ -274,11 +284,16 @@ internal fun FolderTreeScreen(
             path.substringAfterLast('/')
         }
     Column(modifier = Modifier.fillMaxSize()) {
+        // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+        FlowRepTopBar(
+            title = title,
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.library_back),
+        )
         CategoryHeader(
             iconRes = BrandIcons.Folder,
             title = title,
             subtitle = if (path.isEmpty()) null else path,
-            onBack = onBack,
         )
         // Poweramp-Aktionsleiste der Ordner-Hierarchie: Shuffle/Play spielen den
         // Teilbaum, das Drei-Punkte-Menue bietet die Ordnersortierung.

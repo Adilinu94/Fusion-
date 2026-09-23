@@ -139,6 +139,14 @@ interface LibraryBrowseRepository {
 
     fun songsOfPlaylist(playlistId: Long): Flow<List<Song>>
 
+    /**
+     * D5/A7: Titel aller Playlists mit diesem Label in EINER Abfrage — die
+     * DropSync-Planung lud vorher je Playlist eine eigene Query (N+1).
+     * Reihenfolge wie [playlistsByLabel] + [songsOfPlaylist] (Playlistname,
+     * dann Position); Duplikate je Song einmal.
+     */
+    suspend fun songsForLabelOnce(label: PlaylistLabel): AppResult<List<Song>>
+
     /** Setzt oder entfernt (null) das Workout-Label einer Playlist. */
     suspend fun setPlaylistLabel(
         playlistId: Long,
@@ -154,10 +162,16 @@ interface LibraryBrowseRepository {
 
     suspend fun deletePlaylist(playlistId: Long): AppResult<Unit>
 
+    /**
+     * Haengt die Titel ans Ende der Playlist. Titel, die bereits in der
+     * Playlist stehen, werden uebersprungen (Duplikat-Schutz, UI-Befund 4.2.2).
+     *
+     * @return Anzahl tatsaechlich hinzugefuegter Titel.
+     */
     suspend fun addToPlaylist(
         playlistId: Long,
         songIds: List<Long>,
-    ): AppResult<Unit>
+    ): AppResult<Int>
 
     /** Entfernt den Eintrag an [position] und schliesst die Luecke. */
     suspend fun removeFromPlaylist(

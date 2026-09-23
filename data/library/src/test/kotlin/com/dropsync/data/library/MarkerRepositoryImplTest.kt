@@ -253,6 +253,43 @@ class MarkerRepositoryImplTest {
             assertTrue(result is AppResult.Failure)
         }
 
+    @Test
+    fun `renameMarker aendert nur das label`() =
+        runTest {
+            songDao.rows[7] = songEntity(7)
+            val created =
+                (repository.createManualMarker(7, "Drop", 42_000) as AppResult.Success).value
+
+            val result = repository.renameMarker(created.id, "  Hauptsatz  ")
+
+            assertTrue(result is AppResult.Success)
+            val stored = markerDao.markers.getValue(created.id)
+            assertEquals("Hauptsatz", stored.label)
+            assertEquals(42_000L, stored.positionMs)
+            assertTrue(stored.isEnabled)
+        }
+
+    @Test
+    fun `renameMarker lehnt leeres label ab`() =
+        runTest {
+            songDao.rows[7] = songEntity(7)
+            val created =
+                (repository.createManualMarker(7, "Drop", 42_000) as AppResult.Success).value
+
+            val result = repository.renameMarker(created.id, "   ")
+
+            assertTrue(result is AppResult.Failure)
+            assertEquals("Drop", markerDao.markers.getValue(created.id).label)
+        }
+
+    @Test
+    fun `renameMarker schlaegt bei unbekannter markerId fehl`() =
+        runTest {
+            val result = repository.renameMarker(999, "Neu")
+
+            assertTrue(result is AppResult.Failure)
+        }
+
     /** Legt einen AUTO_DETECTED-Kandidaten samt Link an, wie es der Worker tut. */
     private suspend fun insertCandidate(
         songId: Long,
@@ -297,6 +334,51 @@ class MarkerRepositoryImplTest {
             assertEquals(MarkerSource.AUTO_DETECTED, pending.single().source)
             assertEquals(7L, pending.single().linkedSongId)
             assertTrue(enabled.isEmpty())
+        }
+
+    /** Legt einen aktiven Marker samt Link an (D5/A7-Batchtest). */
+    private suspend fun insertEnabledMarker(
+        songId: Long,
+        positionMs: Long,
+    ): Long {
+        val markerId =
+            markerDao.insert(
+                SongMarkerEntity(
+                    sourceFingerprint = "fp-$songId",
+                    label = "Drop",
+                    positionMs = positionMs,
+                    source = MarkerSource.MANUAL.name,
+                    isEnabled = true,
+                    createdAtEpochMs = 0,
+                ),
+            )
+        markerDao.insertLink(
+            MarkerSongLinkEntity(
+                markerId = markerId,
+                songId = songId,
+                linkMethod = LinkMethod.MANUAL.name,
+                linkedAtEpochMs = 0,
+            ),
+        )
+        return markerId
+    }
+
+    @Test
+    fun `getEnabledMarkersForSongs laedt mehrere songs in einer abfrage`() =
+        runTest {
+            // D5/A7: EINE Abfrage fuer alle Song-IDs; je Song nach Position,
+            // Songs ohne Marker fehlen in der Map.
+            insertEnabledMarker(7, 42_000)
+            insertEnabledMarker(7, 10_000)
+            insertEnabledMarker(8, 20_000)
+
+            val result =
+                repository.getEnabledMarkersForSongs(listOf(7L, 8L, 99L)) as AppResult.Success
+
+            assertEquals(listOf(listOf(7L, 8L, 99L)), markerDao.batchEnabledCalls)
+            assertEquals(setOf(7L, 8L), result.value.keys)
+            assertEquals(listOf(10_000L, 42_000L), result.value.getValue(7L).map { it.positionMs })
+            assertEquals(listOf(20_000L), result.value.getValue(8L).map { it.positionMs })
         }
 
     @Test

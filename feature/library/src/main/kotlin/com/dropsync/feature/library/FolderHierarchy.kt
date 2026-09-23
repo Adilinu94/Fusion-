@@ -41,14 +41,12 @@ object FolderHierarchy {
         )
         val children = linkedMapOf<String, Acc>()
         for (folder in folders) {
-            val normalized = folder.relativePath.trim('/')
-            if (basePath.isNotEmpty() && !("$normalized/").startsWith(prefix)) continue
-            val remainder = normalized.removePrefix(prefix.trimEnd('/')).trim('/')
-            if (remainder.isEmpty()) continue
-            val childSegment = remainder.substringBefore('/')
-            val acc = children.getOrPut(childSegment) { Acc(0, 0) }
-            acc.tracks += folder.trackCount
-            acc.duration += folder.totalDurationMs
+            val childSegment = childSegmentOf(folder, prefix, basePath)
+            if (childSegment != null) {
+                val acc = children.getOrPut(childSegment) { Acc(0, 0) }
+                acc.tracks += folder.trackCount
+                acc.duration += folder.totalDurationMs
+            }
         }
         return children
             .map { (segment, acc) ->
@@ -71,4 +69,20 @@ object FolderHierarchy {
         folders: List<LibraryFolder>,
         path: String,
     ): Boolean = folders.any { it.relativePath.trim('/') == path.trim('/') }
+
+    /**
+     * Direktes Kindsegment von [folder] unterhalb [basePath]; null, wenn
+     * der Ordner nicht im Teilbaum liegt oder [basePath] selbst ist.
+     */
+    private fun childSegmentOf(
+        folder: LibraryFolder,
+        prefix: String,
+        basePath: String,
+    ): String? {
+        val normalized = folder.relativePath.trim('/')
+        if (basePath.isNotEmpty() && !("$normalized/").startsWith(prefix)) return null
+        val remainder = normalized.removePrefix(prefix.trimEnd('/')).trim('/')
+        if (remainder.isEmpty()) return null
+        return remainder.substringBefore('/')
+    }
 }

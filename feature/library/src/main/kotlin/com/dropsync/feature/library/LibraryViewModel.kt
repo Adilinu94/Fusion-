@@ -3,6 +3,8 @@ package com.dropsync.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppError
+import com.dropsync.core.common.AppResult
+import com.dropsync.core.common.getOrNull
 import com.dropsync.core.common.onFailure
 import com.dropsync.core.common.onSuccess
 import com.dropsync.core.model.PlaylistLabel
@@ -13,6 +15,7 @@ import com.dropsync.domain.audio.WaveformBucket
 import com.dropsync.domain.audio.WaveformDisplayGain
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
+import com.dropsync.domain.library.FolderScanResult
 import com.dropsync.domain.library.Genre
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryFolder
@@ -23,6 +26,7 @@ import com.dropsync.domain.library.LibraryViewPreferencesRepository
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.MusicFolderFilterRepository
 import com.dropsync.domain.library.Playlist
+import com.dropsync.domain.library.PlaylistImportResult
 import com.dropsync.domain.library.SmartShuffle
 import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.library.SongSort
@@ -33,9 +37,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
@@ -108,6 +115,27 @@ private data class DeletedPlaylist(
     val label: PlaylistLabel?,
 )
 
+/** C4 (U-3): Quittung einer Review-Aktion; die Shell zeigt Snackbar + Undo. */
+enum class MarkerReviewAction { CONFIRMED, DISCARDED }
+
+/**
+ * C4 (U-2): Drop-Abdeckung einer Playlist — aktive Marker vs. Titel und
+ * offene Kandidaten ("9/12 Drops", "Noch 3 Marker pruefen").
+ */
+data class DropCoverage(
+    val totalSongs: Int,
+    val songsWithDrop: Int,
+    val pendingReviews: Int,
+)
+
+/** C4 (U-2): Work-/Rest-Einstieg auf Music Home (Playlist mit Label). */
+data class DropSyncCard(
+    val playlistId: Long,
+    val name: String,
+    val label: PlaylistLabel,
+    val coverage: DropCoverage,
+)
+
 @OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class LibraryViewModel
@@ -123,6 +151,18 @@ class LibraryViewModel
     ) : ViewModel() {
         private val _error = MutableStateFlow(LibraryError.NONE)
         val error: StateFlow<LibraryError> = _error.asStateFlow()
+
+        /** UI-Befund 4.2.2: Anzahl uebersprungener Duplikate beim Playlist-Hinzufuegen (0 = keins). */
+        private val _duplicateSkips = MutableSharedFlow<Int>(extraBufferCapacity = 8)
+        val duplicateSkips: SharedFlow<Int> = _duplicateSkips.asSharedFlow()
+
+        /** UI-Befund 4.2.4: Ergebnis des SAF-Ordnerscans; null bei Fehler. */
+        private val _folderScanResult = MutableSharedFlow<FolderScanResult?>(extraBufferCapacity = 4)
+        val folderScanResult: SharedFlow<FolderScanResult?> = _folderScanResult.asSharedFlow()
+
+        /** UI-Befund 4.2.4: Ergebnis des M3U-Imports; null bei Fehler. */
+        private val _m3uImportResult = MutableSharedFlow<PlaylistImportResult?>(extraBufferCapacity = 4)
+        val m3uImportResult: SharedFlow<PlaylistImportResult?> = _m3uImportResult.asSharedFlow()
 
         private val _isRefreshing = MutableStateFlow(false)
         val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
@@ -184,6 +224,59 @@ class LibraryViewModel
         /** Unbestaetigte Drop-Kandidaten werden dort geprueft, wo Musik verwaltet wird. */
         val pendingMarkerReviews: StateFlow<List<SongMarker>> =
             markerRepository.pendingAutoDetectedMarkers.asState(emptyList())
+
+        // --- C4 (U-2/U-3): DropSync-Einstiege + Review-Rueckmeldung --------
+
+        /**
+         * D2 (LargeClass): Der geschlossene Marker-Review-Abschnitt liegt in
+         * [LibraryMarkerReview]; hier stehen nur die Durchreichungen (die
+         * UI-Vertraege des ViewModels).
+         */
+        private val markerReview =
+            LibraryMarkerReview(
+                browseRepository = browseRepository,
+                markerRepository = markerRepository,
+                playbackRepository = playbackRepository,
+                trackAnalysisRepository = trackAnalysisRepository,
+                scope = viewModelScope,
+                pendingMarkers = { pendingMarkerReviews.value },
+                songLookup = { id ->
+                    allSongs.value.firstOrNull { it.mediaStoreId == id }
+                        ?: libraryRepository.getSong(id).getOrNull()
+                },
+            )
+
+        /** C4: Work-/Rest-Karten auf Music Home aus den gelabelten Playlisten. */
+        val dropSyncCards: StateFlow<List<DropSyncCard>> = markerReview.dropSyncCards
+
+        /** C4: Quittung fuer Snackbar+Undo nach Bestaetigen/Verwerfen. */
+        val markerReviewFeedback: SharedFlow<MarkerReviewAction> = markerReview.feedback
+
+        /** C4: Abdeckung einer Playlist fuer die Detailansicht. */
+        fun dropCoverage(playlistId: Long): Flow<DropCoverage> = markerReview.dropCoverage(playlistId)
+
+        /**
+         * C4 (U-2): "DropSync verwenden" — startet die Playlist als
+         * Warteschlange (Kandidatenquelle der Landung), ohne die Bibliothek
+         * zu verlassen.
+         */
+        fun useWithDropSync(playlistId: Long) = markerReview.useWithDropSync(playlistId)
+
+        /**
+         * C4 (U-3)/C10: spielt einen Marker mit Vorlauf an (2,5 s davor)
+         * und startet die Wiedergabe — der Drop soll hoerbar sein, nicht
+         * erst nach dem Sprung beginnen.
+         */
+        fun previewMarker(marker: SongMarker) = markerReview.previewMarker(marker)
+
+        /** C4 (U-3): stoesst die Onset-Erkennung fuer alle noch blinden Titel an. */
+        fun detectDropsForPlaylist(playlistId: Long) = markerReview.detectDropsForPlaylist(playlistId)
+
+        /** C4: true, solange eine Review-Aktion rueckgaengig gemacht werden kann. */
+        fun hasMarkerReviewUndo(): Boolean = markerReview.hasUndo()
+
+        /** C4: macht die letzte Review-Aktion rueckgaengig. */
+        fun undoMarkerReview() = markerReview.undo()
 
         /**
          * Fortschritt des laufenden Titels fuer die Library-Waveform
@@ -333,7 +426,12 @@ class LibraryViewModel
             pool: List<Song>,
         ) {
             val ids = pool.filter { it.mediaStoreId in _selectedIds.value }.map { it.mediaStoreId }
-            viewModelScope.launch { browseRepository.addToPlaylist(playlistId, ids) }
+            viewModelScope.launch {
+                browseRepository.addToPlaylist(playlistId, ids).onSuccess { added ->
+                    val skipped = ids.size - added
+                    if (skipped > 0) _duplicateSkips.tryEmit(skipped)
+                }
+            }
             clearSelection()
         }
 
@@ -442,6 +540,42 @@ class LibraryViewModel
         }
 
         /**
+         * SAF-Ordnerscan (UI-Befund 4.2.4): indexiert eine vom Nutzer gewaehlte
+         * SD-Karte/USB-Quelle inkl. CUE-Sheets; Ergebnis als Snackbar-Zeile.
+         */
+        fun scanSafFolder(treeUri: String) {
+            viewModelScope.launch {
+                libraryRepository
+                    .scanFolder(treeUri)
+                    .onSuccess { result ->
+                        _folderScanResult.tryEmit(result)
+                    }.onFailure { _folderScanResult.tryEmit(null) }
+            }
+        }
+
+        /**
+         * M3U-Import (UI-Befund 4.2.4): liest eine vom Nutzer gewaehlte
+         * Playlist-Datei und legt sie als lokale Playlist an.
+         */
+        fun importM3u(
+            name: String,
+            m3uText: String,
+        ) {
+            viewModelScope.launch {
+                browseRepository
+                    .importM3uPlaylist(name, m3uText)
+                    .onSuccess { result ->
+                        _m3uImportResult.tryEmit(result)
+                    }.onFailure { _m3uImportResult.tryEmit(null) }
+            }
+        }
+
+        /** UI-Befund 4.2.4: M3U-Datei war leer/fehlerhaft; als Fehler melden. */
+        fun onM3uReadFailed() {
+            _m3uImportResult.tryEmit(null)
+        }
+
+        /**
          * Speichert die Ordnerauswahl (Poweramp "Folders and Library") und
          * liest die Bibliothek anschliessend neu ein, damit abgewaehlte Ordner
          * sofort verschwinden und neu aufgenommene wieder erscheinen.
@@ -523,17 +657,13 @@ class LibraryViewModel
          * automatisch erkennen"). Kandidaten erscheinen als unbestaetigte
          * AUTO_DETECTED-Marker in der Review-Liste der Einstellungen.
          */
-        fun detectDrops(song: Song) {
-            viewModelScope.launch { trackAnalysisRepository.requestOnsetDetection(song) }
-        }
+        fun detectDrops(song: Song) = markerReview.detectDrops(song)
 
-        fun confirmMarker(markerId: Long) {
-            viewModelScope.launch { markerRepository.confirmMarker(markerId) }
-        }
+        /** C4 (U-3): bestaetigt einen Kandidaten und merkt ihn fuer Undo. */
+        fun confirmMarker(markerId: Long) = markerReview.confirmMarker(markerId)
 
-        fun discardMarker(markerId: Long) {
-            viewModelScope.launch { markerRepository.deleteMarker(markerId) }
-        }
+        /** C4 (U-3): verwirft einen Kandidaten und merkt ihn fuer Undo. */
+        fun discardMarker(markerId: Long) = markerReview.discardMarker(markerId)
 
         // --- Playlist-Aktionen (Musik-Workout-Kopplung Phase 1) ---------------
 
@@ -615,12 +745,16 @@ class LibraryViewModel
             }
         }
 
-        /** Fuegt [song] der Playlist [playlistId] hinzu. */
+        /** Fuegt [song] der Playlist [playlistId] hinzu; Duplikate werden gemeldet. */
         fun addSongToPlaylist(
             playlistId: Long,
             song: Song,
         ) {
-            viewModelScope.launch { browseRepository.addToPlaylist(playlistId, listOf(song.mediaStoreId)) }
+            viewModelScope.launch {
+                browseRepository.addToPlaylist(playlistId, listOf(song.mediaStoreId)).onSuccess { added ->
+                    if (added == 0) _duplicateSkips.tryEmit(1)
+                }
+            }
         }
 
         /** Entfernt den Eintrag an [position] aus der Playlist. */
@@ -645,7 +779,12 @@ class LibraryViewModel
             lastRemovedPlaylistEntry = null
             viewModelScope.launch {
                 val sizeBefore = playlistSongs.value.size
-                browseRepository.addToPlaylist(removed.playlistId, listOf(removed.songId))
+                // Undo umgeht bewusst den Duplikat-Schutz (der Eintrag wurde
+                // gerade entfernt und ist deshalb nicht mehr in der Playlist);
+                // schlaegt das Wiedereinfuegen fehl, bricht ab statt doppelt.
+                val reinserted =
+                    browseRepository.addToPlaylist(removed.playlistId, listOf(removed.songId))
+                if (reinserted !is AppResult.Success) return@launch
                 val target = removed.position.coerceAtMost(sizeBefore)
                 if (target < sizeBefore) {
                     browseRepository.moveInPlaylist(removed.playlistId, sizeBefore, target)

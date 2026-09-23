@@ -1,6 +1,7 @@
 package com.dropsync.feature.library
 
 import android.app.Activity
+import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -8,9 +9,13 @@ import androidx.activity.compose.PredictiveBackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.DeferredAnimatedContent
+import androidx.compose.animation.MutableContentTransform
 import androidx.compose.animation.SizeTransform
+import androidx.compose.animation.core.DeferredTransitionState
+import androidx.compose.animation.core.ExperimentalDeferredTransitionApi
+import androidx.compose.animation.core.rememberTransition
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -27,6 +32,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -35,16 +41,19 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.FlowRepTopBar
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.LocalReducedMotion
 import com.dropsync.core.model.Song
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /** Ziel im internen Bibliotheks-Backstack (Poweramp-Umbau). */
 private sealed interface LibraryRoute {
@@ -82,26 +91,40 @@ private fun CollectionKind.toView(): LibraryView =
     }
 
 /**
- * Fortschritt der Zurueck-Geste (Ausbauplan A4): liefert den Finger-Fortschritt
- * 0..1 waehrend der Geste, sonst null. Erst beim Loslassen faellt die
- * Entscheidung (Auswahl loeschen oder poppen) — Abbruch setzt zurueck.
- * Eigene Funktion, damit `LibraryContent` unter der Komplexitaetsgrenze bleibt.
+ * Fortschritt der Zurueck-Geste (Ausbauplan A4; seit Compose 1.12 auf
+ * Predictive-Back-Bausteinen): liefert den Finger-Fortschritt 0..1 waehrend
+ * der Geste, sonst null. Erst beim Loslassen faellt die Entscheidung
+ * (Auswahl loeschen oder poppen) — ein Abbruch animiert die Ueberlagerung
+ * per Handoff zurueck. Die echte Uebergangsanimation uebernimmt
+ * [DeferredAnimatedContent] im Rumpf von `LibraryContent`.
  */
+@OptIn(ExperimentalDeferredTransitionApi::class)
 @Composable
 private fun libraryBackProgress(
     stack: SnapshotStateList<LibraryRoute>,
     selectionActive: Boolean,
+    transitionState: DeferredTransitionState<LibraryRoute>,
     onClearSelection: () -> Unit,
     onPop: () -> Unit,
 ): Float? {
     var backProgress by remember { mutableStateOf<Float?>(null) }
     PredictiveBackHandler(enabled = selectionActive || stack.size > 1) { progress ->
+        val routeProgress = !selectionActive && stack.size > 1
+        if (routeProgress) {
+            // Deferred-Phase: die Elternroute wird vorbereitet, aber noch
+            // nicht angesteuert; die Transformation folgt dem Finger.
+            transitionState.defer(stack[stack.lastIndex - 1])
+        }
         try {
             progress.collect { event ->
-                backProgress = if (!selectionActive && stack.size > 1) event.progress else null
+                backProgress = if (routeProgress) event.progress else null
             }
         } catch (e: CancellationException) {
             backProgress = null
+            if (routeProgress) {
+                // Abbruch: Handoff animiert die Transformation zurueck.
+                transitionState.animateTo(stack.last())
+            }
             throw e
         }
         backProgress = null
@@ -118,6 +141,7 @@ private fun libraryBackProgress(
  * Drill-down in Kategorie-Screens und Sammlungs-Details ueber einen internen
  * Backstack. Der globale Mini-Player der App-Shell bleibt darunter sichtbar.
  */
+@OptIn(ExperimentalDeferredTransitionApi::class)
 @Composable
 internal fun LibraryContent(
     viewModel: LibraryViewModel,
@@ -129,12 +153,64 @@ internal fun LibraryContent(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val stack = remember { mutableStateListOf<LibraryRoute>(LibraryRoute.Home) }
-    val current = stack.last()
+    // Compose 1.12 Predictive Back: die Route-Uebergaenge laufen ueber eine
+    // Deferred-Transition. Waehrend der Geste bleibt der Zielzustand offen
+    // (defer), die Transformation folgt dem Finger; beim Loslassen uebernimmt
+    // entweder der Handoff in die Zielroute oder die Rueckkehr zur Ausgangsroute.
+    val transitionState = remember { DeferredTransitionState(stack.last()) }
+    val routeTransition = rememberTransition(transitionState, label = "library-route")
     val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var songForPlaylist by remember { mutableStateOf<Song?>(null) }
     var pendingDelete by remember { mutableStateOf<List<Song>>(emptyList()) }
+
+    // UI-Befund 4.2.2: uebersprungene Duplikate sichtbar machen statt still.
+    LaunchedEffect(viewModel) {
+        viewModel.duplicateSkips.collect { skipped ->
+            snackbarHostState.showSnackbar(
+                context.getString(R.string.library_playlist_duplicates_skipped, skipped),
+            )
+        }
+    }
+
+    // UI-Befund 4.2.4: Ergebnis des SAF-Ordnerscans (null = Fehler).
+    val scanFailedText = stringResource(R.string.library_scan_saf_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.folderScanResult.collect { result ->
+            val message =
+                if (result == null) {
+                    scanFailedText
+                } else {
+                    context.getString(
+                        R.string.library_scan_saf_done_detail,
+                        result.audioFiles,
+                        result.cueSheets,
+                        result.importedCueTracks,
+                    )
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
+
+    // UI-Befund 4.2.4: Ergebnis des M3U-Imports (null = Fehler).
+    val m3uFailedText = stringResource(R.string.library_m3u_import_failed)
+    LaunchedEffect(viewModel) {
+        viewModel.m3uImportResult.collect { result ->
+            val message =
+                if (result == null) {
+                    m3uFailedText
+                } else {
+                    context.getString(
+                        R.string.library_m3u_import_done_detail,
+                        result.importedCount,
+                        result.unresolved,
+                        result.skippedRemote,
+                    )
+                }
+            snackbarHostState.showSnackbar(message)
+        }
+    }
     val deleteLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
             if (result.resultCode == Activity.RESULT_OK) {
@@ -147,18 +223,23 @@ internal fun LibraryContent(
     fun push(route: LibraryRoute) {
         viewModel.clearSelection()
         stack.add(route)
+        transitionState.animateTo(route)
     }
 
     fun pop() {
-        if (stack.size > 1) stack.removeAt(stack.lastIndex)
+        if (stack.size > 1) {
+            stack.removeAt(stack.lastIndex)
+            transitionState.animateTo(stack.last())
+        }
     }
 
-    // Der Screen folgt dem Finger (leichtes Mitschieben + Abdunkeln, siehe
-    // AnimatedContent-Modifier unten); null ohne Geste oder bei Auswahl-Modus.
+    // Der Screen folgt dem Finger (leichtes Mitschieben + Abdunkeln, manuelle
+    // Transformation unten); null ohne Geste oder bei Auswahl-Modus.
     val backProgress =
         libraryBackProgress(
             stack = stack,
             selectionActive = selectionActive,
+            transitionState = transitionState,
             onClearSelection = viewModel::clearSelection,
             onPop = ::pop,
         )
@@ -185,24 +266,37 @@ internal fun LibraryContent(
         }
         // Poweramp-artiger Uebergang: der alte Screen blendet aus, der neue
         // sanft ein. Bewusst nur Fade, kein Slide, damit es ruhig und
-        // akkuschonend bleibt.
-        AnimatedContent(
-            targetState = current,
+        // akkuschonend bleibt. Bei Reduced Motion ohne Uebergang.
+        // Waehrend der Zurueck-Geste folgt der aktuelle Screen dem Finger
+        // (manuelle Transformation in der Deferred-Phase); beim Loslassen
+        // uebernimmt der Handoff. transitionSpec ist kein @Composable-Kontext:
+        // Wert vorher einfangen.
+        val reducedMotion = LocalReducedMotion.current
+        routeTransition.DeferredAnimatedContent(
             transitionSpec = {
-                (fadeIn(tween(220)) togetherWith fadeOut(tween(180)))
-                    .using(SizeTransform(clip = false))
+                if (reducedMotion) {
+                    (fadeIn(snap()) togetherWith fadeOut(snap()))
+                        .using(SizeTransform(clip = false))
+                } else {
+                    (fadeIn(tween(220)) togetherWith fadeOut(tween(180)))
+                        .using(SizeTransform(clip = false))
+                }
             },
-            label = "library-route",
-            modifier =
-                Modifier
-                    .weight(1f)
-                    .graphicsLayer {
+            modifier = Modifier.weight(1f),
+            mutableTransformSpec = {
+                MutableContentTransform {
+                    initialContentTransform { fullSize ->
+                        // Der verlassene Screen schiebt mit dem Finger nach
+                        // rechts und dunkelt leicht ab. Der Zielwert wird erst
+                        // hier (Layout-Phase) gelesen, nicht in der Composition.
                         val gesture = backProgress
                         if (gesture != null) {
-                            translationX = size.width * gesture * 0.25f
+                            offset = IntOffset((fullSize.width * gesture * 0.25f).roundToInt(), 0)
                             alpha = 1f - gesture * 0.25f
                         }
-                    },
+                    }
+                }
+            },
         ) { route ->
             when (route) {
                 LibraryRoute.Home -> {
@@ -211,6 +305,8 @@ internal fun LibraryContent(
                         contentPadding = contentPadding,
                         onOpen = { push(LibraryRoute.Category(it)) },
                         onOpenNowPlaying = onOpenNowPlaying,
+                        onOpenPlaylist = { push(LibraryRoute.PlaylistDetailRoute(it)) },
+                        snackbarHostState = snackbarHostState,
                     )
                 }
 
@@ -301,10 +397,13 @@ private fun HomeRoute(
     contentPadding: PaddingValues,
     onOpen: (LibraryCategory) -> Unit,
     onOpenNowPlaying: () -> Unit,
+    onOpenPlaylist: (Long) -> Unit,
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val queue by viewModel.queue.collectAsStateWithLifecycle()
     val playbackState by viewModel.playbackState.collectAsStateWithLifecycle()
     val pendingMarkers by viewModel.pendingMarkerReviews.collectAsStateWithLifecycle()
+    val dropSyncCards by viewModel.dropSyncCards.collectAsStateWithLifecycle()
     val songs by viewModel.allSongs.collectAsStateWithLifecycle()
     val viewConfig by viewModel.viewConfig.collectAsStateWithLifecycle()
     val excluded by viewModel.excludedFolders.collectAsStateWithLifecycle()
@@ -313,18 +412,76 @@ private fun HomeRoute(
     var showFolders by remember { mutableStateOf(false) }
     var showCategories by remember { mutableStateOf(false) }
 
+    // UI-Befund 4.2.4: SAF-Ordnerscan + M3U-Import (Datenschicht existierte
+    // bereits, es fehlte nur der Einstieg). Ergebnisse zeigt der zentrale
+    // Snackbar-Host von [LibraryContent] ueber die ViewModel-Flows.
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val safFolderPicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                // Persistente Leserechte fuer spaetere Re-Scans.
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+                viewModel.scanSafFolder(uri.toString())
+            }
+        }
+    val m3uFilePicker =
+        rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null) {
+                scope.launch {
+                    val text =
+                        runCatching {
+                            context.contentResolver
+                                .openInputStream(uri)
+                                ?.bufferedReader()
+                                ?.use { it.readText() }
+                        }.getOrNull()
+                    val name = uri.lastPathSegment?.substringAfterLast('/')?.removeSuffix(".m3u")
+                    if (text.isNullOrBlank() || name.isNullOrBlank()) {
+                        viewModel.onM3uReadFailed()
+                    } else {
+                        viewModel.importM3u(name, text)
+                    }
+                }
+            }
+        }
+
     val hidden = viewConfig?.hiddenKeys ?: emptySet()
     val visibleCategories = LibraryCategory.entries.filter { it.key !in hidden }
+
+    // C4 (U-3): Bestaetigen/Verwerfen wird quittiert und ist umkehrbar.
+    val confirmedText = stringResource(R.string.library_marker_confirmed)
+    val discardedText = stringResource(R.string.library_marker_discarded)
+    val undoText = stringResource(R.string.library_undo)
+    LaunchedEffect(viewModel) {
+        viewModel.markerReviewFeedback.collect { action ->
+            val result =
+                snackbarHostState.showSnackbar(
+                    message = if (action == MarkerReviewAction.CONFIRMED) confirmedText else discardedText,
+                    actionLabel = undoText,
+                    withDismissAction = true,
+                )
+            if (result == SnackbarResult.ActionPerformed) viewModel.undoMarkerReview()
+        }
+    }
 
     LibraryHomeScreen(
         categories = visibleCategories,
         queueCount = queue.size,
         playbackState = playbackState,
         pendingMarkers = pendingMarkers,
+        dropSyncCards = dropSyncCards,
         songs = songs,
         contentPadding = contentPadding,
         onOpen = onOpen,
         onOpenNowPlaying = onOpenNowPlaying,
+        onOpenPlaylist = onOpenPlaylist,
+        onUseDropSync = viewModel::useWithDropSync,
+        onDetectDrops = viewModel::detectDropsForPlaylist,
+        onPreviewMarker = viewModel::previewMarker,
         onConfirmMarker = viewModel::confirmMarker,
         onDiscardMarker = viewModel::discardMarker,
         onRescan = { viewModel.refresh(force = true) },
@@ -339,6 +496,17 @@ private fun HomeRoute(
             onSave = { newExcluded ->
                 viewModel.setExcludedFolders(newExcluded)
                 showFolders = false
+            },
+            // UI-Befund 4.2.4: SAF/M3U-Einstieg aus dem Ordnerdialog.
+            onScanSafFolder = {
+                showFolders = false
+                safFolderPicker.launch(null)
+            },
+            onImportM3u = {
+                showFolders = false
+                m3uFilePicker.launch(
+                    arrayOf("audio/x-mpegurl", "audio/x-m3u", "text/plain", "application/octet-stream"),
+                )
             },
             onDismiss = { showFolders = false },
         )
@@ -430,11 +598,16 @@ private fun CategoryRoute(
         LibraryCategory.PLAYLISTS -> {
             val playlists by viewModel.playlists.collectAsStateWithLifecycle()
             Column(modifier = Modifier.fillMaxSize()) {
+                // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+                FlowRepTopBar(
+                    title = stringResource(category.titleRes()),
+                    onBack = onBack,
+                    backContentDescription = stringResource(R.string.library_back),
+                )
                 CategoryHeader(
                     iconRes = categoryIcon(category),
                     title = stringResource(category.titleRes()),
                     subtitle = null,
-                    onBack = onBack,
                 )
                 PlaylistList(
                     playlists = playlists,
@@ -663,9 +836,15 @@ private fun PlaylistDetailRoute(
     onOpenNowPlaying: () -> Unit,
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
-    LaunchedEffect(playlistId) { viewModel.openPlaylist(playlistId) }
+    // Paket 4.16: openPlaylist setzt nur Auswahlzustand — SideEffect mit Key
+    // reicht und spart die Coroutine.
+    SideEffect(playlistId) { viewModel.openPlaylist(playlistId) }
     val playlist by viewModel.openPlaylist.collectAsStateWithLifecycle()
     val songs by viewModel.playlistSongs.collectAsStateWithLifecycle()
+    // C4 (U-2): Abdeckung ("9/12 Drops") auch in der Detailansicht.
+    val coverage by
+        remember(playlistId) { viewModel.dropCoverage(playlistId) }
+            .collectAsStateWithLifecycle(initialValue = null)
     // B4: Undo-Texte und Scope im Composable-Kontext.
     val scope = rememberCoroutineScope()
     val entryRemovedText = stringResource(R.string.library_playlist_entry_removed)
@@ -699,6 +878,7 @@ private fun PlaylistDetailRoute(
             },
             onMove = { from, to -> viewModel.moveInPlaylist(pl.id, from, to) },
             onSetLabel = { label -> viewModel.setPlaylistLabel(pl.id, label) },
+            dropCoverage = coverage,
         )
     }
 }

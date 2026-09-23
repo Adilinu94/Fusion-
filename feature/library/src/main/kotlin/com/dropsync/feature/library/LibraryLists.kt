@@ -19,7 +19,9 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.sizeIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -38,6 +40,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -49,13 +52,22 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.chart.MiniWaveform
 import com.dropsync.core.designsystem.component.CoverImage
+import com.dropsync.core.designsystem.component.FlowRepEmptyState
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.designsystem.theme.Spacing
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.core.model.Song
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /** Anzeigetitel eines Songs (Titel-Tag, sonst Dateiname). */
@@ -99,6 +111,10 @@ internal fun SongColumn(
     selectedIds: Set<Long> = emptySet(),
     onLongPress: (Song) -> Unit = {},
     onToggleSelect: (Song) -> Unit = {},
+    // Phase 8 (re-verdrahtet in Paket 4.18): Mini-Waveform je Zeile, nur
+    // lesend aus dem Analyse-Cache; null/leer bis die Analyse vorliegt.
+    waveformFor: (Long) -> Flow<List<Pair<Float, Float>>?> = { flowOf(null) },
+    currentProgress: CurrentProgress? = null,
 ) {
     if (songs.isEmpty()) {
         EmptyHint(contentPadding = contentPadding, modifier = modifier)
@@ -127,6 +143,8 @@ internal fun SongColumn(
                     onAddToPlaylist = { onAddToPlaylist(song) },
                     onLongPress = { onLongPress(song) },
                     onToggleSelect = { onToggleSelect(song) },
+                    waveformFor = waveformFor,
+                    currentProgress = currentProgress,
                 )
             }
         }
@@ -191,11 +209,16 @@ private fun SongRow(
     onAddToPlaylist: () -> Unit,
     onLongPress: () -> Unit,
     onToggleSelect: () -> Unit,
+    waveformFor: (Long) -> Flow<List<Pair<Float, Float>>?>,
+    currentProgress: CurrentProgress?,
 ) {
     val playLabel = stringResource(R.string.library_play_song, songTitle(song))
     val favLabel =
         stringResource(if (isFavorite) R.string.library_unfavorite else R.string.library_favorite)
     var menuOpen by remember { mutableStateOf(false) }
+    // Phase 8: Mini-Waveform je Zeile, nur lesend aus dem Analyse-Cache.
+    val buckets by waveformFor(song.mediaStoreId).collectAsState(initial = null)
+    val isCurrent = currentProgress?.songId == song.mediaStoreId
     val meta =
         buildString {
             append(song.artist ?: stringResource(R.string.library_unknown_artist))
@@ -256,60 +279,99 @@ private fun SongRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (!selectionActive && showTrailingActions) {
-            IconButton(onClick = onToggleFavorite) {
-                val favTint =
-                    if (isFavorite) {
-                        MaterialTheme.colorScheme.primary
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                Icon(
-                    painter =
-                        painterResource(
-                            if (isFavorite) BrandIcons.FavoriteFilled else BrandIcons.FavoriteOutline,
-                        ),
-                    contentDescription = favLabel,
-                    tint = favTint,
-                )
-            }
-            IconButton(onClick = { menuOpen = true }) {
-                Icon(
-                    painterResource(BrandIcons.More),
-                    contentDescription = stringResource(R.string.library_more_actions),
-                )
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.library_play_next)) },
-                    onClick = {
-                        onPlayNext()
-                        menuOpen = false
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.library_add_to_queue)) },
-                    onClick = {
-                        onAddToQueue()
-                        menuOpen = false
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.library_detect_drops)) },
-                    onClick = {
-                        onDetectDrops()
-                        menuOpen = false
-                    },
-                )
-                DropdownMenuItem(
-                    text = { Text(stringResource(R.string.library_add_to_playlist)) },
-                    onClick = {
-                        onAddToPlaylist()
-                        menuOpen = false
-                    },
-                )
-            }
+        if (!selectionActive && !compact && buckets != null) {
+            // Phase 8: Lime-Mini-Waveform des gespielten Anteils, wenn die
+            // Analyse vorliegt (nur im Nicht-Auswahlmodus, nie kompakt).
+            MiniWaveform(
+                buckets = buckets.orEmpty(),
+                progressFraction = if (isCurrent) currentProgress?.fraction ?: 0f else 0f,
+                modifier =
+                    Modifier
+                        .width(84.dp)
+                        .height(24.dp)
+                        .padding(end = 8.dp),
+            )
         }
+        if (!selectionActive && showTrailingActions) {
+            SongRowTrailingActions(
+                isFavorite = isFavorite,
+                favLabel = favLabel,
+                onToggleFavorite = onToggleFavorite,
+                onPlayNext = onPlayNext,
+                onAddToQueue = onAddToQueue,
+                onDetectDrops = onDetectDrops,
+                onAddToPlaylist = onAddToPlaylist,
+                menuOpen = menuOpen,
+                onMenuOpenChange = { menuOpen = it },
+            )
+        }
+    }
+}
+
+/** Herz- und Overflow-Aktionen einer Titelzeile; ausgelagert (Detekt LongMethod). */
+@Composable
+private fun SongRowTrailingActions(
+    isFavorite: Boolean,
+    favLabel: String,
+    onToggleFavorite: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit,
+    onDetectDrops: () -> Unit,
+    onAddToPlaylist: () -> Unit,
+    menuOpen: Boolean,
+    onMenuOpenChange: (Boolean) -> Unit,
+) {
+    IconButton(onClick = onToggleFavorite) {
+        val favTint =
+            if (isFavorite) {
+                rememberAccentTextColor()
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        Icon(
+            painter =
+                painterResource(
+                    if (isFavorite) BrandIcons.FavoriteFilled else BrandIcons.FavoriteOutline,
+                ),
+            contentDescription = favLabel,
+            tint = favTint,
+        )
+    }
+    IconButton(onClick = { onMenuOpenChange(true) }) {
+        Icon(
+            painterResource(BrandIcons.More),
+            contentDescription = stringResource(R.string.library_more_actions),
+        )
+    }
+    DropdownMenu(expanded = menuOpen, onDismissRequest = { onMenuOpenChange(false) }) {
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.library_play_next)) },
+            onClick = {
+                onPlayNext()
+                onMenuOpenChange(false)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.library_add_to_queue)) },
+            onClick = {
+                onAddToQueue()
+                onMenuOpenChange(false)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.library_detect_drops)) },
+            onClick = {
+                onDetectDrops()
+                onMenuOpenChange(false)
+            },
+        )
+        DropdownMenuItem(
+            text = { Text(stringResource(R.string.library_add_to_playlist)) },
+            onClick = {
+                onAddToPlaylist()
+                onMenuOpenChange(false)
+            },
+        )
     }
 }
 
@@ -341,7 +403,12 @@ private fun SelectionBadge(isSelected: Boolean) {
     }
 }
 
-/** Vertikaler A–Z-Index; tippen springt zum ersten passenden Titel. */
+/**
+ * Vertikaler A–Z-Index; tippen springt zum ersten passenden Titel.
+ * UI-Befund 4.1.2 (Fitts): jede Zeile bekommt eine 48-dp-Mindesthoehe
+ * und Semantik ("Springe zu Buchstabe X"), damit der Scroller mit
+ * Daumen bedienbar und per TalkBack nutzbar ist.
+ */
 @Composable
 private fun AlphabetScroller(
     songs: List<Song>,
@@ -363,7 +430,7 @@ private fun AlphabetScroller(
         modifier =
             modifier
                 .fillMaxHeight()
-                .width(24.dp),
+                .widthIn(min = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
@@ -371,11 +438,16 @@ private fun AlphabetScroller(
             Text(
                 text = letter.toString(),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = rememberAccentTextColor(),
                 modifier =
                     Modifier
+                        .sizeIn(minWidth = 32.dp, minHeight = 48.dp)
                         .clickable { scope.launch { listState.scrollToItem(index) } }
-                        .padding(vertical = 1.dp),
+                        .padding(vertical = 1.dp)
+                        .semantics {
+                            role = Role.Button
+                            contentDescription = letter.toString()
+                        },
             )
         }
     }
@@ -567,19 +639,11 @@ private fun EmptyHint(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
-    Box(
-        modifier =
-            modifier
-                .fillMaxSize()
-                .padding(contentPadding)
-                .padding(24.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = stringResource(R.string.library_empty),
-            style = MaterialTheme.typography.bodyLarge,
-        )
-    }
+    // Einheitlicher Leerzustand aus dem Designsystem (UI-Befund 4.2.7).
+    FlowRepEmptyState(
+        text = stringResource(R.string.library_empty),
+        modifier = modifier.padding(contentPadding),
+    )
 }
 
 private const val FAST_SCROLLER_MIN_ITEMS = 20

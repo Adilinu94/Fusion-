@@ -113,16 +113,18 @@ class LibraryBrowseRepositoryImpl(
         withContext(dispatchers.io) {
             if (songIds.isEmpty()) return@withContext AppResult.success(emptyList())
             try {
-                // Favoriten einmal als Momentaufnahme; play_stats pro Titel.
+                // Favoriten einmal als Momentaufnahme; Statistiken der
+                // angefragten Titel in EINER IN-Query (D5/A1 statt N+1).
                 val favoriteIds =
                     favoriteDao
                         .observeFavorites()
                         .first()
                         .map { it.mediaStoreId }
                         .toSet()
+                val stats = playStatDao.getStats(songIds).associateBy { it.songId }
                 val candidates =
                     songIds.map { songId ->
-                        val stat = playStatDao.getStat(songId)
+                        val stat = stats[songId]
                         ShuffleCandidate(
                             songId = songId,
                             playCount = stat?.playCount ?: 0,
@@ -168,9 +170,8 @@ class LibraryBrowseRepositoryImpl(
             if (trimmed.isEmpty()) return@withContext AppResult.success(emptyList())
             try {
                 // Der Volltextindex ist eine content-Tabelle ueber songs und
-                // wird vor der Suche neu aufgebaut, damit er den letzten
-                // Scan widerspiegelt (Room synchronisiert ihn nicht selbst).
-                browseDao.rebuildSearchIndex()
+                // wird beim Scan gepflegt (Befund 3.12: kein O(N)-Rebuild je
+                // Tastendruck mehr).
                 val match = toFtsPrefixQuery(trimmed)
                 val hits = browseDao.search(match)
                 AppResult.success(hits.map { it.toDomain() })
@@ -189,6 +190,22 @@ class LibraryBrowseRepositoryImpl(
 
     override fun songsOfPlaylist(playlistId: Long): Flow<List<Song>> =
         playlistDao.observeSongsOfPlaylist(playlistId).map { it.map { row -> row.toDomain() } }
+
+    override suspend fun songsForLabelOnce(label: PlaylistLabel): AppResult<List<Song>> =
+        withContext(dispatchers.io) {
+            try {
+                val songs =
+                    playlistDao
+                        .getSongsForLabelOnce(label.name)
+                        .distinctBy { it.mediaStoreId }
+                        .map { it.toDomain() }
+                AppResult.success(songs)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                AppResult.failure(AppError.DatabaseFailure("songsForLabelOnce"))
+            }
+        }
 
     override suspend fun setPlaylistLabel(
         playlistId: Long,
@@ -269,14 +286,19 @@ class LibraryBrowseRepositoryImpl(
     override suspend fun addToPlaylist(
         playlistId: Long,
         songIds: List<Long>,
-    ): AppResult<Unit> =
+    ): AppResult<Int> =
         withContext(dispatchers.io) {
-            if (songIds.isEmpty()) return@withContext AppResult.success(Unit)
+            if (songIds.isEmpty()) return@withContext AppResult.success(0)
             try {
+                // Duplikat-Schutz (UI-Befund 4.2.2): Titel, die bereits in der
+                // Playlist stehen, werden uebersprungen statt doppelt einzutragen.
+                val existing = playlistDao.getSongIdsOnce(playlistId).toHashSet()
+                val fresh = songIds.distinct().filterNot { it in existing }
+                if (fresh.isEmpty()) return@withContext AppResult.success(0)
                 transactionRunner {
                     var position = playlistDao.maxPosition(playlistId) + 1
                     val items =
-                        songIds.map { songId ->
+                        fresh.map { songId ->
                             PlaylistItemEntity(
                                 playlistId = playlistId,
                                 songId = songId,
@@ -285,13 +307,26 @@ class LibraryBrowseRepositoryImpl(
                         }
                     playlistDao.insertItems(items)
                 }
-                AppResult.success(Unit)
+                AppResult.success(fresh.size)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 AppResult.failure(AppError.DatabaseFailure("addToPlaylist"))
             }
         }
+
+    /**
+     * D5/A2: Lueckenlose Neunummerierung in zwei Statements (DELETE + ein
+     * Batch-Insert) statt je Eintrag ein UPDATE. Die Eintrags-IDs wechseln
+     * dabei — sie sind rein intern, niemand referenziert sie.
+     */
+    private suspend fun renumberPlaylist(
+        playlistId: Long,
+        items: List<PlaylistItemEntity>,
+    ) {
+        playlistDao.deleteItemsOfPlaylist(playlistId)
+        playlistDao.insertItems(items.mapIndexed { index, item -> item.copy(position = index) })
+    }
 
     override suspend fun removeFromPlaylist(
         playlistId: Long,
@@ -302,15 +337,9 @@ class LibraryBrowseRepositoryImpl(
                 transactionRunner {
                     val items = playlistDao.getItemsOnce(playlistId)
                     val target = items.getOrNull(position) ?: return@transactionRunner
-                    playlistDao.deleteItem(target.id)
-                    // Verbleibende Eintraege lueckenlos neu nummerieren.
-                    items
-                        .filterNot { it.id == target.id }
-                        .forEachIndexed { index, item ->
-                            if (item.position != index) {
-                                playlistDao.updateItemPosition(item.id, index)
-                            }
-                        }
+                    // D5/A2: Verbleibende Eintraege lueckenlos neu nummerieren
+                    // (DELETE + Batch-Insert statt je Eintrag ein UPDATE).
+                    renumberPlaylist(playlistId, items.filterNot { it.id == target.id })
                 }
                 AppResult.success(Unit)
             } catch (e: CancellationException) {
@@ -334,11 +363,8 @@ class LibraryBrowseRepositoryImpl(
                     }
                     val moved = items.removeAt(fromPosition)
                     items.add(toPosition, moved)
-                    items.forEachIndexed { index, item ->
-                        if (item.position != index) {
-                            playlistDao.updateItemPosition(item.id, index)
-                        }
-                    }
+                    // D5/A2: Neunummerierung als DELETE + Batch-Insert.
+                    renumberPlaylist(playlistId, items)
                 }
                 AppResult.success(Unit)
             } catch (e: CancellationException) {

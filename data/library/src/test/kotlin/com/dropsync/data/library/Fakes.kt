@@ -1,9 +1,14 @@
 package com.dropsync.data.library
 
 import com.dropsync.core.database.TransactionRunner
+import com.dropsync.core.database.dao.AlbumRow
+import com.dropsync.core.database.dao.ArtistRow
 import com.dropsync.core.database.dao.CueTrackDao
+import com.dropsync.core.database.dao.FolderRow
+import com.dropsync.core.database.dao.GenreRow
+import com.dropsync.core.database.dao.LibraryBrowseDao
+import com.dropsync.core.database.dao.LinkedMarkerRow
 import com.dropsync.core.database.dao.MarkerDao
-import com.dropsync.core.database.dao.PendingMarkerRow
 import com.dropsync.core.database.dao.SafFileDao
 import com.dropsync.core.database.dao.SongDao
 import com.dropsync.core.database.entity.CueTrackEntity
@@ -72,6 +77,9 @@ class FakeSongDao : SongDao {
 class FakeMarkerDao : MarkerDao {
     val markers = linkedMapOf<Long, SongMarkerEntity>()
     val links = linkedMapOf<Long, MarkerSongLinkEntity>()
+
+    /** D5/A7: Batch-Aufrufe (Liste der Song-IDs je Aufruf). */
+    val batchEnabledCalls = mutableListOf<List<Long>>()
     private var nextMarkerId = 1L
     private var nextLinkId = 1L
     private val unmatchedState = MutableStateFlow<List<SongMarkerEntity>>(emptyList())
@@ -109,6 +117,23 @@ class FakeMarkerDao : MarkerDao {
 
     override fun observeUnmatched(): Flow<List<SongMarkerEntity>> = unmatchedState
 
+    // C4: DISTINCT song_id der Links mit aktivem Marker (wie die DAO-Query).
+    override fun observeSongsWithEnabledMarkers(): Flow<List<Long>> =
+        pendingVersion.map {
+            links.values
+                .filter { link -> markers[link.markerId]?.isEnabled == true }
+                .map { it.songId }
+                .distinct()
+        }
+
+    override suspend fun renameMarker(
+        id: Long,
+        label: String,
+    ) {
+        markers[id]?.let { markers[id] = it.copy(label = label) }
+        emit()
+    }
+
     override suspend fun insertLink(link: MarkerSongLinkEntity): Long {
         // Bildet den Unique-Index auf marker_id nach (ABORT bei Konflikt).
         check(links.values.none { it.markerId == link.markerId }) {
@@ -144,14 +169,26 @@ class FakeMarkerDao : MarkerDao {
         return markers.values.filter { it.id in ids && it.isEnabled }.sortedBy { it.positionMs }
     }
 
-    override fun observePendingBySource(source: String): Flow<List<PendingMarkerRow>> =
+    // D5/A7: Batch-Abfrage wie das DAO (je Song nach Position).
+    override suspend fun getEnabledMarkersForSongs(songIds: List<Long>): List<LinkedMarkerRow> {
+        batchEnabledCalls += songIds
+        return songIds.flatMap { songId ->
+            getEnabledMarkersForSong(songId).map { LinkedMarkerRow(it, songId) }
+        }
+    }
+
+    // D5/A8: Flow-Variante; Marker-Aenderungen stossen ueber pendingVersion an.
+    override fun observeEnabledMarkersForSong(songId: Long): Flow<List<SongMarkerEntity>> =
+        pendingVersion.map { getEnabledMarkersForSong(songId) }
+
+    override fun observePendingBySource(source: String): Flow<List<LinkedMarkerRow>> =
         pendingVersion.map {
             markers.values
                 .filter { it.source == source && !it.isEnabled }
                 .mapNotNull { marker ->
                     links.values
                         .firstOrNull { it.markerId == marker.id }
-                        ?.let { link -> PendingMarkerRow(marker, link.songId) }
+                        ?.let { link -> LinkedMarkerRow(marker, link.songId) }
                 }.sortedWith(compareBy({ it.linkedSongId }, { it.marker.positionMs }))
         }
 
@@ -308,5 +345,39 @@ class FakeTrackAnalysisRepository : TrackAnalysisRepository {
 
     override suspend fun requestOnsetDetection(song: Song) {
         // Nicht in dieser Phase relevant.
+    }
+}
+
+/** Test-Fake fuer den [LibraryBrowseDao]; nur Such-Index-Relevantes. */
+class FakeLibraryBrowseDao : LibraryBrowseDao {
+    var rebuildCount = 0
+        private set
+
+    override fun observeAlbums(): Flow<List<AlbumRow>> = flowOf(emptyList())
+
+    override fun observeArtists(): Flow<List<ArtistRow>> = flowOf(emptyList())
+
+    override fun observeGenres(): Flow<List<GenreRow>> = flowOf(emptyList())
+
+    override fun observeFolders(): Flow<List<FolderRow>> = flowOf(emptyList())
+
+    override fun observeSongsByAlbum(album: String): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeSongsByArtist(artist: String): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeSongsByGenre(genre: String): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeSongsByFolder(relativePath: String): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeRecentlyAdded(limit: Int): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeRecentlyPlayed(limit: Int): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override fun observeMostPlayed(limit: Int): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    override suspend fun search(query: String): List<SongEntity> = emptyList()
+
+    override suspend fun rebuildSearchIndex() {
+        rebuildCount++
     }
 }

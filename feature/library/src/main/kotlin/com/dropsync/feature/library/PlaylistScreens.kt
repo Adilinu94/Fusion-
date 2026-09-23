@@ -41,6 +41,7 @@ import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.component.FlowRepTopBar
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.Song
@@ -203,36 +204,53 @@ internal fun PlaylistDetail(
     onRemove: (Int) -> Unit,
     onMove: (Int, Int) -> Unit,
     onSetLabel: (PlaylistLabel?) -> Unit,
+    dropCoverage: DropCoverage? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(
-                    painterResource(BrandIcons.Back),
-                    contentDescription = stringResource(R.string.library_back),
+        // C12 (U-10): gemeinsame Kopfzeile; "Alle abspielen" als Aktion.
+        FlowRepTopBar(
+            title = playlist.name,
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.library_back),
+            actions = {
+                if (songs.isNotEmpty()) {
+                    IconButton(onClick = { onPlay(0) }) {
+                        Icon(
+                            painterResource(BrandIcons.Play),
+                            contentDescription = stringResource(R.string.library_playlist_play_all),
+                        )
+                    }
+                }
+            },
+        )
+        LabelChips(selected = playlist.label, onSelect = onSetLabel)
+        // C4 (U-2): Abdeckung und offene Kandidaten direkt am Kopf der Liste.
+        if (dropCoverage != null && dropCoverage.totalSongs > 0) {
+            Text(
+                text =
+                    if (dropCoverage.songsWithDrop == 0) {
+                        stringResource(R.string.library_dropsync_no_markers)
+                    } else {
+                        stringResource(
+                            R.string.library_dropsync_coverage,
+                            dropCoverage.songsWithDrop,
+                            dropCoverage.totalSongs,
+                        )
+                    },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+            if (dropCoverage.pendingReviews > 0) {
+                Text(
+                    text = stringResource(R.string.library_dropsync_pending, dropCoverage.pendingReviews),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
                 )
             }
-            Text(
-                text = playlist.name,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
-            )
-            if (songs.isNotEmpty()) {
-                IconButton(onClick = { onPlay(0) }) {
-                    Icon(
-                        painterResource(BrandIcons.Play),
-                        contentDescription = stringResource(R.string.library_playlist_play_all),
-                    )
-                }
-            }
         }
-        LabelChips(selected = playlist.label, onSelect = onSetLabel)
         if (songs.isEmpty()) {
             Text(
                 text = stringResource(R.string.library_playlist_detail_empty),
@@ -378,7 +396,7 @@ private fun LabelChips(
     }
 }
 
-private fun PlaylistLabel.labelRes(): Int =
+internal fun PlaylistLabel.labelRes(): Int =
     when (this) {
         PlaylistLabel.REST -> R.string.library_playlist_label_rest
         PlaylistLabel.WORK -> R.string.library_playlist_label_work

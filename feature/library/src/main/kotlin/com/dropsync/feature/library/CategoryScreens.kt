@@ -12,6 +12,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -23,7 +24,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.dropsync.core.designsystem.component.FlowRepTopBar
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.core.model.Song
+import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.playback.QueueItem
 
 /**
@@ -47,26 +51,25 @@ internal fun SongCategoryScreen(
     val favoriteIds by viewModel.favoriteIds.collectAsStateWithLifecycle()
     val selectionActive by viewModel.selectionActive.collectAsStateWithLifecycle()
     val selectedIds by viewModel.selectedIds.collectAsStateWithLifecycle()
+    val currentProgress by viewModel.currentProgress.collectAsStateWithLifecycle()
 
     var showOptions by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var infoSong by remember { mutableStateOf<Song?>(null) }
 
+    // FTS-Suche (Befund 3.12): bei Query nutzt der Filter den Volltextindex
+    // statt der In-Memory-`contains`-Filterung; die Ergebnisse werden auf
+    // die Kategorie geschnitten, damit der Kontext erhalten bleibt.
+    val ftsResults by viewModel.searchResults.collectAsStateWithLifecycle()
+    // Paket 4.16: setSearchQuery ist nicht suspendierend — SideEffect mit Key
+    // statt LaunchedEffect.
+    SideEffect(query) { viewModel.setSearchQuery(query) }
+    val categoryIds = remember(rawSongs) { rawSongs.map { it.mediaStoreId }.toHashSet() }
+
     val sorted =
-        remember(rawSongs, config, playStats, query) {
-            val filtered =
-                if (query.isBlank()) {
-                    rawSongs
-                } else {
-                    val q = query.trim().lowercase()
-                    rawSongs.filter {
-                        songTitle(it).lowercase().contains(q) ||
-                            (it.artist?.lowercase()?.contains(q) == true) ||
-                            (it.album?.lowercase()?.contains(q) == true)
-                    }
-                }
-            LibrarySortEngine.sort(filtered, config.sort, config.descending, playStats)
+        remember(rawSongs, config, playStats, query, ftsResults) {
+            sortedCategorySongs(rawSongs, ftsResults, categoryIds, query, config, playStats)
         }
 
     val headerSubtitle =
@@ -77,11 +80,16 @@ internal fun SongCategoryScreen(
         )
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+        FlowRepTopBar(
+            title = stringResource(category.titleRes()),
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.library_back),
+        )
         CategoryHeader(
             iconRes = categoryIcon(category),
             title = stringResource(category.titleRes()),
             subtitle = headerSubtitle,
-            onBack = onBack,
         )
         LibraryToolbar(
             onShuffle = { viewModel.shufflePlay(sorted) },
@@ -134,6 +142,10 @@ internal fun SongCategoryScreen(
                         selectedIds = selectedIds,
                         onLongPress = { viewModel.startSelection(it.mediaStoreId) },
                         onToggleSelect = { viewModel.toggleSelection(it.mediaStoreId) },
+                        // Phase 8 (re-verdrahtet in Paket 4.18): Mini-Waveform
+                        // je Zeile aus dem Analyse-Cache.
+                        waveformFor = viewModel::waveformFor,
+                        currentProgress = currentProgress,
                     )
                 }
             }
@@ -242,12 +254,17 @@ internal fun BucketCategoryScreen(
         }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+        FlowRepTopBar(
+            title = stringResource(category.titleRes()),
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.library_back),
+        )
         CategoryHeader(
             iconRes = iconRes,
             title = stringResource(category.titleRes()),
             subtitle =
                 pluralStringResource(R.plurals.library_track_count, items.size, items.size),
-            onBack = onBack,
         )
         LibraryToolbar(
             onShuffle = null,
@@ -307,11 +324,16 @@ internal fun QueueCategoryScreen(
     onPlayIndex: (Int) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
+        // C12 (U-10): eine gemeinsame Kopfzeile statt Eigenbau.
+        FlowRepTopBar(
+            title = stringResource(LibraryCategory.QUEUE.titleRes()),
+            onBack = onBack,
+            backContentDescription = stringResource(R.string.library_back),
+        )
         CategoryHeader(
             iconRes = categoryIcon(LibraryCategory.QUEUE),
             title = stringResource(LibraryCategory.QUEUE.titleRes()),
             subtitle = pluralStringResource(R.plurals.library_track_count, queue.size, queue.size),
-            onBack = onBack,
         )
         if (queue.isEmpty()) {
             Box(
@@ -332,7 +354,7 @@ internal fun QueueCategoryScreen(
                             style = MaterialTheme.typography.titleMedium,
                             color =
                                 if (highlight) {
-                                    MaterialTheme.colorScheme.primary
+                                    rememberAccentTextColor()
                                 } else {
                                     MaterialTheme.colorScheme.onSurface
                                 },
@@ -355,6 +377,28 @@ internal fun QueueCategoryScreen(
             }
         }
     }
+}
+
+/**
+ * Filtert und sortiert die Titel einer Kategorie (Befund 3.12 FTS): bei
+ * Query zaehlt der Volltextindex, geschnitten auf die Kategorie-Songs.
+ * Ausgelagert, damit der Screen unter der Detekt-Laengengrenze bleibt.
+ */
+private fun sortedCategorySongs(
+    rawSongs: List<Song>,
+    ftsResults: List<Song>,
+    categoryIds: Set<Long>,
+    query: String,
+    config: CategoryListConfig,
+    playStats: Map<Long, SongPlayStat>,
+): List<Song> {
+    val filtered =
+        if (query.isBlank()) {
+            rawSongs
+        } else {
+            ftsResults.filter { it.mediaStoreId in categoryIds }
+        }
+    return LibrarySortEngine.sort(filtered, config.sort, config.descending, playStats)
 }
 
 /** Menschlich lesbare Dateigroesse fuer den Info-Dialog. */

@@ -32,33 +32,49 @@ object M3uPlaylistParser {
 
     fun parse(text: String): M3uPlaylist {
         val entries = mutableListOf<M3uEntry>()
-        var pendingTitle: String? = null
-        var pendingDuration: Int? = null
-
+        var pending = Pending()
         for (rawLine in text.lineSequence()) {
-            val line = rawLine.trim().removePrefix("\uFEFF").trim()
-            if (line.isEmpty()) continue
-            if (line.startsWith("#")) {
-                if (line.startsWith("#EXTINF:", ignoreCase = true)) {
-                    val payload = line.substringAfter(':', "")
-                    val durationPart = payload.substringBefore(',').trim()
-                    // Dauer kann negativ (-1) oder mit Attributen versehen sein.
-                    pendingDuration = durationPart.substringBefore(' ').toDoubleOrNull()?.toInt()
-                    pendingTitle = payload.substringAfter(',', "").trim().ifBlank { null }
-                }
-                continue
-            }
-            entries +=
-                M3uEntry(
-                    location = line,
-                    title = pendingTitle,
-                    durationSeconds = pendingDuration,
-                    isRemote = isRemote(line),
-                )
-            pendingTitle = null
-            pendingDuration = null
+            pending = consumeLine(rawLine, pending, entries)
         }
         return M3uPlaylist(entries)
+    }
+
+    /** Ueberstand zwischen `#EXTINF` und dem zugehoerigen Eintrag. */
+    private data class Pending(
+        val title: String? = null,
+        val duration: Int? = null,
+    )
+
+    /**
+     * Verarbeitet eine Zeile und liefert den neuen Ueberstand: Leerzeilen
+     * und Kommentare aendern nichts, `#EXTINF` setzt den Ueberstand, alles
+     * andere ist ein Eintrag und leert ihn.
+     */
+    private fun consumeLine(
+        rawLine: String,
+        pending: Pending,
+        entries: MutableList<M3uEntry>,
+    ): Pending {
+        val line = rawLine.trim().removePrefix("\uFEFF").trim()
+        if (line.isEmpty()) return pending
+        if (line.startsWith("#")) {
+            if (!line.startsWith("#EXTINF:", ignoreCase = true)) return pending
+            val payload = line.substringAfter(':', "")
+            val durationPart = payload.substringBefore(',').trim()
+            return Pending(
+                title = payload.substringAfter(',', "").trim().ifBlank { null },
+                // Dauer kann negativ (-1) oder mit Attributen versehen sein.
+                duration = durationPart.substringBefore(' ').toDoubleOrNull()?.toInt(),
+            )
+        }
+        entries +=
+            M3uEntry(
+                location = line,
+                title = pending.title,
+                durationSeconds = pending.duration,
+                isRemote = isRemote(line),
+            )
+        return Pending()
     }
 
     /** true fuer http/https und andere Netz-Schemata. */

@@ -32,12 +32,18 @@ import androidx.compose.ui.unit.dp
  * "Speichern" persistiert die Auswahl und stoesst einen erneuten Einlesevorgang
  * an. Intern gehalten wird die Ausschlussmenge, damit der Default (nichts
  * abgehakt) alle Ordner einschliesst.
+ *
+ * UI-Befund 4.2.4: zusaetzlicher SAF-Einstieg ("Ordner scannen") und
+ * M3U-Import-Einstieg — beide Funktionen existieren in der Datenschicht,
+ * waren aber ohne UI unerreichbar.
  */
 @Composable
 internal fun SelectFoldersDialog(
     allFolders: List<String>,
     excluded: Set<String>,
     onSave: (Set<String>) -> Unit,
+    onScanSafFolder: () -> Unit,
+    onImportM3u: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Arbeitskopie der Ausschlussmenge; nur beim Speichern uebernommen.
@@ -46,13 +52,13 @@ internal fun SelectFoldersDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.library_select_folders_title)) },
         text = {
-            if (allFolders.isEmpty()) {
-                Text(
-                    text = stringResource(R.string.library_select_folders_empty),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-            } else {
-                Column {
+            Column {
+                if (allFolders.isEmpty()) {
+                    Text(
+                        text = stringResource(R.string.library_select_folders_empty),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                } else {
                     Text(
                         text = stringResource(R.string.library_select_folders_desc),
                         style = MaterialTheme.typography.bodySmall,
@@ -88,6 +94,13 @@ internal fun SelectFoldersDialog(
                             }
                         }
                     }
+                }
+                Spacer(Modifier.height(12.dp))
+                TextButton(onClick = onScanSafFolder) {
+                    Text(stringResource(R.string.library_scan_saf_folder))
+                }
+                TextButton(onClick = onImportM3u) {
+                    Text(stringResource(R.string.library_import_m3u))
                 }
             }
         },

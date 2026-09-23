@@ -5,8 +5,10 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.CueTrackDao
+import com.dropsync.core.database.dao.LibraryBrowseDao
 import com.dropsync.core.database.dao.SafFileDao
 import com.dropsync.core.database.dao.SongDao
+import com.dropsync.core.database.entity.SongEntity
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.library.AudioFileFormat
@@ -45,6 +47,7 @@ class LibraryRepositoryImpl(
     private val safGateway: SafFolderGateway,
     private val folderFilter: MusicFolderFilterRepository,
     private val trackAnalysisRepository: TrackAnalysisRepository,
+    private val browseDao: LibraryBrowseDao,
 ) : LibraryRepository {
     override val songs: Flow<List<Song>> =
         songDao.observeAll().map { entities -> entities.map { it.toDomain() } }
@@ -98,13 +101,18 @@ class LibraryRepositoryImpl(
                 transactionRunner {
                     songDao.upsertAll(entities)
                     songDao.markMissingAsUnavailable(presentIds)
+                    // FTS-Index beim Scan pflegen (Befund 3.12) statt je
+                    // Suchanfrage O(N) neu aufzubauen.
+                    browseDao.rebuildSearchIndex()
                 }
                 scanStateStore.setLastGeneration(generation)
 
-                // Import-Pipeline (Phase 5): neue, verfuegbare Songs stossen
-                // ihre Waveform-Analyse direkt nach dem Scan automatisch an,
-                // statt erst beim Oeffnen des Now-Playing-Screens. Der Batch-
-                // Anstoss bestimmt Cache-Misses in EINER Abfrage (Poweramp-
+                // Import-Pipeline (Phase 5, A10): neue, verfuegbare Songs
+                // stossen ihre Analyse direkt nach dem Scan automatisch an —
+                // als Volldurchgang mit Waveform, Mix-Metadaten und
+                // Drop-Kandidaten (unbestaetigt, Review-Liste), statt erst
+                // beim Oeffnen des Now-Playing-Screens. Der Batch-Anstoss
+                // bestimmt Cache-Misses in EINER Abfrage (Poweramp-
                 // Scanner-Muster: keine N Einzel-Queries bei grossen
                 // Bibliotheken); der Worker dedupliziert ueber
                 // track_analysis_<songId>.
@@ -255,12 +263,22 @@ class LibraryRepositoryImpl(
         val songs = songDao.getAllOnce()
         var imported = 0
         for (document in cueDocuments) {
-            val text = safGateway.readDocument(document.documentUri) ?: continue
-            val sheet = (CueSheetParser.parse(text) as? ParsedCueSheet.Success)?.sheet ?: continue
-            for ((file, tracks) in sheet.tracks.groupBy { it.file }) {
-                val song =
-                    songs.filter { it.displayName.equals(file, ignoreCase = true) }.singleOrNull()
-                        ?: continue
+            imported += importCueDocument(document, songs)
+        }
+        return imported
+    }
+
+    /** Importiert die eindeutigen FILE-Referenzen eines CUE-Dokuments. */
+    private suspend fun importCueDocument(
+        document: SafDocument,
+        songs: List<SongEntity>,
+    ): Int {
+        val text = safGateway.readDocument(document.documentUri) ?: return 0
+        val sheet = (CueSheetParser.parse(text) as? ParsedCueSheet.Success)?.sheet ?: return 0
+        var imported = 0
+        for ((file, tracks) in sheet.tracks.groupBy { it.file }) {
+            val song = songs.filter { it.displayName.equals(file, ignoreCase = true) }.singleOrNull()
+            if (song != null) {
                 val entities = tracks.map { it.toEntity(song.mediaStoreId) }
                 transactionRunner {
                     cueTrackDao.deleteForSong(song.mediaStoreId)

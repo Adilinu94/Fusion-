@@ -31,6 +31,18 @@ android {
     buildFeatures {
         compose = true
     }
+
+    testOptions {
+        unitTests.all {
+            // D4: Compose+Robolectric-Tests brauchen mehr Heap.
+            it.maxHeapSize = "2g"
+        }
+        unitTests {
+            // D4: Compose-UI-Tests (Marker-Review, Work-/Rest-Karten) laufen
+            // mit Robolectric gegen die gemergten Ressourcen.
+            isIncludeAndroidResources = true
+        }
+    }
 }
 
 dependencies {
@@ -57,6 +69,15 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(project(":core:testing"))
+    // C4: LibraryViewModel-Tests (Flows + Turbine).
+    testImplementation(libs.junit4)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.turbine)
+    // D4: Compose-UI-Tests der Home-Sektionen (Robolectric, ohne Geraet).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }
