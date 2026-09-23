@@ -27,7 +27,9 @@ class BeepRendererTest {
         for (i in (ramp + 1) until pcm.size - ramp) {
             val previous = pcm[i - 1].toInt()
             val current = pcm[i].toInt()
-            if ((previous < 0 && current >= 0) || (previous >= 0 && current < 0)) crossings++
+            val rising = previous < 0 && current >= 0
+            val falling = previous >= 0 && current < 0
+            if (rising || falling) crossings++
         }
         val samples = (pcm.size - ramp) - (ramp + 1)
         return crossings * sampleRate / 2.0 / samples
