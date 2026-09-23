@@ -92,7 +92,14 @@ class TimerEngine(
         }
     }
 
-    /** PREPARING -> RUNNING; nur fuer die aktive Sitzung. */
+    /**
+     * PREPARING -> RUNNING; nur fuer die aktive Sitzung.
+     *
+     * A9/T-13: setzt BEWUSST keine `startedElapsedRealtimeMs` — dieser Pfad
+     * ist der Start eines DROPSYNC (manueller DropRest), dessen Zeitreferenz
+     * die Playerposition ist (siehe [TimerSession.markerPositionMs]). Fuer
+     * NORMAL/REST setzt `evaluatePreparing` den monotonen Start.
+     */
     fun markRunning(sessionId: String): Boolean {
         val current = mutableState.value
         if (current.session?.id != sessionId || current.status != TimerStatus.PREPARING) return false

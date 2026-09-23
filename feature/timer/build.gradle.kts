@@ -46,6 +46,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:designsystem"))
     implementation(project(":domain:timer"))
+    // C15 (PR-3): DropSync-Schalter im Standalone-Timer (Drop-Auto-Wahrheit).
+    implementation(project(":domain:playback"))
 
     val composeBom = platform(libs.androidx.compose.bom)
     implementation(composeBom)

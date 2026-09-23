@@ -1,13 +1,15 @@
 package com.dropsync.data.timer.di
 
 import android.content.Context
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.preferencesDataStoreFile
 import com.dropsync.core.common.Clock
 import com.dropsync.core.common.DispatcherProvider
+import com.dropsync.core.common.datastore.createResilientPreferencesDataStore
 import com.dropsync.data.timer.AndroidCueOutput
+import com.dropsync.data.timer.AndroidSetLogHaptics
 import com.dropsync.data.timer.CompletionTonePlayer
 import com.dropsync.data.timer.CountdownBeepPlayer
+import com.dropsync.data.timer.DataStoreDropSyncPlanStore
 import com.dropsync.data.timer.DataStoreMonotonicStateStore
 import com.dropsync.data.timer.DataStoreTimerSnapshotStore
 import com.dropsync.data.timer.DefaultDropRestRequestBus
@@ -22,11 +24,13 @@ import com.dropsync.domain.playback.PlayerVolumeGate
 import com.dropsync.domain.timer.CueOutput
 import com.dropsync.domain.timer.DefaultRestTimerRecovery
 import com.dropsync.domain.timer.DropRestRequestBus
+import com.dropsync.domain.timer.DropSyncPlanStore
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.timer.RestTimerRecovery
 import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
 import com.dropsync.domain.timer.TimerSnapshotStore
+import com.dropsync.domain.workout.SetLogHaptics
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -107,7 +111,7 @@ object TimerDataModule {
         @ApplicationContext context: Context,
     ): MonotonicStateStore =
         DataStoreMonotonicStateStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(DataStoreMonotonicStateStore.DATA_STORE_NAME)
             },
         )
@@ -119,8 +123,20 @@ object TimerDataModule {
         @ApplicationContext context: Context,
     ): TimerSnapshotStore =
         DataStoreTimerSnapshotStore(
-            PreferenceDataStoreFactory.create {
+            createResilientPreferencesDataStore {
                 context.preferencesDataStoreFile(DataStoreTimerSnapshotStore.DATA_STORE_NAME)
+            },
+        )
+
+    /** C13: Marker der aktiven DropSync-Sitzung fuer den Kill-Fallback. */
+    @Provides
+    @Singleton
+    fun provideDropSyncPlanStore(
+        @ApplicationContext context: Context,
+    ): DropSyncPlanStore =
+        DataStoreDropSyncPlanStore(
+            createResilientPreferencesDataStore {
+                context.preferencesDataStoreFile(DataStoreDropSyncPlanStore.DATA_STORE_NAME)
             },
         )
 
@@ -128,4 +144,14 @@ object TimerDataModule {
     @Provides
     @Singleton
     fun provideRestTimerRecovery(store: TimerSnapshotStore): RestTimerRecovery = DefaultRestTimerRecovery(store)
+
+    /**
+     * A1 (5.6/5.15): Haptik beim Satz-Speichern — kurzer Impuls, nur nach
+     * erfolgreichem Log (die Entscheidung faellt im SetLogController).
+     */
+    @Provides
+    @Singleton
+    fun provideSetLogHaptics(
+        @ApplicationContext context: Context,
+    ): SetLogHaptics = AndroidSetLogHaptics(HapticsAdapter(context))
 }

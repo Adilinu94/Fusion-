@@ -64,6 +64,10 @@ class TimerService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var tickJob: Job? = null
 
+    /** Zuletzt persistierter Sekundenstand / Status, gegen 5x/s-DataStore-IO. */
+    private var lastPersistedKey: Pair<Int, TimerStatus>? = null
+    private var lastNotifiedKey: Pair<String?, TimerStatus>? = null
+
     override fun onCreate() {
         super.onCreate()
         ensureNotificationChannel()
@@ -130,8 +134,18 @@ class TimerService : Service() {
         terminateTimer()
     }
 
-    /** +15 s: finish the current rest, then start a fresh 15 s rest. */
+    /**
+     * +15 s: finish the current rest, then start a fresh 15 s rest.
+     * P1-8: Ein DROPSYNC-Timer hat keinen verlaengerbaren lokalen Countdown
+     * (die Restzeit kommt aus der Playerposition) — dort ist die Aktion
+     * nicht angeboten und wird hier ignoriert.
+     */
     private fun onPlus15() {
+        if (timerEngine.state.value.session
+                ?.mode == TimerMode.DROPSYNC
+        ) {
+            return
+        }
         // Phase 10.3: altes Snapshot verwerfen, bevor der frische Timer
         // startet — sequenziert in derselben Coroutine statt runBlocking (A1).
         serviceScope.launch { termination.restartFresh(PLUS_15_MS) }
@@ -164,11 +178,19 @@ class TimerService : Service() {
 
     /**
      * Kill-Fallback (Testinfra-Plan Schritt 2, 5b): laufende NORMAL/REST-Timer
-     * werden bei jeder Tick-Aenderung persistiert, damit ein Xiaomi-Kill den
-     * Countdown nicht verliert. Endzustaende leeren das Snapshot; der letzte
-     * monotone Zeitwert wird fuer die Reboot-Erkennung mitgeschrieben.
+     * werden persistiert, damit ein Xiaomi-Kill den Countdown nicht verliert.
+     * Endzustaende leeren das Snapshot; der letzte monotone Zeitwert wird
+     * fuer die Reboot-Erkennung mitgeschrieben.
+     *
+     * Akku-/Flash-Schutz (Audit Fokus 2.1): die Tick-Schleife laeuft mit
+     * [NOTIFY_TICK_MS] fuer die Countdown-Anzeige, DataStore-Zugriffe aber
+     * hoechstens einmal pro Sekunde bzw. bei Statuswechsel — davor ~450
+     * Schreibvorgaenge pro 90-s-Pause.
      */
     private fun persistSnapshot(state: TimerState) {
+        val key = (state.remainingMs / 1_000).toInt() to state.status
+        if (key == lastPersistedKey) return
+        lastPersistedKey = key
         serviceScope.launch {
             when {
                 state.status in VISIBLE_STATUSES -> {
@@ -211,6 +233,17 @@ class TimerService : Service() {
         // Xiaomi/MIUI fallback: without the runtime permission or with the
         // channel blocked, skip notify silently instead of crashing.
         if (!notificationsAllowed()) return
+        // Nur neu zeichnen, wenn der sichtbare Text oder Status wechselt —
+        // die sonst identische Notification verursacht sonst 5x/s Binder-
+        // Aufrufe in den System-Service (Audit Fokus 2.1).
+        val textKey =
+            when (state.status) {
+                TimerStatus.COMPLETED -> null
+                else -> formatRemaining(state.remainingMs)
+            }
+        val key = textKey to state.status
+        if (key == lastNotifiedKey) return
+        lastNotifiedKey = key
         val manager = getSystemService<NotificationManager>() ?: return
         try {
             manager.notify(NOTIFICATION_ID, buildNotification(state))
@@ -230,6 +263,7 @@ class TimerService : Service() {
     }
 
     private fun buildNotification(state: TimerState): Notification {
+        val dropSync = state.session?.mode == TimerMode.DROPSYNC
         val contentText =
             when (state.status) {
                 TimerStatus.COMPLETED -> getString(R.string.timer_notification_completed)
@@ -239,16 +273,39 @@ class TimerService : Service() {
             NotificationCompat
                 .Builder(this, CHANNEL_ID)
                 .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(getString(R.string.timer_notification_title))
-                .setContentText(contentText)
+                .setContentTitle(
+                    getString(
+                        if (dropSync) {
+                            R.string.timer_notification_title_dropsync
+                        } else {
+                            R.string.timer_notification_title
+                        },
+                    ),
+                ).setContentText(contentText)
                 .setContentIntent(openAppIntent())
                 .setOngoing(state.status in VISIBLE_STATUSES)
                 .setOnlyAlertOnce(true)
                 .setSilent(true)
                 .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+        if (dropSync) {
+            // P1-8/MP-6: Plan abbrechen und Pause beenden; kein "+15 s",
+            // weil die Landung an der Playerposition haengt.
+            builder
+                .addAction(
+                    0,
+                    getString(R.string.timer_action_cancel_plan),
+                    actionIntent(ACTION_SKIP, REQUEST_SKIP),
+                ).addAction(
+                    0,
+                    getString(R.string.timer_action_end_rest),
+                    actionIntent(ACTION_FINISH, REQUEST_FINISH),
+                )
+        } else {
+            builder
                 .addAction(0, getString(R.string.timer_action_skip), actionIntent(ACTION_SKIP, REQUEST_SKIP))
                 .addAction(0, getString(R.string.timer_action_plus15), actionIntent(ACTION_PLUS_15, REQUEST_PLUS_15))
                 .addAction(0, getString(R.string.timer_action_finish), actionIntent(ACTION_FINISH, REQUEST_FINISH))
+        }
         // C3: Fortschrittszentrierte Notification (Android 16): der
         // verbleibende Anteil ist ohne Oeffnen der App sichtbar. Gesamt kommt
         // aus der Sitzung; ohne Sitzung (z. B. COMPLETED) bleibt der Balken aus.
@@ -297,6 +354,10 @@ class TimerService : Service() {
     }
 
     private fun stopSelfIfIdle() {
+        // Drossel-Cache zuruecksetzen, damit ein neuer Timer mit gleichem
+        // Startwert/Status nicht (fälschlich) gedrosselt wird.
+        lastPersistedKey = null
+        lastNotifiedKey = null
         val status = timerEngine.state.value.status
         if (status == TimerStatus.IDLE || status == TimerStatus.CANCELLED || status == TimerStatus.COMPLETED) {
             ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)

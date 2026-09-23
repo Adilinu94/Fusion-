@@ -82,6 +82,13 @@ object DropLandingPlanner {
     /** Mindest-Restzeit fuer eine Landung; Groessenordnung der DropSync-Schwelle. */
     const val MIN_REST_MS: Long = 5_000L
 
+    /**
+     * C15 (PR-4): Unter einer Minute ist Drop-Auto nicht moeglich — die
+     * Landung waere kaum mehr als ein Titelwechsel. Gilt fuer den Schalter
+     * und die Sofort-Planung; der manuelle DropRest bleibt bei [MIN_REST_MS].
+     */
+    const val MIN_DROP_AUTO_REST_MS: Long = 60_000L
+
     fun plan(
         remainingRestMs: Long,
         candidates: List<WorkSongDrop>,

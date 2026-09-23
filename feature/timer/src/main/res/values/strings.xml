@@ -9,6 +9,10 @@
     <string name="timer_resume">Resume</string>
     <string name="timer_cancel">Cancel</string>
     <string name="timer_ok">OK</string>
+    <!-- C15 (PR-3/PR-4): DropSync switch of the running rest. -->
+    <string name="timer_drop_auto">DropSync</string>
+    <string name="timer_drop_auto_hint">Music lands on the drop at the end of the rest.</string>
+    <string name="timer_drop_auto_blocked">Only possible from 1 minute rest</string>
     <string name="timer_state_idle">Timer ready</string>
     <string name="timer_state_preparing">Timer starting</string>
     <string name="timer_state_running">Timer running</string>
@@ -19,4 +23,7 @@
     <string name="timer_wheel_hours">HRS</string>
     <string name="timer_wheel_minutes">MIN</string>
     <string name="timer_wheel_seconds">SEC</string>
+    <!-- C5 (U-8): wheel buttons announce direction, value and unit. -->
+    <string name="timer_wheel_decrease">Decrease: %1$s %2$s</string>
+    <string name="timer_wheel_increase">Increase: %1$s %2$s</string>
 </resources>

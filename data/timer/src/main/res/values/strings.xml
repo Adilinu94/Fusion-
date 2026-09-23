@@ -9,4 +9,8 @@
     <string name="timer_action_skip">Skip</string>
     <string name="timer_action_plus15">+15 s</string>
     <string name="timer_action_finish">Finish exercise</string>
+    <!-- DropSync-Rest (P1-8): eigener Titel und Abbruch der geplanten Landung. -->
+    <string name="timer_notification_title_dropsync">DropSync</string>
+    <string name="timer_action_cancel_plan">Cancel plan</string>
+    <string name="timer_action_end_rest">End break</string>
 </resources>

@@ -9,6 +9,10 @@
     <string name="timer_resume">Weiter</string>
     <string name="timer_cancel">Abbrechen</string>
     <string name="timer_ok">OK</string>
+    <!-- C15 (PR-3/PR-4): DropSync-Schalter der laufenden Pause. -->
+    <string name="timer_drop_auto">DropSync</string>
+    <string name="timer_drop_auto_hint">Die Musik landet am Pausenende auf dem Drop.</string>
+    <string name="timer_drop_auto_blocked">Erst ab 1 Minute Pause möglich</string>
     <string name="timer_state_idle">Timer bereit</string>
     <string name="timer_state_preparing">Timer startet</string>
     <string name="timer_state_running">Timer läuft</string>
@@ -19,4 +23,7 @@
     <string name="timer_wheel_hours">STD</string>
     <string name="timer_wheel_minutes">MIN</string>
     <string name="timer_wheel_seconds">SEK</string>
+    <!-- C5 (U-8): Stellrad-Knoepfe nennen Richtung, Wert und Einheit. -->
+    <string name="timer_wheel_decrease">Verringern: %1$s %2$s</string>
+    <string name="timer_wheel_increase">Erhöhen: %1$s %2$s</string>
 </resources>

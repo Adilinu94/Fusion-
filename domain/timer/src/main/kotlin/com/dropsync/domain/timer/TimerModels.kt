@@ -21,7 +21,12 @@ data class TimerSession(
     val id: String,
     val mode: TimerMode,
     val durationMs: Long,
-    /** Monotoner Start (NORMAL/REST); bei DROPSYNC null. */
+    /**
+     * Monotoner Start (NORMAL/REST). Bei DROPSYNC bewusst null: die
+     * Zeitreferenz ist dort die Playerposition ([markerPositionMs]), nicht
+     * die Wanduhr — der Monitor projiziert die Restzeit daraus. Ein zweiter
+     * Uhr-Start wuerde nur eine driftende Zweitquelle einfuehren (A9/T-13).
+     */
     val startedElapsedRealtimeMs: Long?,
     /** Markerbezug (nur DROPSYNC): Zielposition in der Playertimeline. */
     val markerPositionMs: Long?,

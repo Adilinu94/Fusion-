@@ -37,6 +37,10 @@ class TimerViewModelTest {
     private lateinit var prefs: FakeRestTimerPreferences
     private lateinit var engine: TimerEngine
 
+    // C15: DropSync-Schalter im Standalone-Timer.
+    private lateinit var restMusicSettings: com.dropsync.core.testing.FakeRestMusicSettingsRepository
+    private lateinit var dropRestRequestBus: com.dropsync.core.testing.FakeDropRestRequestBus
+
     @Before
     fun setUp() {
         Dispatchers.setMain(dispatcher)
@@ -44,6 +48,12 @@ class TimerViewModelTest {
         cueOutput = RecordingCueOutput()
         prefs = FakeRestTimerPreferences()
         engine = TimerEngine(clock, cueOutput)
+        restMusicSettings =
+            com.dropsync.core.testing
+                .FakeRestMusicSettingsRepository()
+        dropRestRequestBus =
+            com.dropsync.core.testing
+                .FakeDropRestRequestBus()
     }
 
     @After
@@ -51,7 +61,7 @@ class TimerViewModelTest {
         Dispatchers.resetMain()
     }
 
-    private fun viewModel(): TimerViewModel = TimerViewModel(engine, prefs)
+    private fun viewModel(): TimerViewModel = TimerViewModel(engine, prefs, restMusicSettings, dropRestRequestBus)
 
     /**
      * Erzeugt ein ViewModel und cancelt dessen Scope am Testende. Ohne das
@@ -165,6 +175,43 @@ class TimerViewModelTest {
                 vm.acknowledgeFinished()
                 runCurrent()
                 assertEquals(TimerStatus.IDLE, vm.state.value.status)
+            }
+        }
+
+    @Test
+    fun `DropSync fordert die Landung erst ab einer Minute Pause an`() =
+        runTest(dispatcher) {
+            withViewModel { vm ->
+                // Der Schalter ist per Default an (MP-13).
+                vm.startRest(90_000)
+                runCurrent()
+                assertEquals(1, dropRestRequestBus.requestCount)
+
+                vm.cancel()
+                runCurrent()
+                // C15 (PR-4): 30 s Pause -> keine Anforderung.
+                vm.startRest(30_000)
+                runCurrent()
+                assertEquals(1, dropRestRequestBus.requestCount)
+            }
+        }
+
+    @Test
+    fun `DropSync-Schalter waehrend der Pause plant sofort`() =
+        runTest(dispatcher) {
+            restMusicSettings.setDropAutoEnabled(false)
+            withViewModel { vm ->
+                // Eagerly-State erst den Fake-Wert lesen lassen.
+                runCurrent()
+                vm.startRest(90_000)
+                runCurrent()
+                assertEquals(0, dropRestRequestBus.requestCount)
+
+                vm.setDropAutoEnabled(true)
+                runCurrent()
+
+                assertEquals(1, dropRestRequestBus.requestCount)
+                assertEquals(true, vm.dropAutoEnabled.value)
             }
         }
 }

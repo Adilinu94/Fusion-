@@ -39,6 +39,8 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":domain:timer"))
     implementation(project(":domain:playback"))
+    // A1: Haptik-Port des Satz-Loggings (SetLogHaptics) lebt in domain:workout.
+    implementation(project(":domain:workout"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.datastore.preferences)

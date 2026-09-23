@@ -1,8 +1,10 @@
 package com.dropsync.data.timer
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -10,7 +12,10 @@ import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.restTimerPrefsDataStore by preferencesDataStore(name = "rest_timer_prefs")
+private val Context.restTimerPrefsDataStore by preferencesDataStore(
+    name = "rest_timer_prefs",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * DataStore-Persistenz der Resttimer-Einstellungen (Musik-Workout-Plan
