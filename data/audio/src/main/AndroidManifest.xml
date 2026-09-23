@@ -1,1 +1,11 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android" />
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MODIFY_AUDIO_SETTINGS (Schutzklasse normal, keine Laufzeitabfrage):
+  BitPerfectGateway setzt/cleart die bevorzugten Mixer-Attribute am
+  USB-Ausgang (setPreferredMixerAttributes, >= API 34). Ohne Deklaration
+  schlaegt der Aufruf zur Laufzeit fehl (SecurityException, wird
+  abgefangen) und Lint blockiert lintDebug.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+</manifest>

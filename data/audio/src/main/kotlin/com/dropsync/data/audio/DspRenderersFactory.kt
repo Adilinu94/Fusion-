@@ -41,7 +41,11 @@ class DspRenderersFactory(
         DefaultAudioSink
             .Builder(context)
             .setEnableFloatOutput(floatOutput)
-            .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+            // Analyse-Befund 4.10: Media3 empfiehlt den Nachfolger
+            // setEnableAudioOutputPlaybackParameters; der alte
+            // Track-Params-Schalter bleibt als Uebergabewert, aber der
+            // Builder nimmt die neue API (deckt dieselben Faelle ab).
+            .setEnableAudioOutputPlaybackParameters(enableAudioTrackPlaybackParams)
             .setAudioProcessors(audioProcessors)
             .build()
 }

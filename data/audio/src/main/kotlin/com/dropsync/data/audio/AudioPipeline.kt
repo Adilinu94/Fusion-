@@ -8,6 +8,7 @@ import com.dropsync.domain.audio.AudioMath
 import com.dropsync.domain.audio.DitherMode
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.StereoMatrix
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -49,13 +50,19 @@ data class OutputFormatInfo(
  */
 @OptIn(UnstableApi::class)
 @Singleton
-class AudioPipeline
-    @Inject
-    constructor(
-        settingsStore: DspSettingsStore,
-        deviceMonitor: OutputDeviceMonitor,
-    ) {
-        private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+class AudioPipeline(
+    settingsStore: DspSettingsStore,
+    deviceMonitor: OutputDeviceMonitor,
+    rampDispatcher: CoroutineDispatcher = Dispatchers.Default,
+) {
+        /**
+         * Rampen-Dispatcher (Analyse-Befund 4.9): der Ticker der
+         * Rest-Duck-Rampen laeuft hier; Tests uebergeben den
+         * Test-Dispatcher, damit die 20-ms-Schritte mit der virtuellen
+         * Uhr synchron laufen. Hilt nutzt den @Inject-Sekundaer-
+         * konstruktor mit dem Default.
+         */
+        private val scope = CoroutineScope(SupervisorJob() + rampDispatcher)
 
         private val masterProcessor = MasterDspProcessor()
 
@@ -225,7 +232,18 @@ class AudioPipeline
                 !config.dvcEnabled
 
         companion object {
-            private const val REST_DUCK_MIN_DB = -12.0
-            private const val REST_DUCK_MAX_DB = 0.0
-        }
+        private const val REST_DUCK_MIN_DB = -12.0
+        private const val REST_DUCK_MAX_DB = 0.0
     }
+
+    /** Hilt-Einstiegspunkt (Default-Dispatcher fuer die Rampen). */
+    @Inject
+    constructor(
+        settingsStore: DspSettingsStore,
+        deviceMonitor: OutputDeviceMonitor,
+    ) : this(
+            settingsStore = settingsStore,
+            deviceMonitor = deviceMonitor,
+            rampDispatcher = Dispatchers.Default,
+        )
+}

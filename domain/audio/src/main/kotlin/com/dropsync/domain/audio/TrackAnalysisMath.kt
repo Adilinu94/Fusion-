@@ -112,16 +112,27 @@ class EnergyAccumulator(
         require(samplesPerWindow > 0) { "samplesPerWindow muss positiv sein" }
     }
 
-    private val windows = mutableListOf<Double>()
+    // Analyse-Befund 4.7: primitives DoubleArray mit Verdopplung statt
+    // mutableListOf<Double> - bis ~600 KB Boxings je 10-Minuten-Track
+    // bei Profil FULL entfallen.
+    private var windows = DoubleArray(64)
+    private var windowCount = 0
     private var sumOfSquares: Double = 0.0
     private var samplesInWindow: Int = 0
+
+    private fun appendWindow(rms: Double) {
+        if (windowCount == windows.size) {
+            windows = windows.copyOf(windows.size * 2)
+        }
+        windows[windowCount++] = rms
+    }
 
     /** Nimmt ein Mono-Sample im Bereich [-1.0, 1.0] auf. */
     fun accept(sample: Double) {
         sumOfSquares += sample * sample
         samplesInWindow++
         if (samplesInWindow == samplesPerWindow) {
-            windows += sqrt(sumOfSquares / samplesPerWindow)
+            appendWindow(sqrt(sumOfSquares / samplesPerWindow))
             sumOfSquares = 0.0
             samplesInWindow = 0
         }
@@ -130,11 +141,11 @@ class EnergyAccumulator(
     /** RMS je Fenster in Trackreihenfolge. */
     fun finish(): List<Double> {
         if (samplesInWindow * 2 >= samplesPerWindow) {
-            windows += sqrt(sumOfSquares / samplesInWindow)
+            appendWindow(sqrt(sumOfSquares / samplesInWindow))
         }
         sumOfSquares = 0.0
         samplesInWindow = 0
-        return windows.toList()
+        return windows.copyOf(windowCount).toList()
     }
 }
 
