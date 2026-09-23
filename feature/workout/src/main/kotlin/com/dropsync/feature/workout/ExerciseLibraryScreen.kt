@@ -2,6 +2,7 @@ package com.dropsync.feature.workout
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -16,6 +17,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
@@ -63,6 +65,8 @@ fun ExerciseLibraryScreen(
     val archivedItems by viewModel.archivedItems.collectAsStateWithLifecycle()
     val targets by viewModel.targets.collectAsStateWithLifecycle()
     val query by viewModel.query.collectAsStateWithLifecycle()
+    // Befund 7.1.4: Erstaufruf zeigt Laden statt "keine Uebungen".
+    val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
     var showCreateDialog by rememberSaveable { mutableStateOf(false) }
     // Ziel-Dialog haelt nur die ID; Name und aktuelles Ziel kommen aus dem
     // Zustand, damit eine Aenderung von aussen nicht im Dialog einfriert.
@@ -114,8 +118,18 @@ fun ExerciseLibraryScreen(
             )
         }
         // UI-Befund 4.2.7: Leerzustand statt stiller leerer Flaeche
-        // (z. B. wenn die Suche nichts findet).
-        if (items.isEmpty() && archivedItems.isEmpty()) {
+        // (z. B. wenn die Suche nichts findet). Befund 7.1.4: davor der
+        // Ladezustand — sonst saehe der Erstaufruf wie "leer" aus.
+        if (isLoading) {
+            item {
+                Box(
+                    modifier = Modifier.fillParentMaxHeight(0.6f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    CircularProgressIndicator()
+                }
+            }
+        } else if (items.isEmpty() && archivedItems.isEmpty()) {
             item {
                 FlowRepEmptyState(
                     text = stringResource(R.string.library_empty),

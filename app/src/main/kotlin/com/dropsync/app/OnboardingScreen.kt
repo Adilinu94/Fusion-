@@ -129,9 +129,21 @@ fun OnboardingScreen(
             onClick = { if (last) onFinish() else page++ },
             modifier = Modifier.fillMaxWidth(),
         )
-        if (!last) {
-            TextButton(onClick = onFinish) {
-                Text(stringResource(R.string.onboarding_skip))
+        // Befund 7.1.1: Schritt zurueck (Fehlklick, TalkBack) und
+        // Ueberspringen nebeneinander; auf der letzten Seite entfaellt Skip.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            if (page > 0) {
+                TextButton(onClick = { page-- }) {
+                    Text(stringResource(R.string.onboarding_back))
+                }
+            }
+            if (!last) {
+                TextButton(onClick = onFinish) {
+                    Text(stringResource(R.string.onboarding_skip))
+                }
             }
         }
     }

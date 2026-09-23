@@ -88,6 +88,8 @@ fun SettingsScreen(
     modifier: Modifier = Modifier,
     onOpenAudioSettings: () -> Unit = {},
     onOpenTimer: () -> Unit = {},
+    // Befund 7.1.3: Einfuehrung erneut aufrufbar (nicht nur First-Run).
+    onOpenOnboarding: () -> Unit = {},
     viewModel: SettingsViewModel = hiltViewModel(),
 ) {
     val unmatched by viewModel.unmatchedMarkers.collectAsStateWithLifecycle()
@@ -139,6 +141,12 @@ fun SettingsScreen(
     ) {
         item {
             SettingsScreenTitle()
+        }
+        // Befund 7.1.3: Einfuehrung erneut ansehen (First-Run ist vorbei).
+        item {
+            TextButton(onClick = onOpenOnboarding) {
+                Text(stringResource(R.string.settings_replay_onboarding))
+            }
         }
         item {
             SettingsSectionTitle(stringResource(R.string.settings_rest_music_section))

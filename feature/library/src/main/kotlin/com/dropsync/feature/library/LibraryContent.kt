@@ -26,6 +26,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -278,7 +279,7 @@ internal fun LibraryContent(
         }
     }
 
-    Column(modifier = modifier.fillMaxSize()) {
+        Column(modifier = modifier.fillMaxSize()) {
         if (scanFailed) {
             Surface(color = MaterialTheme.colorScheme.errorContainer) {
                 Text(
@@ -287,6 +288,13 @@ internal fun LibraryContent(
                     color = MaterialTheme.colorScheme.onErrorContainer,
                 )
             }
+        }
+        // Befund 7.1.4: sichtbarer Scan-Fortschritt — `isRefreshing` lief
+        // bisher ins Leere, waehrend der Nutzer vor unveraenderter Liste
+        // stand (Berechtigung, Pull-to-Refresh, Ordnerwechsel).
+        val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+        if (isRefreshing) {
+            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
         }
         // Poweramp-artiger Uebergang: der alte Screen blendet aus, der neue
         // sanft ein. Bewusst nur Fade, kein Slide, damit es ruhig und

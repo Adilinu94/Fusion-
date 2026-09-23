@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.util.Locale
@@ -41,9 +42,22 @@ class ExerciseLibraryViewModel
         /** Freitextsuche ueber den lokalisierten Anzeigenamen. */
         val query: StateFlow<String> = _query.asStateFlow()
 
+        private val _loaded = MutableStateFlow(false)
+
+        /**
+         * Befund 7.1.4: Ladezustand der Uebungsliste — die Flows starten mit
+         * leerer Liste, sonst saehe der Erstaufruf wie "keine Uebungen" aus.
+         * Kippt nach der ersten echten Emission (auch bei leerem Bestand).
+         */
+        val isLoading: StateFlow<Boolean> =
+            _loaded
+                .map { loaded -> !loaded }
+                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), true)
+
         val items: StateFlow<List<ExerciseLibraryItem>> =
             workoutRepository
                 .observeExerciseLibrary(locale)
+                .onEach { _loaded.value = true }
                 .combine(_query) { items, query ->
                     val trimmed = query.trim()
                     if (trimmed.isEmpty()) {

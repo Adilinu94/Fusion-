@@ -19,12 +19,13 @@
     <string name="health_rationale_revoke">Du kannst die Freigabe jederzeit in Health Connect zurücknehmen. FlowRep funktioniert auch ohne sie weiter — die Pulsanzeige bleibt dann einfach leer.</string>
     <!-- First-Run-Onboarding (B3): drei Seiten, kein Wischzwang. -->
     <string name="onboarding_music_title">Deine Musik, offline</string>
-    <string name="onboarding_music_desc">FlowRep spielt deine lokale Bibliothek — ohne Konto, ohne Streaming, ohne Netzwerk. Warteschlange, Equalizer und Marker inklusive.</string>
+    <string name="onboarding_music_desc">FlowRep spielt deine lokale Bibliothek — ohne Konto, ohne Streaming, ohne Netzwerk. Warteschlange, Equalizer und Marker inklusive. Es fragt nur nach Zugriff auf deine Musikdateien.</string>
     <string name="onboarding_drop_title">Drops auf den Punkt</string>
     <string name="onboarding_drop_desc">Setze Marker auf deine Tracks. Der Resttimer landet genau auf dem Drop, mit Countdown-Ansagen zum Hören und Fühlen.</string>
     <string name="onboarding_training_title">Ein Tagebuch, das mitzählt</string>
     <string name="onboarding_training_desc">Sätze loggen, Pausen im Blick, Fortschritt verfolgen. Deine Trainingsdaten verlassen dieses Gerät nie.</string>
     <string name="onboarding_next">Weiter</string>
+    <string name="onboarding_back">Zurück</string>
     <string name="onboarding_start">Los geht’s</string>
     <string name="onboarding_skip">Überspringen</string>
     <!-- C5 (U-8): Die Punkte sind Zierde; TalkBack bekommt einen Satz. -->

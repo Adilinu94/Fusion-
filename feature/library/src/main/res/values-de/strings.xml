@@ -34,6 +34,7 @@
     <string name="library_playlist_delete_confirm">Playlist \"%1$s\" löschen? Die Titel bleiben in deiner Bibliothek.</string>
     <string name="library_add_to_playlist">Zu Playlist hinzufügen</string>
     <string name="library_playlist_duplicates_skipped">%1$d Duplikat(e) übersprungen — bereits in dieser Playlist.</string>
+    <string name="library_load_more">Mehr Titel laden</string>
     <string name="library_playlist_empty">Noch keine Playlisten. Lege eine an, um zu starten.</string>
     <string name="library_playlist_detail_empty">Diese Playlist ist leer. Füge Titel aus der Bibliothek hinzu.</string>
     <string name="library_playlist_remove_song">Aus Playlist entfernen</string>

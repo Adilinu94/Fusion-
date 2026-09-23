@@ -40,6 +40,7 @@
     <string name="library_playlist_delete_confirm">Delete playlist \"%1$s\"? The tracks stay in your library.</string>
     <string name="library_add_to_playlist">Add to playlist</string>
     <string name="library_playlist_duplicates_skipped">%1$d duplicate track(s) skipped — already in this playlist.</string>
+    <string name="library_load_more">Load more tracks</string>
     <string name="library_playlist_empty">No playlists yet. Create one to get started.</string>
     <string name="library_playlist_detail_empty">This playlist is empty. Add tracks from your library.</string>
     <string name="library_playlist_remove_song">Remove from playlist</string>

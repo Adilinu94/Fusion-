@@ -29,6 +29,7 @@ class NavigationRoutesTest {
                 ROUTE_NOW_PLAYING,
                 ROUTE_ALL_SETS,
                 ROUTE_EXERCISE_LIBRARY,
+                ROUTE_ONBOARDING,
             )
         assertEquals(subRoutes.size, subRoutes.distinct().size)
         assertTrue(subRoutes.none { it in topLevel })

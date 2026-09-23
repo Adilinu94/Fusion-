@@ -2,6 +2,7 @@
 <resources>
     <!-- Screen title (B-UI-3): was hardcoded German in SettingsScreen.kt. -->
     <string name="settings_screen_title">Settings</string>
+    <string name="settings_replay_onboarding">Show introduction again</string>
     <string name="settings_markers_section">Song markers</string>
     <string name="settings_import_button">Import marker file</string>
     <string name="settings_import_running">Importing …</string>

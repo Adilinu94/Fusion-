@@ -2,6 +2,7 @@
 <resources>
     <!-- Screen-Titel (B-UI-3): stand hartcodiert in SettingsScreen.kt. -->
     <string name="settings_screen_title">Einstellungen</string>
+    <string name="settings_replay_onboarding">Einführung erneut ansehen</string>
     <string name="settings_markers_section">Songmarker</string>
     <string name="settings_import_button">Markerdatei importieren</string>
     <string name="settings_import_running">Import läuft …</string>

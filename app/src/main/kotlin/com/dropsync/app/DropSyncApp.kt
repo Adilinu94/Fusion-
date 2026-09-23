@@ -135,6 +135,13 @@ internal const val ROUTE_CALIBRATION = "calibration/{exerciseId}/{deviceId}"
 internal const val ARG_EXERCISE_ID = "exerciseId"
 internal const val ARG_DEVICE_ID = "deviceId"
 
+/**
+ * Befund 7.1.3: Einfuehrung erneut aufrufbar — dieselbe [OnboardingScreen]
+ * wie beim First-Run, aber als NavHost-Route aus den Einstellungen (der
+ * First-Run-Gate oben bleibt ausserhalb der Navigation).
+ */
+internal const val ROUTE_ONBOARDING = "onboarding"
+
 @Composable
 fun DropSyncApp(windowSizeClass: WindowSizeClass) {
     val navController = rememberNavController()
@@ -337,6 +344,8 @@ private fun DropSyncNavHost(
                 onOpenAudioSettings = { navController.navigate(ROUTE_AUDIO_SETTINGS) },
                 // B2: Timer-Einstieg aus den Einstellungen (kein fuenfter Tab).
                 onOpenTimer = { navController.navigate(ROUTE_TIMER) { launchSingleTop = true } },
+                // Befund 7.1.3: Einfuehrung erneut ansehen.
+                onOpenOnboarding = { navController.navigate(ROUTE_ONBOARDING) },
             )
         }
         composable(ROUTE_AUDIO_SETTINGS) {
@@ -350,6 +359,11 @@ private fun DropSyncNavHost(
                 contentPadding = contentPadding,
                 onBack = { navController.popBackStack() },
             )
+        }
+        // Befund 7.1.3: Einfuehrung als Route (Android-Back gilt normal);
+        // Fertig/Skip fuehrt zurueck, das First-Run-Flag bleibt gesetzt.
+        composable(ROUTE_ONBOARDING) {
+            OnboardingScreen(onFinish = { navController.popBackStack() })
         }
         composable(ROUTE_NOW_PLAYING) {
             NowPlayingScreen(

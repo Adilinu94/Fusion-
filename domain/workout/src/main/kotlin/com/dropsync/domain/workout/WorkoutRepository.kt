@@ -33,9 +33,17 @@ data class SessionExerciseInfo(
 )
 
 /**
- * Vertrag des Trainingslogs (Bauplan Schritt 9/10).
+ * vertrag des Trainingslogs (Bauplan Schritt 9/10).
  * Implementierung in :data:workout; Satzabschluss und PR-Bestimmung
  * laufen in EINER Transaktion (10.3).
+ *
+ * Befund 5.7 (Stand 2026-09-23, bewusst markiert statt entfernt): Die
+ * Session-/Cluster-/Routinen-API (Sessions, Supersaetze, Prefill, Undo)
+ * ist gebaut und getestet, hat aber noch KEINE UI — der Nutzer sieht
+ * nichts davon. Das ist kein toter Code, sondern die Datenschicht des
+ * geplanten Routinen-Features; die UI ist eigene Folgearbeit (Paket 3.19).
+ * Entfernen wuerde getestete Transaktionslogik (PR-Neuberechnung, Undo)
+ * vernichten, die das Feature spaeter braucht.
  */
 interface WorkoutRepository {
     /** Es gibt hoechstens eine aktive Session (9.8). */

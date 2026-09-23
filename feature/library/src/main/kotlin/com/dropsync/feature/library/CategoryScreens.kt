@@ -5,15 +5,18 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -29,6 +32,13 @@ import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.core.model.Song
 import com.dropsync.domain.library.SongPlayStat
 import com.dropsync.domain.playback.QueueItem
+
+/**
+ * Befund 6.1: Seitengroesse der Titel-Listen — nur so viele Zeilen werden
+ * komponiert, der Rest per "Mehr laden". Aktionen arbeiten auf der vollen
+ * Liste (Indizes bleiben gueltig).
+ */
+private const val SONGS_PAGE_SIZE = 300
 
 /**
  * Kategorie mit reiner Titelliste (Alle Titel, Favoriten, zuletzt/meist
@@ -72,6 +82,19 @@ internal fun SongCategoryScreen(
             sortedCategorySongs(rawSongs, ftsResults, categoryIds, query, config, playStats)
         }
 
+    // Befund 6.1: Render-Cap — nur die sichtbare Seite wird komponiert.
+    // Aktionen (Play/Shuffle/Auswahl/Anzahl) arbeiten weiter auf der vollen
+    // `sorted`-Liste, damit Indizes und Zaehler stimmen. Eine echte
+    // Paging-Quelle (Paging3) bleibt Folgearbeit; dieser Schritt begrenzt
+    // die Compose-Kosten grosser Bibliotheken ohne Datenkorruption (Cover
+    // und Lookup brauchen die volle Liste weiterhin).
+    var visibleLimit by remember(category) { mutableIntStateOf(SONGS_PAGE_SIZE) }
+    val visible = remember(sorted, visibleLimit) { sorted.take(visibleLimit) }
+
+    /** Bildet einen sichtbaren Index auf die volle Liste ab (-1 = veraltet). */
+    fun fullIndex(visibleIndex: Int): Int =
+        visible.getOrNull(visibleIndex)?.let { sorted.indexOf(it) } ?: -1
+
     val headerSubtitle =
         stringResource(
             R.string.library_header_meta,
@@ -106,11 +129,11 @@ internal fun SongCategoryScreen(
             when (config.viewMode) {
                 LibraryViewMode.GRID, LibraryViewMode.GRID_SMALL -> {
                     SongGrid(
-                        songs = sorted,
+                        songs = visible,
                         contentPadding = contentPadding,
                         columns = if (config.viewMode == LibraryViewMode.GRID) 2 else 3,
                         onPlay = { index ->
-                            viewModel.play(sorted, index)
+                            viewModel.play(sorted, fullIndex(index))
                             onOpenNowPlaying()
                         },
                         selectionActive = selectionActive,
@@ -122,11 +145,11 @@ internal fun SongCategoryScreen(
 
                 else -> {
                     SongColumn(
-                        songs = sorted,
+                        songs = visible,
                         favoriteIds = favoriteIds,
                         contentPadding = contentPadding,
                         onPlay = { index ->
-                            viewModel.play(sorted, index)
+                            viewModel.play(sorted, fullIndex(index))
                             onOpenNowPlaying()
                         },
                         onToggleFavorite = viewModel::toggleFavorite,
@@ -148,6 +171,16 @@ internal fun SongCategoryScreen(
                         currentProgress = currentProgress,
                     )
                 }
+            }
+        }
+        // Befund 6.1: Nachladen — nur sichtbar, wenn die Liste laenger ist
+        // als die komponierte Seite (begrenzte Listen zeigen nie einen Knopf).
+        if (sorted.size > visibleLimit) {
+            TextButton(
+                onClick = { visibleLimit += SONGS_PAGE_SIZE },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(stringResource(R.string.library_load_more))
             }
         }
 
