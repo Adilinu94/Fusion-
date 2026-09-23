@@ -30,7 +30,7 @@ jobs:
       # D6 (I-9): Der Gradle-Wrapper-Jar wird gegen die offizielle
       # Pruefsummenliste validiert, bevor irgendetwas gebaut wird.
       - name: Gradle-Wrapper validieren
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: JDK 17 einrichten
         uses: actions/setup-java@v4
@@ -42,7 +42,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Gradle einrichten (Cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Benoetigte Android-SDK-Pakete sicherstellen
         run: |
@@ -187,7 +187,7 @@ jobs:
 
       # D6 (I-9): Wrapper-Jar gegen die offizielle Pruefsummenliste pruefen.
       - name: Gradle-Wrapper validieren
-        uses: gradle/actions/wrapper-validation@v4
+        uses: gradle/actions/wrapper-validation@v6
 
       - name: JDK 17 einrichten
         uses: actions/setup-java@v4
@@ -199,7 +199,7 @@ jobs:
         run: chmod +x ./gradlew
 
       - name: Gradle einrichten (Cache)
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
 
       - name: Benoetigte Android-SDK-Pakete sicherstellen
         run: |
