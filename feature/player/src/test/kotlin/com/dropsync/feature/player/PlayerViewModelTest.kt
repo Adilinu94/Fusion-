@@ -5,6 +5,7 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
+import com.dropsync.core.testing.FakeClock
 import com.dropsync.domain.audio.AudioEngineRepository
 import com.dropsync.domain.audio.AudioInfo
 import com.dropsync.domain.audio.BitPerfectSupport
@@ -17,6 +18,7 @@ import com.dropsync.domain.audio.WaveformBucket
 import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.CueVirtualTrack
+import com.dropsync.domain.library.DropTargetRepository
 import com.dropsync.domain.library.FolderScanResult
 import com.dropsync.domain.library.Genre
 import com.dropsync.domain.library.LibraryBrowseRepository
@@ -29,17 +31,26 @@ import com.dropsync.domain.library.PlaylistImportResult
 import com.dropsync.domain.library.ScannedFile
 import com.dropsync.domain.library.ShuffleCandidate
 import com.dropsync.domain.library.SongPlayStat
+import com.dropsync.domain.playback.DropLandingEvent
 import com.dropsync.domain.playback.PersistedPlayerState
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
+import com.dropsync.domain.timer.DropSyncMode
+import com.dropsync.domain.timer.DropSyncState
+import com.dropsync.domain.timer.DropSyncStateSource
+import com.dropsync.domain.timer.OverrideReason
+import com.dropsync.domain.timer.TimingConfidence
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -65,6 +76,9 @@ class PlayerViewModelTest {
     private lateinit var trackAnalysisRepository: FakeTrackAnalysisRepository
     private lateinit var markerRepository: FakeMarkerRepository
     private lateinit var audioEngineRepository: FakeAudioEngineRepository
+    private lateinit var dropSyncStateSource: FakeDropSyncStateSource
+    private lateinit var dropTargetRepository: FakeDropTargetRepository
+    private lateinit var clock: FakeClock
 
     @Before
     fun setUp() {
@@ -74,6 +88,9 @@ class PlayerViewModelTest {
         trackAnalysisRepository = FakeTrackAnalysisRepository()
         markerRepository = FakeMarkerRepository()
         audioEngineRepository = FakeAudioEngineRepository()
+        dropSyncStateSource = FakeDropSyncStateSource()
+        dropTargetRepository = FakeDropTargetRepository()
+        clock = FakeClock(initialElapsedRealtimeMs = 10_000L)
     }
 
     @After
@@ -89,6 +106,9 @@ class PlayerViewModelTest {
             trackAnalysisRepository,
             markerRepository,
             audioEngineRepository,
+            dropSyncStateSource,
+            dropTargetRepository,
+            clock,
         )
 
     @Test
@@ -244,6 +264,28 @@ class PlayerViewModelTest {
         }
 
     @Test
+    fun `trackDownbeatOffset kommt aus der Analyse`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 13L)
+            trackAnalysisRepository.analyses.value =
+                mapOf(
+                    13L to
+                        TrackAnalysis(
+                            waveformBuckets = emptyList(),
+                            onsetCandidatesMs = emptyList(),
+                            downbeatOffsetMs = 137L,
+                            downbeatConfidence = 0.5f,
+                        ),
+                )
+
+            viewModel().trackDownbeatOffsetMs.test {
+                // Vor der Analyse: kein Raster -> kein Snap.
+                assertNull(awaitItem())
+                assertEquals(137L, awaitItem())
+            }
+        }
+
+    @Test
     fun `requestAnalysis reicht den geladenen Song an das Analyse-Repository durch`() =
         runTest(dispatcher) {
             libraryRepository.songById[5L] = songFixture(id = 5L, title = "Peak")
@@ -368,6 +410,207 @@ class PlayerViewModelTest {
             }
         }
 
+    @Test
+    fun `refreshPosition traegt den ziel-countdown der dropsync-zeile`() =
+        runTest(dispatcher) {
+            dropSyncStateSource.stateFlow.value =
+                DropSyncState.Planned(
+                    songTitle = "Track",
+                    markerLabel = "Drop 2",
+                    targetElapsedRealtimeMs = 40_000L,
+                    remainingMs = 30_000L,
+                    confidence = TimingConfidence.EXACT,
+                    mode = DropSyncMode.LANDING_AT_REST_END,
+                )
+            val vm = viewModel()
+
+            vm.refreshPosition()
+            dispatcher.scheduler.advanceUntilIdle()
+
+            // 40_000 Deadline - 10_000 monotone Uhr des Fakes.
+            val ready = vm.dropStatus.value as DropStatusLine.Ready
+            assertEquals("Track", ready.songTitle)
+            assertEquals(30_000L, ready.remainingMs)
+        }
+
+    @Test
+    fun `refreshPosition loescht die statuszeile ohne plan`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            vm.refreshPosition()
+            dispatcher.scheduler.advanceUntilIdle()
+            assertNull(vm.dropStatus.value)
+        }
+
+    @Test
+    fun `skip-ereignis kommt nur bei Overridden mit SKIPPED`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            vm.skipOverridden.test {
+                dropSyncStateSource.stateFlow.value =
+                    DropSyncState.Overridden(OverrideReason.PAUSED)
+                dispatcher.scheduler.advanceUntilIdle()
+                expectNoEvents()
+
+                dropSyncStateSource.stateFlow.value =
+                    DropSyncState.Overridden(OverrideReason.SKIPPED)
+                dispatcher.scheduler.advanceUntilIdle()
+                awaitItem()
+            }
+        }
+
+    @Test
+    fun `requestSkip fragt bei scharfem Plan zweimal nach`() =
+        runTest(dispatcher) {
+            dropSyncStateSource.stateFlow.value =
+                DropSyncState.Armed(
+                    DropSyncState.Planned(
+                        songTitle = "Track",
+                        markerLabel = "Drop",
+                        targetElapsedRealtimeMs = 40_000L,
+                        remainingMs = 30_000L,
+                        confidence = TimingConfidence.EXACT,
+                        mode = DropSyncMode.LANDING_AT_REST_END,
+                    ),
+                    token = 1L,
+                    audioPrepared = true,
+                )
+            val vm = viewModel()
+
+            assertEquals(SkipRequest.Hint, vm.requestSkip())
+            // Die Fake-Uhr steht: der zweite Druck liegt im Fenster.
+            assertEquals(SkipRequest.Executed, vm.requestSkip())
+        }
+
+    @Test
+    fun `requestSkip springt ohne Plan sofort`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+            assertEquals(SkipRequest.Executed, vm.requestSkip())
+        }
+
+    @Test
+    fun `targetMarkerId folgt dem ziel des laufenden songs`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            val vm = viewModel()
+
+            vm.targetMarkerId.test {
+                assertNull(awaitItem())
+                dropTargetRepository.targetsBySong
+                    .getOrPut(7L) { MutableStateFlow(null) }
+                    .value = 3L
+                var item = awaitItem()
+                while (item != 3L) item = awaitItem()
+                assertEquals(3L, item)
+            }
+        }
+
+    @Test
+    fun `nowPlayingSuggestions filtert die vorschlaege des laufenden songs`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            markerRepository.pendingFlow.value =
+                listOf(
+                    suggestionFixture(id = 1L, songId = 7L),
+                    suggestionFixture(id = 2L, songId = 8L),
+                )
+
+            viewModel().nowPlayingSuggestions.test {
+                var items = awaitItem()
+                while (items.isEmpty()) items = awaitItem()
+                assertEquals(listOf(1L), items.map { it.id })
+            }
+        }
+
+    @Test
+    fun `setDropTarget bestaetigt einen vorschlag und merkt sich das ziel`() =
+        runTest(dispatcher) {
+            libraryRepository.songById[7L] = songFixture(id = 7L, title = "Drop City")
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            markerRepository.pendingFlow.value = listOf(suggestionFixture(id = 9L, songId = 7L))
+            val vm = viewModel()
+            vm.nowPlaying.test { awaitItemUntil { it.isVisible } }
+
+            vm.setDropTarget(9L)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(9L), markerRepository.confirmCalls)
+            assertEquals(listOf(7L to 9L), dropTargetRepository.setCalls)
+        }
+
+    @Test
+    fun `clearDropTarget entfernt das ziel des laufenden songs`() =
+        runTest(dispatcher) {
+            libraryRepository.songById[7L] = songFixture(id = 7L, title = "Drop City")
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            val vm = viewModel()
+            vm.nowPlaying.test { awaitItemUntil { it.isVisible } }
+
+            vm.clearDropTarget()
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(7L), dropTargetRepository.clearCalls)
+        }
+
+    @Test
+    fun `renameMarker delegiert und laedt die marker neu`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+
+            vm.renameMarker(1L, "Neuer Drop")
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(1L to "Neuer Drop"), markerRepository.renameCalls)
+        }
+
+    @Test
+    fun `C10 anhoeren springt mit vorlauf und startet die wiedergabe`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+
+            vm.listenToMarker(60_000L)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(60_000L - PlayerViewModel.MARKER_LISTEN_LEAD_MS), playbackRepository.seekCalls)
+            assertEquals(1, playbackRepository.playCalls)
+        }
+
+    @Test
+    fun `C10 anhoeren am anfang springt auf null`() =
+        runTest(dispatcher) {
+            val vm = viewModel()
+
+            vm.listenToMarker(1_000L)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            assertEquals(listOf(0L), playbackRepository.seekCalls)
+            assertEquals(1, playbackRepository.playCalls)
+        }
+
+    @Test
+    fun `C10 bestaetigen quittiert und laesst sich umkehren`() =
+        runTest(dispatcher) {
+            playbackRepository.stateFlow.value = PlaybackState(currentSongId = 7L)
+            markerRepository.pendingFlow.value = listOf(suggestionFixture(id = 9L, songId = 7L))
+            val vm = viewModel()
+            // WhileSubscribed: ohne Collector bleibt die Vorschlagsliste leer.
+            backgroundScope.launch { vm.nowPlayingSuggestions.collect {} }
+            dispatcher.scheduler.runCurrent()
+
+            vm.markerConfirmed.test {
+                vm.confirmMarker(9L)
+                dispatcher.scheduler.advanceUntilIdle()
+                awaitItem()
+                assertTrue(vm.hasMarkerConfirmUndo())
+
+                vm.undoConfirmMarker()
+                dispatcher.scheduler.advanceUntilIdle()
+                assertEquals(listOf(9L to false), markerRepository.enabledCalls)
+                cancelAndIgnoreRemainingEvents()
+            }
+        }
+
     private suspend fun app.cash.turbine.TurbineTestContext<NowPlayingUiState>.awaitItemUntil(
         predicate: (NowPlayingUiState) -> Boolean,
     ): NowPlayingUiState {
@@ -435,15 +678,40 @@ class PlayerViewModelTest {
             isEnabled = true,
             linkedSongId = songId,
         )
+
+    private fun suggestionFixture(
+        id: Long,
+        songId: Long,
+    ): SongMarker =
+        SongMarker(
+            id = id,
+            label = "Vorschlag",
+            positionMs = 30_000L,
+            source = com.dropsync.core.model.MarkerSource.AUTO_DETECTED,
+            isEnabled = false,
+            linkedSongId = songId,
+        )
 }
 
 private class FakePlaybackRepository : PlaybackRepository {
     val stateFlow = MutableStateFlow(PlaybackState())
     var snapshot: AppResult<PlaybackState> = AppResult.success(PlaybackState())
     val seekCalls = mutableListOf<Long>()
+    var playCalls = 0
     var skipToPreviousCalls = 0
 
     override val state: Flow<PlaybackState> = stateFlow
+
+    override val landingEvents: Flow<DropLandingEvent> = emptyFlow()
+
+    override suspend fun armLanding(
+        song: Song,
+        startPositionMs: Long,
+        delayMs: Long,
+        fadeMs: Long,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun cancelLanding(): AppResult<Unit> = AppResult.success(Unit)
 
     override suspend fun setQueue(
         songs: List<Song>,
@@ -451,7 +719,10 @@ private class FakePlaybackRepository : PlaybackRepository {
         playWhenReady: Boolean,
     ): AppResult<Unit> = AppResult.success(Unit)
 
-    override suspend fun play(): AppResult<Unit> = AppResult.success(Unit)
+    override suspend fun play(): AppResult<Unit> {
+        playCalls++
+        return AppResult.success(Unit)
+    }
 
     override suspend fun pause(): AppResult<Unit> = AppResult.success(Unit)
 
@@ -550,6 +821,11 @@ private class FakeMarkerRepository : MarkerRepository {
     val markersBySong = mutableMapOf<Long, List<SongMarker>>()
     val createCalls = mutableListOf<Triple<Long, String, Long>>()
     val deleteCalls = mutableListOf<Long>()
+    val confirmCalls = mutableListOf<Long>()
+    val enabledCalls = mutableListOf<Pair<Long, Boolean>>()
+    val restoredMarkers = mutableListOf<SongMarker>()
+    val renameCalls = mutableListOf<Pair<Long, String>>()
+    val pendingFlow = MutableStateFlow<List<SongMarker>>(emptyList())
 
     override val unmatchedMarkers: Flow<List<SongMarker>> = emptyFlow()
 
@@ -565,6 +841,14 @@ private class FakeMarkerRepository : MarkerRepository {
 
     override suspend fun getEnabledMarkersForSong(songId: Long): AppResult<List<SongMarker>> =
         AppResult.success(markersBySong[songId].orEmpty())
+
+    override suspend fun getEnabledMarkersForSongs(songIds: List<Long>): AppResult<Map<Long, List<SongMarker>>> =
+        AppResult.success(
+            songIds.mapNotNull { id -> markersBySong[id]?.let { id to it } }.toMap(),
+        )
+
+    override fun observeEnabledMarkersForSong(songId: Long): Flow<List<SongMarker>> =
+        MutableStateFlow(markersBySong[songId].orEmpty())
 
     override suspend fun createManualMarker(
         songId: Long,
@@ -589,14 +873,40 @@ private class FakeMarkerRepository : MarkerRepository {
         return AppResult.success(Unit)
     }
 
-    override val pendingAutoDetectedMarkers: Flow<List<SongMarker>> = emptyFlow()
+    override val pendingAutoDetectedMarkers: Flow<List<SongMarker>> = pendingFlow
 
-    override suspend fun confirmMarker(markerId: Long): AppResult<Unit> = AppResult.success(Unit)
+    override suspend fun confirmMarker(markerId: Long): AppResult<Unit> {
+        confirmCalls += markerId
+        return AppResult.success(Unit)
+    }
+
+    override val songsWithEnabledMarkers: Flow<Set<Long>> = emptyFlow()
+
+    override suspend fun setMarkerEnabled(
+        markerId: Long,
+        enabled: Boolean,
+    ): AppResult<Unit> {
+        enabledCalls += markerId to enabled
+        return AppResult.success(Unit)
+    }
+
+    override suspend fun restoreMarker(marker: SongMarker): AppResult<Unit> {
+        restoredMarkers += marker
+        return AppResult.success(Unit)
+    }
 
     override suspend fun moveMarker(
         markerId: Long,
         newPositionMs: Long,
     ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun renameMarker(
+        markerId: Long,
+        newLabel: String,
+    ): AppResult<Unit> {
+        renameCalls += markerId to newLabel
+        return AppResult.success(Unit)
+    }
 }
 
 private class FakeLibraryRepository :
@@ -649,6 +959,9 @@ private class FakeLibraryRepository :
 
     override fun songsOfPlaylist(playlistId: Long): Flow<List<Song>> = emptyFlow()
 
+    override suspend fun songsForLabelOnce(label: com.dropsync.core.model.PlaylistLabel): AppResult<List<Song>> =
+        AppResult.success(emptyList())
+
     override fun recentlyAdded(limit: Int): Flow<List<Song>> = emptyFlow()
 
     override fun recentlyPlayed(limit: Int): Flow<List<Song>> = emptyFlow()
@@ -686,7 +999,7 @@ private class FakeLibraryRepository :
     override suspend fun addToPlaylist(
         playlistId: Long,
         songIds: List<Long>,
-    ): AppResult<Unit> = AppResult.success(Unit)
+    ): AppResult<Int> = AppResult.success(songIds.size)
 
     override suspend fun removeFromPlaylist(
         playlistId: Long,
@@ -703,6 +1016,52 @@ private class FakeLibraryRepository :
         name: String,
         m3uText: String,
     ): AppResult<PlaylistImportResult> = AppResult.success(PlaylistImportResult(0L, 0, 0, 0))
+}
+
+/** Minimal-Fake des DropSync-Zustands (P1-10 Badge). */
+private class FakeDropSyncStateSource : DropSyncStateSource {
+    val stateFlow = MutableStateFlow<DropSyncState>(DropSyncState.Off)
+    override val state: StateFlow<DropSyncState> = stateFlow
+
+    override fun cancelPlan() {
+        // Der Player nutzt nur den Zustand; Abbruch kommt aus der Konsole.
+    }
+
+    override fun acknowledgePlanLost() {
+        // C13: im Player-Test nicht benoetigt.
+    }
+
+    override fun replanAfterOverride(): Boolean {
+        // C2: im Player-Test nicht benoetigt.
+        return false
+    }
+}
+
+/** Minimal-Fake der Ziel-Persistenz (P2-21, "Als DropSync-Ziel waehlen"). */
+private class FakeDropTargetRepository : DropTargetRepository {
+    val targetsBySong = mutableMapOf<Long, MutableStateFlow<Long?>>()
+    val setCalls = mutableListOf<Pair<Long, Long>>()
+    val clearCalls = mutableListOf<Long>()
+
+    override fun observeTargetMarkerId(songId: Long): Flow<Long?> =
+        targetsBySong.getOrPut(songId) { MutableStateFlow(null) }
+
+    override val targets: Flow<Map<Long, Long>> = flowOf(emptyMap())
+
+    override suspend fun setTarget(
+        songId: Long,
+        markerId: Long,
+    ): AppResult<Unit> {
+        setCalls += songId to markerId
+        targetsBySong.getOrPut(songId) { MutableStateFlow(null) }.value = markerId
+        return AppResult.success(Unit)
+    }
+
+    override suspend fun clearTarget(songId: Long): AppResult<Unit> {
+        clearCalls += songId
+        targetsBySong.getOrPut(songId) { MutableStateFlow(null) }.value = null
+        return AppResult.success(Unit)
+    }
 }
 
 /** Minimal-Fake des Audio-Engine-Zugangs für den Player (EQ-Schnellzugriff). */

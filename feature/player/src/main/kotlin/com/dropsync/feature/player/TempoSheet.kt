@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -58,7 +59,7 @@ internal fun TempoSheet(
             Text(
                 text = String.format(Locale.ROOT, "%.2fx", speed),
                 style = MaterialTheme.typography.headlineMedium,
-                color = MaterialTheme.colorScheme.primary,
+                color = rememberAccentTextColor(),
             )
             Slider(
                 value = speed,

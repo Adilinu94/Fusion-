@@ -2,13 +2,14 @@ package com.dropsync.feature.player
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.dropsync.core.common.Clock
 import com.dropsync.core.common.getOrNull
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.audio.AudioEngineRepository
-import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.TrackAnalysisRepository
 import com.dropsync.domain.audio.WaveformDisplayGain
+import com.dropsync.domain.library.DropTargetRepository
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.MarkerRepository
@@ -16,8 +17,14 @@ import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
 import com.dropsync.domain.playback.RepeatMode
+import com.dropsync.domain.timer.DropSyncFailureReason
+import com.dropsync.domain.timer.DropSyncState
+import com.dropsync.domain.timer.DropSyncStateSource
+import com.dropsync.domain.timer.OverrideReason
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -30,6 +37,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -45,7 +53,36 @@ data class MiniPlayerState(
     val durationMs: Long = 0,
     /** Content-URI fuer die Cover-Kachel (gemeinsamer CoverArtLoader). */
     val contentUri: String? = null,
+    /**
+     * P1-10: laufender DropSync-Plan als Badge ("DROP BEREIT"); null,
+     * wenn kein Plan aktiv ist. Nur der Text, nie Technik (A.4).
+     */
+    val dropSyncBadge: DropSyncBadge? = null,
 )
+
+/** Anzeigeform des DropSync-Badges im Mini-Player (P1-10). */
+enum class DropSyncBadge {
+    /** Plan steht/ist scharf: "DROP BEREIT". */
+    READY,
+
+    /** Nur Best Effort: "DROP BEST EFFORT". */
+    BEST_EFFORT,
+
+    /** Nutzer hat uebernommen: "DROP AUS". */
+    OVERRIDDEN,
+
+    /** C13: Plan verloren (Kill ohne Wiederherstellung): "DROP VERLOREN". */
+    FAILED,
+}
+
+/** C2: Ergebnis eines Next-Drucks (Doppelbestaetigung waehrend eines Plans). */
+enum class SkipRequest {
+    /** Skip ausgefuehrt (kein Plan oder zweiter Druck im Fenster). */
+    Executed,
+
+    /** Erster Druck: Hinweis zeigen, der zweite Druck springt (5.10). */
+    Hint,
+}
 
 /**
  * Zustand des Now-Playing-Screens (Marker/Waveform-Plan Phase 1):
@@ -110,6 +147,9 @@ class PlayerViewModel
         private val trackAnalysisRepository: TrackAnalysisRepository,
         private val markerRepository: MarkerRepository,
         private val audioEngineRepository: AudioEngineRepository,
+        private val dropSyncStateSource: DropSyncStateSource,
+        private val dropTargetRepository: DropTargetRepository,
+        private val clock: Clock,
     ) : ViewModel() {
         /**
          * MediaStore-ID des laufenden Titels. Einzige Quelle fuer alle
@@ -182,45 +222,6 @@ class PlayerViewModel
             }
         }
 
-        /** Aktive DSP-Konfiguration fuer den EQ-Schnellzugriff im Player. */
-        val dspConfig: StateFlow<DspConfig> =
-            audioEngineRepository.dspConfig
-                .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), DspConfig())
-
-        /** Aktiviert/deaktiviert den EQ ohne Umweg ueber die Audio-Einstellungen. */
-        fun setEqEnabled(enabled: Boolean) {
-            viewModelScope.launch {
-                audioEngineRepository.updateDspConfig(
-                    dspConfig.value.copy(eq = dspConfig.value.eq.copy(enabled = enabled)),
-                )
-            }
-        }
-
-        /** Setzt den Gain eines EQ-Bandes (Quick-EQ-Sheet, vertikale Slider). */
-        fun setEqBandGain(
-            bandIndex: Int,
-            gainDb: Double,
-        ) {
-            val config = dspConfig.value
-            val bands =
-                config.eq.bands.mapIndexed { index, band ->
-                    if (index == bandIndex) band.copy(gainDb = gainDb) else band
-                }
-            viewModelScope.launch {
-                audioEngineRepository.updateDspConfig(config.copy(eq = config.eq.copy(bands = bands)))
-            }
-        }
-
-        /** Crossfade an/aus im Player-Aktions-Carousel (Mix-Chip). */
-        fun setCrossfadeEnabled(enabled: Boolean) {
-            val config = dspConfig.value
-            viewModelScope.launch {
-                audioEngineRepository.updateDspConfig(
-                    config.copy(crossfadeSeconds = if (enabled) DEFAULT_CROSSFADE_SECONDS else 0),
-                )
-            }
-        }
-
         /** Aktueller Tempo-Faktor der Wiedergabe (0.5..2.0; 1.0 = Original). */
         val playbackSpeed: StateFlow<Float> =
             playbackRepository.state
@@ -242,6 +243,23 @@ class PlayerViewModel
                         flowOf(null)
                     } else {
                         trackAnalysisRepository.observeAnalysis(songId).map { it?.bpm }
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+        /**
+         * B4: Phase des Beat-Rasters des laufenden Titels in ms. null
+         * heisst "kein belastbares Raster" (keine Analyse, Altbestand
+         * oder Konfidenz unter der Schwelle) — dann rastet das
+         * Marker-Snap nicht.
+         */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val trackDownbeatOffsetMs: StateFlow<Long?> =
+            currentSongId
+                .flatMapLatest { songId ->
+                    if (songId == null) {
+                        flowOf(null)
+                    } else {
+                        trackAnalysisRepository.observeAnalysis(songId).map { it?.downbeatOffsetMs }
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -285,22 +303,96 @@ class PlayerViewModel
 
         @OptIn(ExperimentalCoroutinesApi::class)
         val miniPlayer: StateFlow<MiniPlayerState> =
-            statesWithSong()
-                .map { (state, song) ->
-                    if (state.currentSongId == null) {
-                        MiniPlayerState()
+            combine(statesWithSong(), dropSyncStateSource.state) { (state, song), dropSync ->
+                if (state.currentSongId == null) {
+                    MiniPlayerState()
+                } else {
+                    MiniPlayerState(
+                        isVisible = true,
+                        isPlaying = state.isPlaying,
+                        title = song?.title ?: song?.displayName ?: "",
+                        artist = song?.artist,
+                        positionMs = state.positionMs,
+                        durationMs = state.durationMs,
+                        contentUri = song?.contentUri,
+                        dropSyncBadge = dropSync.badgeOrNull(),
+                    )
+                }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MiniPlayerState())
+
+        /**
+         * P1-10: Badge nur fuer Zustaende, die der Nutzer sehen soll —
+         * Landed/Cancelled/Off bleiben stumm (kein Dauer-Badge). C13:
+         * "Plan verloren" ist ein sichtbarer Verlust und bekommt ein Badge.
+         */
+        private fun DropSyncState.badgeOrNull(): DropSyncBadge? =
+            when (this) {
+                is DropSyncState.Planned, is DropSyncState.Armed -> {
+                    DropSyncBadge.READY
+                }
+
+                is DropSyncState.BestEffort -> {
+                    DropSyncBadge.BEST_EFFORT
+                }
+
+                is DropSyncState.Overridden -> {
+                    DropSyncBadge.OVERRIDDEN
+                }
+
+                is DropSyncState.Failed -> {
+                    if (reason == DropSyncFailureReason.PLAN_LOST) {
+                        DropSyncBadge.FAILED
                     } else {
-                        MiniPlayerState(
-                            isVisible = true,
-                            isPlaying = state.isPlaying,
-                            title = song?.title ?: song?.displayName ?: "",
-                            artist = song?.artist,
-                            positionMs = state.positionMs,
-                            durationMs = state.durationMs,
-                            contentUri = song?.contentUri,
-                        )
+                        null
                     }
-                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), MiniPlayerState())
+                }
+
+                else -> {
+                    null
+                }
+            }
+
+        /** C13: quittiert "Plan verloren" (Statuszeile/Badge). */
+        fun acknowledgePlanLost() {
+            dropSyncStateSource.acknowledgePlanLost()
+        }
+
+        /** C2: Einmal-Ereignis, wenn ein Nutzer-Skip den Plan uebernommen hat. */
+        private val overrideEvents = Channel<Unit>(Channel.BUFFERED)
+
+        /**
+         * C2 (5.10): Der Nutzer hat den Plan per Skip uebernommen — die
+         * Shell zeigt darauf die Undo-Snackbar. Einmal-Ereignis (Channel),
+         * damit die Meldung nicht bei jeder Recomposition erneut erscheint.
+         */
+        val skipOverridden: Flow<Unit> = overrideEvents.receiveAsFlow()
+
+        init {
+            viewModelScope.launch {
+                dropSyncStateSource.state
+                    .map { state ->
+                        state is DropSyncState.Overridden && state.reason == OverrideReason.SKIPPED
+                    }.distinctUntilChanged()
+                    .filter { it }
+                    .collect { overrideEvents.trySend(Unit) }
+            }
+        }
+
+        /** C2: Undo nach einem Skip; false = nicht mehr moeglich (No-op). */
+        fun undoOverride(): Boolean = dropSyncStateSource.replanAfterOverride()
+
+        /** P1-10: Skip-Schutz — laeuft ein Plan, fragt der Skip nach. */
+        val dropSyncState: StateFlow<DropSyncState> = dropSyncStateSource.state
+
+        private val tickedDropStatus = MutableStateFlow<DropStatusLine?>(null)
+
+        /**
+         * P2-21 (MP-7): Statuszeile unter der Now-Playing-Waveform. Wird im
+         * Ticker-Schritt ([refreshPosition]) aus dem Deadline des Plans und
+         * der monotonen Uhr berechnet; null, wenn kein Plan laeuft oder er
+         * stumm ist. Eine Quelle fuer Zeile UND TalkBack-Satz.
+         */
+        val dropStatus: StateFlow<DropStatusLine?> = tickedDropStatus.asStateFlow()
 
         fun togglePlayPause() {
             viewModelScope.launch {
@@ -324,12 +416,53 @@ class PlayerViewModel
             viewModelScope.launch { playbackRepository.skipToNext() }
         }
 
+        /**
+         * C2 (5.10): Next waehrend eines Plans fragt per
+         * Doppelbestaetigung nach. Der erste Druck armirt und zeigt den
+         * Hinweis, der zweite innerhalb des Fensters springt; sonst wie
+         * gehabt. Kein Plan -> sofort springen.
+         */
+        fun requestSkip(): SkipRequest {
+            val dropSync = dropSyncStateSource.state.value
+            val planned = dropSync is DropSyncState.Armed || dropSync is DropSyncState.Planned
+            if (!planned) {
+                skipConfirmArmedAtMs = null
+                skipToNext()
+                return SkipRequest.Executed
+            }
+            val now = clock.elapsedRealtimeMs()
+            val armedAt = skipConfirmArmedAtMs
+            return if (armedAt != null && now - armedAt <= SKIP_CONFIRM_WINDOW_MS) {
+                skipConfirmArmedAtMs = null
+                skipToNext()
+                SkipRequest.Executed
+            } else {
+                skipConfirmArmedAtMs = now
+                SkipRequest.Hint
+            }
+        }
+
+        /** C2: Zeitpunkt des ersten Skip-Drucks (null = nicht armirt). */
+        private var skipConfirmArmedAtMs: Long? = null
+
         fun skipToPrevious() {
             viewModelScope.launch { playbackRepository.skipToPrevious() }
         }
 
         fun seekTo(positionMs: Long) {
             viewModelScope.launch { playbackRepository.seekTo(positionMs) }
+        }
+
+        /**
+         * C10 (P-10): Anhoeren eines Markers mit Vorlauf — springt 2,5 s
+         * VOR die Position und startet die Wiedergabe, damit der Drop
+         * hoerbar ist statt erst nach dem Sprung zu beginnen.
+         */
+        fun listenToMarker(positionMs: Long) {
+            viewModelScope.launch {
+                playbackRepository.seekTo((positionMs - MARKER_LISTEN_LEAD_MS).coerceAtLeast(0L))
+                playbackRepository.play()
+            }
         }
 
         /**
@@ -423,6 +556,10 @@ class PlayerViewModel
                 playbackRepository.snapshotNow().getOrNull()?.let {
                     tickedPositionMs.value = it.positionMs
                 }
+                // P2-21: derselbe Takt traegt die DropSync-Statuszeile
+                // (Deadline aus dem Plan, monotone Uhr).
+                tickedDropStatus.value =
+                    dropStatusLine(dropSyncStateSource.state.value, clock.elapsedRealtimeMs())
             }
         }
 
@@ -501,6 +638,29 @@ class PlayerViewModel
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+        /**
+         * P2-21: unbestaetigte Onset-Vorschlaege des laufenden Songs fuer die
+         * gedaempften Ticks der Waveform. Quelle ist derselbe Kandidaten-Flow
+         * wie die Review-Liste, nur auf den laufenden Song gefiltert — keine
+         * zweite Wahrheit, kein neuer Repository-Aufruf je Song.
+         */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val nowPlayingSuggestions: StateFlow<List<SongMarker>> =
+            combine(currentSongId, markerRepository.pendingAutoDetectedMarkers) { songId, pending ->
+                if (songId == null) emptyList() else pending.filter { it.linkedSongId == songId }
+            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+        /**
+         * P2-21: bevorzugtes DropSync-Ziel des laufenden Songs (Marker-ID);
+         * null = kein Ziel, die Planung nimmt den naechsten Marker.
+         */
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val targetMarkerId: StateFlow<Long?> =
+            currentSongId
+                .flatMapLatest { songId ->
+                    if (songId == null) flowOf(null) else dropTargetRepository.observeTargetMarkerId(songId)
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
         /** Manuellen Marker anlegen (Phase 4); leeres Label ergibt "Drop". */
         fun createMarker(
             label: String,
@@ -547,6 +707,72 @@ class PlayerViewModel
         ) {
             viewModelScope.launch {
                 markerRepository.moveMarker(markerId, newPositionMs)
+                markersVersion.value++
+            }
+        }
+
+        /**
+         * P2-21: setzt den Marker als bevorzugtes DropSync-Ziel des laufenden
+         * Songs. Ein unbestaetigter Vorschlag wird dabei bestaetigt — "Drop
+         * gehoert, nimm den" ist eine Handlung, nicht zwei.
+         */
+        fun setDropTarget(markerId: Long) {
+            val songId = nowPlaying.value.songId ?: return
+            viewModelScope.launch {
+                if (nowPlayingMarkers.value.none { it.id == markerId }) {
+                    markerRepository.confirmMarker(markerId)
+                }
+                dropTargetRepository.setTarget(songId, markerId)
+                markersVersion.value++
+            }
+        }
+
+        /** P2-21: entfernt das bevorzugte Ziel; die Planung ist wieder automatisch. */
+        fun clearDropTarget() {
+            val songId = nowPlaying.value.songId ?: return
+            viewModelScope.launch { dropTargetRepository.clearTarget(songId) }
+        }
+
+        /** P2-21: bestaetigt einen Vorschlag ohne Zielwahl (Review-Fluss). */
+        fun confirmMarker(markerId: Long) {
+            val marker = nowPlayingSuggestions.value.firstOrNull { it.id == markerId }
+            viewModelScope.launch {
+                markerRepository.confirmMarker(markerId)
+                if (marker != null) {
+                    lastConfirmedMarker = marker
+                    markerConfirmedEvents.trySend(Unit)
+                }
+                markersVersion.value++
+            }
+        }
+
+        /** C10 (P-10): Quittung fuer "Marker bestaetigt" (Snackbar + Undo). */
+        private val markerConfirmedEvents = Channel<Unit>(Channel.BUFFERED)
+        val markerConfirmed: Flow<Unit> = markerConfirmedEvents.receiveAsFlow()
+
+        /** C10: zuletzt bestaetigter Marker fuer Undo (null = keins offen). */
+        private var lastConfirmedMarker: SongMarker? = null
+
+        /** C10: true, solange das Bestaetigen rueckgaengig gemacht werden kann. */
+        fun hasMarkerConfirmUndo(): Boolean = lastConfirmedMarker != null
+
+        /** C10: macht das Bestaetigen rueckgaengig (zurueck in die Review-Liste). */
+        fun undoConfirmMarker() {
+            val marker = lastConfirmedMarker ?: return
+            lastConfirmedMarker = null
+            viewModelScope.launch {
+                markerRepository.setMarkerEnabled(marker.id, false)
+                markersVersion.value++
+            }
+        }
+
+        /** P2-21: benennt einen Marker um (Sheet-Aktion "Umbenennen"). */
+        fun renameMarker(
+            markerId: Long,
+            label: String,
+        ) {
+            viewModelScope.launch {
+                markerRepository.renameMarker(markerId, label)
                 markersVersion.value++
             }
         }
@@ -646,12 +872,15 @@ class PlayerViewModel
             const val MIN_PLAYBACK_SPEED = 0.5f
             const val MAX_PLAYBACK_SPEED = 2.0f
 
-            /** Crossfade-Dauer des Mix-Chips im Aktions-Carousel (Sekunden). */
-            const val DEFAULT_CROSSFADE_SECONDS = 4
-
             const val MIN_TARGET_BPM = 60
             const val MAX_TARGET_BPM = 200
             const val DEFAULT_TARGET_BPM = 160
+
+            /** C2: Fenster der Skip-Doppelbestaetigung (5.10). */
+            const val SKIP_CONFIRM_WINDOW_MS = 4_000L
+
+            /** C10: Vorlauf beim Anhoeren eines Markers ("ab Marker minus 2-3 s"). */
+            const val MARKER_LISTEN_LEAD_MS = 2_500L
 
             /**
              * Tempo-Faktor fuer den BPM-Lock: Ziel-Kadenz / Track-BPM, in den

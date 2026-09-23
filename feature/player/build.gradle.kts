@@ -7,6 +7,17 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
+    // D1: Screenshot-Gate fuer den Now-Playing-Hero (Roborazzi).
+    alias(libs.plugins.roborazzi)
+}
+
+// D1: CaptureType explizit — `recordRoborazziDebug` schreibt die
+// Referenzbilder unter src/test/screenshots (nur lokal, nach Review),
+// `verifyRoborazziDebug` vergleicht sie (CI-Gate). Der normale `test`-Task
+// dumpt nur nach build/intermediates/roborazzi und laesst die Referenzen
+// unberuehrt.
+roborazzi {
+    outputDir.set(file("src/test/screenshots"))
 }
 
 android {
@@ -31,6 +42,17 @@ android {
 
     buildFeatures {
         compose = true
+    }
+
+    testOptions {
+        unitTests.all {
+            it.maxHeapSize = "2g"
+        }
+        unitTests {
+            // C9: Compose-Tests brauchen die gemergten Ressourcen
+            // (Robolectric + ui-test-junit4).
+            isIncludeAndroidResources = true
+        }
     }
 }
 
@@ -58,6 +80,13 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     testImplementation(project(":core:testing"))
+    // C9: Compose-Tests fuer die Marker-Textliste (Robolectric, ohne Geraet).
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    // D1: Screenshot-Tests des Now-Playing-Heros (Roborazzi).
+    testImplementation(libs.roborazzi)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

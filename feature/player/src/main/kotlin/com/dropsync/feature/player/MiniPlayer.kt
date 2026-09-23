@@ -2,6 +2,7 @@ package com.dropsync.feature.player
 
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -45,6 +46,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.dropsync.core.designsystem.component.CoverImage
 import com.dropsync.core.designsystem.icon.BrandIcons
 import com.dropsync.core.designsystem.theme.Spacing
+import com.dropsync.core.designsystem.theme.rememberReducedMotion
 import kotlinx.coroutines.launch
 
 /**
@@ -62,6 +64,9 @@ fun MiniPlayer(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
 ) {
     val state by viewModel.miniPlayer.collectAsStateWithLifecycle()
+    // C2: Countdown des Plans fuer das Badge (derselbe getickte Zustand wie
+    // die Statuszeile — keine zweite Zeitrechnung).
+    val dropStatus by viewModel.dropStatus.collectAsStateWithLifecycle()
     if (!state.isVisible) return
 
     var showQueue by remember { mutableStateOf(false) }
@@ -112,6 +117,18 @@ fun MiniPlayer(
                             ),
                     verticalArrangement = Arrangement.Center,
                 ) {
+                    // P1-10: DropSync-Badge vor dem Titel; Text statt Technik,
+                    // Farbe nie allein (A.4). C2: mit Countdown und als
+                    // Details-Einstieg zum Plan (Tap oeffnet den Player).
+                    state.dropSyncBadge?.let { badge ->
+                        DropSyncBadgeChip(
+                            badge = badge,
+                            countdownMs = (dropStatus as? DropStatusLine.Ready)?.remainingMs,
+                            // C16 (5.22): Die Kette steht auch im Mini-Player.
+                            chain = (dropStatus as? DropStatusLine.Ready)?.chain.orEmpty(),
+                            onClick = onOpenNowPlaying,
+                        )
+                    }
                     Text(
                         text = state.title,
                         style = MaterialTheme.typography.titleSmall,
@@ -177,6 +194,73 @@ fun MiniPlayer(
 }
 
 /**
+ * P1-10: kleines DropSync-Badge im Mini-Player. Zeigt Zustand als Text
+ * ("DROP BEREIT" / "DROP BEST EFFORT" / "DROP AUS"), nie Technik; die
+ * Farbe unterstreicht nur (Design 4.5, A.4). C2: Bei scharfem Plan mit
+ * Countdown ("DROP BEREIT · 1:27") und als Details-Einstieg antippbar.
+ */
+@Composable
+internal fun DropSyncBadgeChip(
+    badge: DropSyncBadge,
+    countdownMs: Long?,
+    chain: List<String>,
+    onClick: () -> Unit,
+) {
+    val (labelRes, container) =
+        when (badge) {
+            DropSyncBadge.READY -> {
+                R.string.miniplayer_dropsync_ready to MaterialTheme.colorScheme.primaryContainer
+            }
+
+            DropSyncBadge.BEST_EFFORT -> {
+                R.string.miniplayer_dropsync_best_effort to MaterialTheme.colorScheme.tertiaryContainer
+            }
+
+            DropSyncBadge.OVERRIDDEN -> {
+                R.string.miniplayer_dropsync_overridden to MaterialTheme.colorScheme.surfaceVariant
+            }
+
+            DropSyncBadge.FAILED -> {
+                R.string.miniplayer_dropsync_failed to MaterialTheme.colorScheme.errorContainer
+            }
+        }
+    // C16: Bei einer Kette nennt das Badge die Uebergaenge ("A -> B -> Drop
+    // in 1:27"); sonst den Zustand, bei scharfem Plan mit Countdown.
+    val label =
+        when {
+            badge == DropSyncBadge.READY && chain.size > 1 && countdownMs != null -> {
+                stringResource(
+                    R.string.miniplayer_dropsync_chain,
+                    chain.joinToString(CHAIN_ARROW),
+                    formatClockMs(countdownMs),
+                )
+            }
+
+            badge == DropSyncBadge.READY && countdownMs != null -> {
+                stringResource(R.string.miniplayer_dropsync_ready_countdown, formatClockMs(countdownMs))
+            }
+
+            else -> {
+                stringResource(labelRes)
+            }
+        }
+    Text(
+        text = label,
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurface,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier =
+            Modifier
+                .padding(bottom = 2.dp)
+                .clip(RoundedCornerShape(Spacing.radiusSmall))
+                .clickable(onClick = onClick)
+                .background(container)
+                .padding(horizontal = 6.dp, vertical = 1.dp),
+    )
+}
+
+/**
  * Duenne Fortschrittsleiste am oberen Rand des Mini-Players. Ausgelagert,
  * damit [MiniPlayer] unter der Detekt-Grenze fuer LongMethod bleibt.
  */
@@ -217,13 +301,18 @@ private fun MiniPlayerProgressBar(
  */
 @Composable
 private fun MiniPlayerPlayPauseIcon(isPlaying: Boolean) {
+    val reducedMotion = rememberReducedMotion()
     val iconScale by animateFloatAsState(
         targetValue = if (isPlaying) 1.15f else 1f,
         animationSpec =
-            spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessMedium,
-            ),
+            if (reducedMotion) {
+                snap()
+            } else {
+                spring(
+                    dampingRatio = Spring.DampingRatioMediumBouncy,
+                    stiffness = Spring.StiffnessMedium,
+                )
+            },
         label = "mini_player_play_scale",
     )
     val scaleModifier =

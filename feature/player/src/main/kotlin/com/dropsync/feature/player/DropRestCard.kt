@@ -45,6 +45,7 @@ fun DropRestCard(
 ) {
     val eligibility by viewModel.eligibility.collectAsStateWithLifecycle()
     val timer by viewModel.timerState.collectAsStateWithLifecycle()
+    val startBlocked by viewModel.startBlockedByOtherTimer.collectAsStateWithLifecycle()
 
     val dropSyncActive =
         timer.session?.mode == TimerMode.DROPSYNC &&
@@ -79,7 +80,7 @@ fun DropRestCard(
             if (dropSyncActive) {
                 ActiveDropRest(viewModel)
             } else {
-                IdleDropRest(eligibility, viewModel)
+                IdleDropRest(eligibility, startBlocked, viewModel)
             }
         }
     }
@@ -139,6 +140,7 @@ private fun ActiveDropRest(viewModel: DropRestViewModel) {
 @Composable
 private fun IdleDropRest(
     eligibility: DropRestEligibility,
+    startBlocked: Boolean,
     viewModel: DropRestViewModel,
 ) {
     when (eligibility) {
@@ -148,8 +150,18 @@ private fun IdleDropRest(
                 text = stringResource(R.string.drop_rest_effective_duration, seconds),
                 style = MaterialTheme.typography.bodyMedium,
             )
+            // C11 (P-9): Laeuft bereits eine andere Pause, ist der Start ein
+            // stiller Fehlgriff — Knopf mit Grund gesperrt.
+            if (startBlocked) {
+                Text(
+                    text = stringResource(R.string.drop_rest_blocked_timer_running),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
+            }
             Button(
                 onClick = viewModel::startDropRest,
+                enabled = !startBlocked,
                 modifier = Modifier.heightIn(min = 48.dp),
             ) {
                 Text(stringResource(R.string.drop_rest_start))

@@ -4,34 +4,47 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.getOrNull
+import com.dropsync.core.model.SongMarker
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.timer.CancelReason
 import com.dropsync.domain.timer.DropRestBlockReason
 import com.dropsync.domain.timer.DropRestEligibility
 import com.dropsync.domain.timer.DropRestGate
-import com.dropsync.domain.timer.DropRestMonitor
-import com.dropsync.domain.timer.DropRestRequestBus
 import com.dropsync.domain.timer.MarkerPoint
 import com.dropsync.domain.timer.PlaybackSample
+import com.dropsync.domain.timer.RestTimerServiceStarter
 import com.dropsync.domain.timer.TimerEngine
-import com.dropsync.domain.timer.TimerSession
+import com.dropsync.domain.timer.TimerMode
 import com.dropsync.domain.timer.TimerState
 import com.dropsync.domain.timer.TimerStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
  * "Rest bis zum naechsten Drop" (Bauplan Schritt 11.2-11.4): Gate,
- * Start und Ueberwachung. Die effektive Dauer ist immer
+ * Start und Abbruch. Die effektive Dauer ist immer
  * `markerPosition - aktuelle Playerposition` und nie editierbar (11.3).
+ *
+ * Seit P1-8 ist das eine duenne UI-Fassade (A.3): Die **Ueberwachung**
+ * (Restzeit-Projektion, Cues, Abbruch bei Songwechsel/Seek/Pause) und der
+ * Foreground-Service liegen app-weit im
+ * [com.dropsync.feature.player.DropSyncCoordinator] bzw. im
+ * `TimerService`. Der Screen kann verlassen werden, ohne die Sitzung zu
+ * toeten; die Notification bietet "Plan abbrechen".
  */
 @HiltViewModel
 class DropRestViewModel
@@ -40,41 +53,68 @@ class DropRestViewModel
         private val playbackRepository: PlaybackRepository,
         private val markerRepository: MarkerRepository,
         private val timerEngine: TimerEngine,
-        private val dropRestRequestBus: DropRestRequestBus,
+        private val restTimerServiceStarter: RestTimerServiceStarter,
     ) : ViewModel() {
         val timerState: StateFlow<TimerState> = timerEngine.state
 
-        init {
-            // Drop-Rest-Wunsch aus dem Trainingslog (Schritt 11): startet den
-            // Modus, sofern das Gate im Moment des Klicks offen ist. startDropRest
-            // ist idempotent, wenn bereits ein Timer laeuft.
-            viewModelScope.launch {
-                dropRestRequestBus.requests.collect { startDropRest() }
-            }
-        }
+        /**
+         * C11 (P-9): true, wenn eine ANDERE Timer-Sitzung laeuft (z. B. die
+         * normale Pause). Ein Start waere dann ein stiller Fehlgriff
+         * (TimerConflict) — der Knopf wird stattdessen mit Grund gesperrt.
+         */
+        val startBlockedByOtherTimer: StateFlow<Boolean> =
+            timerEngine.state
+                .map { state ->
+                    state.status in
+                        setOf(TimerStatus.PREPARING, TimerStatus.RUNNING, TimerStatus.PAUSED) &&
+                        state.session?.mode != TimerMode.DROPSYNC
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
         /**
-         * Gate-Neubewertung im UI-Takt, nur solange ein Screen zuschaut;
-         * [PlaybackRepository.snapshotNow] liefert die Live-Position.
+         * Gate-Neubewertung im UI-Takt, nur solange ein Screen zuschaut.
+         * D5/A8: Die Marker des laufenden Titels kommen aus einem Flow —
+         * EINE Abfrage je Songwechsel (Room invalidiert bei
+         * Marker-Aenderungen); der 500-ms-Takt liest nur noch die
+         * Wiedergabezeit ([PlaybackRepository.snapshotNow]).
          */
+        @OptIn(ExperimentalCoroutinesApi::class)
         val eligibility: StateFlow<DropRestEligibility> =
+            combine(
+                playbackRepository.state
+                    .map { it.currentSongId }
+                    .distinctUntilChanged()
+                    .flatMapLatest { songId ->
+                        if (songId == null) {
+                            flowOf(emptyList())
+                        } else {
+                            markerRepository.observeEnabledMarkersForSong(songId)
+                        }
+                    },
+                gateTicker(),
+            ) { markers, _ -> evaluateGate(markers) }
+                .stateIn(
+                    viewModelScope,
+                    SharingStarted.WhileSubscribed(5_000),
+                    DropRestEligibility.Ineligible(DropRestBlockReason.NO_CURRENT_SONG),
+                )
+
+        /** Der UI-Takt: stoesst die Neubewertung an, ohne selbst zu laden. */
+        private fun gateTicker(): Flow<Unit> =
             flow {
                 while (true) {
-                    emit(evaluateGate())
+                    emit(Unit)
                     delay(GATE_SAMPLE_MS)
                 }
-            }.stateIn(
-                viewModelScope,
-                SharingStarted.WhileSubscribed(5_000),
-                DropRestEligibility.Ineligible(DropRestBlockReason.NO_CURRENT_SONG),
-            )
-
-        private var monitorJob: Job? = null
+            }
 
         /** Startet Drop-Rest, wenn das Gate im Moment des Klicks offen ist. */
         fun startDropRest() {
-            if (monitorJob?.isActive == true) return
             viewModelScope.launch {
+                val state = timerEngine.state.value
+                val active =
+                    state.session?.mode == TimerMode.DROPSYNC &&
+                        state.status == TimerStatus.RUNNING
+                if (active) return@launch
                 val snapshot = playbackRepository.snapshotNow().getOrNull() ?: return@launch
                 val songId = snapshot.currentSongId ?: return@launch
                 val sample = PlaybackSample(songId, snapshot.positionMs, snapshot.isPlaying)
@@ -95,7 +135,10 @@ class DropRestViewModel
                     }
                 // Wiedergabe laeuft bereits (Gate-Bedingung): PREPARING -> RUNNING.
                 timerEngine.markRunning(session.id)
-                monitorJob = launch { monitor(session, songId, gate.markerPositionMs, sample) }
+                // P1-8: Der Foreground-Service traegt den Rest (Notification,
+                // Prozessschutz); die Ueberwachung uebernimmt der app-weite
+                // DropSyncCoordinator.
+                restTimerServiceStarter.startForegroundTimerService()
             }
         }
 
@@ -108,59 +151,7 @@ class DropRestViewModel
             timerEngine.reset()
         }
 
-        /**
-         * Ueberwachung nach 11.4: Songwechsel, Seek, Pause oder
-         * Playerfehler beenden nur den Timer. Cue-Grenzwerte kommen aus
-         * der Playertimeline; bei Rueckstau wird nur der juengste
-         * Grenzwert geliefert (7.5).
-         */
-        private suspend fun monitor(
-            session: TimerSession,
-            startedSongId: Long,
-            markerPositionMs: Long,
-            firstSample: PlaybackSample,
-        ) {
-            var previous = firstSample
-            val invalidated = mutableSetOf<Long>()
-            while (true) {
-                delay(MONITOR_SAMPLE_MS)
-                val engineState = timerEngine.state.value
-                if (engineState.session?.id != session.id ||
-                    engineState.status != TimerStatus.RUNNING
-                ) {
-                    return
-                }
-                val current =
-                    playbackRepository.snapshotNow().getOrNull()?.let {
-                        PlaybackSample(it.currentSongId, it.positionMs, it.isPlaying)
-                    } ?: PlaybackSample(
-                        songId = null,
-                        positionMs = previous.positionMs,
-                        isPlaying = false,
-                        hasError = true,
-                    )
-                val interruption =
-                    DropRestMonitor.detect(startedSongId, previous, current, MONITOR_SAMPLE_MS)
-                if (interruption != null) {
-                    timerEngine.cancel(CancelReason.PLAYBACK_INTERRUPTED)
-                    return
-                }
-                val remaining = markerPositionMs - current.positionMs
-                timerEngine.projectRemaining(session.id, remaining)
-                val due =
-                    session.plannedCues
-                        .map { it.thresholdMs }
-                        .filter { remaining <= it && it !in invalidated }
-                if (due.isNotEmpty()) {
-                    timerEngine.onThresholdReached(session.id, due.min())
-                    invalidated += due
-                }
-                if (remaining <= 0) return
-                previous = current
-            }
-        }
-
-        private suspend fun evaluateGate(): DropRestEligibility {
+        private suspend fun evaluateGate(markers: List<SongMarker>): DropRestEligibility {
             val snapshot =
                 playbackRepository.snapshotNow().getOrNull()
                     ?: return DropRestEligibility.Ineligible(DropRestBlockReason.NO_CURRENT_SONG)
@@ -169,7 +160,7 @@ class DropRestViewModel
                     ?: return DropRestEligibility.Ineligible(DropRestBlockReason.NO_CURRENT_SONG)
             return DropRestGate.evaluate(
                 PlaybackSample(songId, snapshot.positionMs, snapshot.isPlaying),
-                markerPointsOf(songId),
+                markers.filter { it.linkedSongId == songId }.map { MarkerPoint(it.id, it.positionMs) },
             )
         }
 
@@ -182,6 +173,5 @@ class DropRestViewModel
 
         private companion object {
             const val GATE_SAMPLE_MS = 500L
-            const val MONITOR_SAMPLE_MS = 500L
         }
     }

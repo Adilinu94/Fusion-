@@ -4,34 +4,36 @@
     <string name="player_pause">Pause</string>
     <string name="player_next">Next song</string>
     <string name="player_previous">Previous song</string>
-    <string name="now_playing_title">Now playing</string>
     <string name="now_playing_back">Back</string>
     <string name="now_playing_more">More options</string>
     <!-- A5: onClickLabel des Mini-Player-Titels (TalkBack). -->
     <string name="miniplayer_open_label">Open Now Playing</string>
+    <!-- P1-10: DropSync-Badge im Mini-Player; Text statt Technik (A.4). -->
+    <string name="miniplayer_dropsync_ready">DROP READY</string>
+    <string name="miniplayer_dropsync_best_effort">DROP BEST EFFORT</string>
+    <string name="miniplayer_dropsync_overridden">DROP OFF</string>
+    <string name="miniplayer_dropsync_failed">DROP LOST</string>
+    <string name="miniplayer_dropsync_ready_countdown">DROP READY · %1$s</string>
+    <!-- C16 (5.22): Ueberleitungskette im Badge ("A -> B -> Drop · 1:27"). -->
+    <string name="miniplayer_dropsync_chain">%1$s · %2$s</string>
     <string name="now_playing_add_marker">Set marker here</string>
     <string name="now_playing_empty">Nothing is playing right now.</string>
     <string name="now_playing_cover">Album cover</string>
     <string name="now_playing_like">Like</string>
-    <string name="now_playing_unlike">Unlike</string>
-    <string name="now_playing_favorite_on">Favorite on</string>
-    <string name="now_playing_favorite_off">Favorite off</string>
     <string name="now_playing_repeat_off">Repeat off</string>
     <string name="now_playing_repeat_all">Repeat all</string>
     <string name="now_playing_repeat_one">Repeat one</string>
     <string name="now_playing_shuffle_on">Shuffle on</string>
     <string name="now_playing_shuffle_off">Shuffle off</string>
-    <string name="now_playing_waveform">Waveform: tap to jump, drag to preview, long-press to set or delete a marker</string>
     <string name="now_playing_waveform_loading">Waveform is being analyzed</string>
+    <string name="now_playing_waveform_unavailable">Waveform not available</string>
+    <string name="now_playing_waveform_retry">Retry</string>
     <string name="now_playing_marker_add_title">Set marker</string>
     <string name="now_playing_marker_add_position">Position: %1$s</string>
     <string name="now_playing_marker_label">Label (optional)</string>
     <string name="now_playing_marker_default_label">Drop</string>
     <string name="now_playing_marker_add_confirm">Set marker</string>
     <string name="now_playing_marker_cancel">Cancel</string>
-    <string name="now_playing_marker_status">%1$d confirmed markers</string>
-    <string name="now_playing_marker_legend">Solid ticks are active DropSync markers</string>
-    <string name="now_playing_marker_add_action">Add marker</string>
     <string name="player_queue_open">Open queue</string>
     <string name="player_queue_title">Queue</string>
     <string name="player_queue_empty">The queue is empty.</string>
@@ -49,29 +51,86 @@
     <string name="drop_rest_cancel">Cancel</string>
     <string name="drop_rest_ok">OK</string>
     <string name="drop_rest_blocked_no_song">No song is playing.</string>
+    <!-- C11 (P-9): another rest timer is already running. -->
+    <string name="drop_rest_blocked_timer_running">A rest timer is already running.</string>
     <string name="drop_rest_blocked_not_playing">Playback is paused.</string>
     <string name="drop_rest_blocked_no_marker">The current song has no upcoming drop marker.</string>
     <string name="drop_rest_blocked_too_close">The next drop is less than 5 seconds away.</string>
 
     <!-- Aktions-Carousel + Sheets (Umbau 2026-08) -->
-    <string name="now_playing_action_eq">EQ</string>
-    <string name="now_playing_action_eq_on">EQ on</string>
-    <string name="now_playing_action_add_marker">Marker</string>
-    <string name="now_playing_action_mix_on">Mix %1$ds</string>
-    <string name="now_playing_action_mix_off">Mix off</string>
-    <string name="now_playing_action_queue">Queue (%1$d)</string>
-    <string name="now_playing_waveform_with_markers">Waveform: tap to jump, drag to preview, long-press to set or delete a marker. %1$d markers set.</string>
+    <string name="now_playing_waveform_with_markers">Waveform: tap a marker to edit it, tap elsewhere to jump, drag to preview. %1$d markers set.</string>
     <string name="now_playing_tempo_title">Playback speed</string>
+    <!-- C10 (P-10): Einstieg in die Marker-Review-Liste. -->
+    <string name="now_playing_marker_review">Review markers</string>
     <string name="now_playing_tempo_original">Original</string>
     <string name="now_playing_tempo_lock_title">Match BPM (lock)</string>
     <string name="now_playing_tempo_lock_track_bpm">Track: %1$d BPM</string>
     <string name="now_playing_tempo_lock_no_bpm">No reliable BPM available for this track yet.</string>
     <string name="now_playing_tempo_lock_target">Target: %1$d BPM</string>
     <string name="now_playing_tempo_lock_effective">Lock speed: %1$.2fx</string>
-    <string name="quick_eq_title">Equalizer</string>
-    <string name="quick_eq_bands">%1$d bands · dB</string>
     <!-- B4: Undo-Snackbars (Queue, Marker). -->
     <string name="player_queue_removed">Removed from queue</string>
     <string name="player_marker_deleted">Marker deleted</string>
+    <!-- C10: Quittung des Bestaetigens (Undo ueber die Shell). -->
+    <string name="player_marker_confirmed">Marker confirmed</string>
     <string name="player_undo">Undo</string>
+    <string name="player_skip_confirm_hint">Press again to skip</string>
+
+    <!-- P2-21: Marker-Legende, Marker-Sheet und DropSync-Statuszeile (UI-Handbuch 14.3-14.5, 19.3). -->
+    <string name="now_playing_marker_legend_confirmed">confirmed</string>
+    <string name="now_playing_marker_legend_suggestion">suggestion</string>
+    <string name="now_playing_marker_legend_target">active target</string>
+    <string name="now_playing_marker_legend_a11y">Marker legend: confirmed, suggestion, active target</string>
+    <string name="marker_sheet_listen">Listen from marker</string>
+    <string name="marker_sheet_fine_tune">Fine-tune position</string>
+    <!-- C9 (P-8): Marker-Liste als alternative Textansicht. -->
+    <string name="marker_sheet_all_markers">All markers (%1$d)</string>
+    <string name="marker_sheet_revert">Back to original</string>
+    <string name="marker_sheet_choose_target">Choose as DropSync target</string>
+    <string name="marker_sheet_clear_target">Remove target</string>
+    <string name="marker_sheet_confirm">Confirm</string>
+    <string name="marker_sheet_rename">Rename</string>
+    <string name="marker_sheet_delete">Delete</string>
+    <string name="marker_sheet_status_suggestion">Suggestion from analysis</string>
+    <string name="marker_sheet_status_confirmed_auto">Confirmed automatically</string>
+    <string name="marker_sheet_status_manual">Set manually</string>
+    <string name="marker_sheet_status_imported">Confirmed</string>
+    <string name="marker_sheet_target_chip">Active target</string>
+    <string name="marker_sheet_rename_title">Rename marker</string>
+    <string name="marker_sheet_rename_label">Label</string>
+    <string name="marker_sheet_rename_save">Save</string>
+    <string name="marker_sheet_rename_cancel">Cancel</string>
+    <string name="now_playing_drop_ready">DROP READY</string>
+    <string name="now_playing_drop_best_effort">BEST EFFORT</string>
+    <string name="now_playing_drop_overridden">MANUALLY OVERRIDDEN</string>
+    <string name="now_playing_drop_line">“%1$s” · %2$s · target in %3$s</string>
+    <string name="now_playing_drop_line_no_marker">“%1$s” · target in %2$s</string>
+    <string name="now_playing_drop_a11y">DropSync ready. Track “%1$s”. Marker “%2$s”. Target in %3$s.</string>
+    <string name="now_playing_drop_a11y_no_marker">DropSync ready. Track “%1$s”. Target in %3$s.</string>
+    <string name="now_playing_drop_a11y_best_effort">DropSync best effort only. The landing may deviate slightly.</string>
+    <string name="now_playing_drop_a11y_overridden">DropSync plan overridden manually.</string>
+    <string name="now_playing_drop_failed_no_rest_playlist">DROPSYNC · NO REST PLAYLIST</string>
+    <string name="now_playing_drop_failed_no_work_drop">DROPSYNC · NO DROP FOUND</string>
+    <string name="now_playing_drop_failed_rest_too_short">DROPSYNC · REST TOO SHORT</string>
+    <string name="now_playing_drop_failed_playback">DROPSYNC · PLAYBACK ERROR</string>
+    <string name="now_playing_drop_failed_plan_lost">DROPSYNC · PLAN LOST</string>
+    <string name="now_playing_drop_failed_detail_no_rest_playlist">Set up a rest playlist in the settings.</string>
+    <string name="now_playing_drop_failed_detail_no_work_drop">No work track with a usable drop.</string>
+    <string name="now_playing_drop_failed_detail_rest_too_short">The rest is shorter than the minimum.</string>
+    <string name="now_playing_drop_failed_detail_playback">The player did not accept the plan.</string>
+    <string name="now_playing_drop_failed_detail_plan_lost">The app was restarted; the plan could not be restored.</string>
+    <string name="now_playing_drop_a11y_failed_no_rest_playlist">DropSync not possible: no rest playlist set up.</string>
+    <string name="now_playing_drop_a11y_failed_no_work_drop">DropSync not possible: no drop found.</string>
+    <string name="now_playing_drop_a11y_failed_rest_too_short">DropSync not possible: the rest is too short.</string>
+    <string name="now_playing_drop_a11y_failed_playback">DropSync playback failed.</string>
+    <string name="now_playing_drop_a11y_failed_plan_lost">DropSync plan lost. The plan could not be restored.</string>
+    <string name="now_playing_drop_dismiss">OK</string>
+    <plurals name="now_playing_duration_minutes">
+        <item quantity="one">%d minute</item>
+        <item quantity="other">%d minutes</item>
+    </plurals>
+    <plurals name="now_playing_duration_seconds">
+        <item quantity="one">%d second</item>
+        <item quantity="other">%d seconds</item>
+    </plurals>
 </resources>

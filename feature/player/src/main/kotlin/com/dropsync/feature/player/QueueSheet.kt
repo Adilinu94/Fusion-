@@ -26,6 +26,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.icon.BrandIcons
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.domain.playback.QueueItem
 
 /**
@@ -114,7 +115,7 @@ private fun QueueRow(
                 style = MaterialTheme.typography.bodyLarge,
                 color =
                     if (isCurrent) {
-                        MaterialTheme.colorScheme.primary
+                        rememberAccentTextColor()
                     } else {
                         MaterialTheme.colorScheme.onSurface
                     },
