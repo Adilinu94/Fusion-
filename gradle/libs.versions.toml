@@ -43,7 +43,7 @@ healthConnect = "1.1.0"
 # Das baselineprofile-Plugin ist erst ab 1.5.0-alpha01 mit AGP 9 kompatibel
 # (agp-status.frybits.com: Fixed 1.5.0-alpha01); Wechsel auf stabil, sobald
 # verfuegbar.
-benchmark = "1.5.0-alpha01"
+benchmark = "1.5.0"
 profileinstaller = "1.4.1"
 
 # DI
