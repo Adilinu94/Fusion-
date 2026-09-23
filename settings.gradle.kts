@@ -22,6 +22,8 @@ pluginManagement {
         mavenCentral()
         gradlePluginPortal()
     }
+    // Paket 4.19: Convention-Plugins aus build-logic (included build).
+    includeBuild("build-logic")
 }
 
 dependencyResolutionManagement {
