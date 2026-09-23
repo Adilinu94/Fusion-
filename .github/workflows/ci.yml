@@ -140,6 +140,9 @@ jobs:
       # ist dieses Gate eine Warnung statt eines Blockers, damit die CI
       # ueberhaupt Aussagekraft fuer die uebrigen Gates behaelt. Sobald die
       # Datei eingecheckt ist, zurueck auf `exit 1` stellen.
+      # FRIST: 2026-11-30 — bis dahin Profil einchecken (Gate blockierend
+      # stellen) oder Frist mit Begruendung verlaengern. Tracking:
+      # VOLLSTAENDIGE_PROJEKTANALYSE_2026-09-23.md, Abschnitt 3.2.
       - name: Baseline-Profil vorhanden (B1-Gate, vorlaeufig warnend)
         run: |
           PROFILE="app/src/release/generated/baselineProfiles/baseline-prof.txt"
@@ -173,6 +176,12 @@ jobs:
   # Macrobenchmark-Lauf (B1) teilt sich denselben Emulator, braucht aber ein
   # eingechecktes Baseline-Profil und ist im Runbook dokumentiert
   # (docs/HARDWARE_TESTPLAN.md, Abschnitt B1).
+  # BEGRUENDUNG (kein Versehen): BleScanConnectInstrumentedTest braucht echte
+  # Bluetooth-Hardware — auf dem Emulator ohne BT ist er nicht erfuellbar.
+  # Blockierend wird der Job erst, wenn (a) alle instrumentierten Tests auf
+  # dem CI-Emulator deterministisch gruen sind und (b) Gate 11b
+  # (Hardware-Freigabe) laeuft. FRIST zur Neubewertung: 2026-11-30.
+  # Tracking: VOLLSTAENDIGE_PROJEKTANALYSE_2026-09-23.md, Abschnitt 3.4.
   instrumented:
     name: Instrumentierte Tests (Emulator, vorlaeufig nicht blockierend)
     runs-on: ubuntu-latest

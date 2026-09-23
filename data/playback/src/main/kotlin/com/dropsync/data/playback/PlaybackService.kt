@@ -318,19 +318,22 @@ class PlaybackService : MediaLibraryService() {
     /**
      * Empfaengt das Drop-Landungs-Kommando: loest den Song auf und wechselt
      * auf dem einen sessionfuehrenden Player vorgespult. Der Session-Result
-     * wird erst nach der echten Ausfuehrung zurueckgegeben.
+     * wird erst nach der echten Ausfuehrung zurueckgegeben: `false`, wenn der
+     * Song fehlt oder kein Player bereitsteht, damit der Rufer einen
+     * Fehlschlag von Erfolg unterscheiden kann.
      */
     private suspend fun handlePlaySongAt(
         songId: Long,
         startPositionMs: Long,
-    ) {
-        val song = (libraryRepository.getSong(songId) as? AppResult.Success)?.value ?: return
+    ): Boolean {
+        val song = (libraryRepository.getSong(songId) as? AppResult.Success)?.value ?: return false
         val item = MediaItemFactory.fromSong(song)
-        withContext(dispatchers.main) {
-            val current = player ?: return@withContext
+        return withContext(dispatchers.main) {
+            val current = player ?: return@withContext false
             current.setMediaItem(item, startPositionMs.coerceAtLeast(0))
             current.prepare()
             current.play()
+            true
         }
     }
 
@@ -392,7 +395,7 @@ class PlaybackService : MediaLibraryService() {
         private val browseRepository: LibraryBrowseRepository,
         private val labels: BrowseLabels,
         private val ownPackageName: String,
-        private val onPlaySongAt: suspend (Long, Long) -> Unit,
+        private val onPlaySongAt: suspend (Long, Long) -> Boolean,
         private val onSetScrubbingMode: (Boolean) -> Unit,
         private val onArmLanding: suspend (Long, Long, Long, Long) -> Boolean,
         private val onCancelLanding: suspend () -> Unit,
@@ -438,10 +441,14 @@ class PlaybackService : MediaLibraryService() {
                         return Futures.immediateFuture(SessionResult(SessionError.ERROR_BAD_VALUE))
                     }
                     // Erst zurueckmelden, wenn die Operation wirklich
-                    // ausgefuehrt wurde.
+                    // ausgefuehrt wurde: Fehlschlag (Song fehlt, kein
+                    // Player) wird als ERROR_UNKNOWN gemeldet, damit der
+                    // Rufer ihn von Erfolg unterscheiden kann.
                     return scope.future {
-                        onPlaySongAt(songId, startPositionMs)
-                        SessionResult(SessionResult.RESULT_SUCCESS)
+                        val played = onPlaySongAt(songId, startPositionMs)
+                        SessionResult(
+                            if (played) SessionResult.RESULT_SUCCESS else SessionResult.RESULT_ERROR_UNKNOWN,
+                        )
                     }
                 }
 

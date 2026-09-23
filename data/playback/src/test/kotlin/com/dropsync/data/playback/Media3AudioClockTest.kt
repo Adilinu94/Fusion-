@@ -188,6 +188,7 @@ class Media3AudioClockTest {
     fun `Snapshot meldet den Ladezustand des Players`() =
         runTest {
             fakePlayer.setMediaItems(listOf(item("1")), 0, 5_000L)
+            fakePlayer.prepare()
             fakePlayer.setLoadingSilently(true)
             clock.attach(fakePlayer)
 

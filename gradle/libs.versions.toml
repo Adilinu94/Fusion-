@@ -17,6 +17,10 @@ ktlint = "1.8.0"
 # Gradle 9.6 gebaut (Release-Notes 2026-08-04); die stabile 1.x unterstuetzt
 # diese Toolchain nicht. Wechsel auf stabil, sobald Detekt 2.0 final ist.
 detekt = "2.0.0-alpha.6"
+# App-Release (einzige Quelle — app/build.gradle.kts liest von hier):
+# versionCode muss je Play-Upload steigen, versionName folgt SemVer.
+app-version-code = "1"
+app-version-name = "0.1.0"
 
 # Android SDK
 compileSdk = "37"

@@ -53,6 +53,8 @@ object SessionConnectionPolicy {
             builder
                 .add(SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY))
                 .add(SessionCommand(PlaybackCommands.ACTION_SET_SCRUBBING_MODE, Bundle.EMPTY))
+                .add(SessionCommand(PlaybackCommands.ACTION_ARM_LANDING, Bundle.EMPTY))
+                .add(SessionCommand(PlaybackCommands.ACTION_CANCEL_LANDING, Bundle.EMPTY))
         }
         return builder.build()
     }

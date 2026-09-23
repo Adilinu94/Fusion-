@@ -206,7 +206,9 @@ class PlaybackRepositoryImpl(
     ): AppResult<Unit> =
         try {
             withContext(dispatchers.main) {
-                val controller = connection.requirePlayer() as? MediaController
+                val player = connection.requirePlayer()
+                attachListener(player)
+                val controller = player as? MediaController
                 if (controller != null) {
                     val args =
                         Bundle().apply {
@@ -237,7 +239,9 @@ class PlaybackRepositoryImpl(
     override suspend fun cancelLanding(): AppResult<Unit> =
         try {
             withContext(dispatchers.main) {
-                val controller = connection.requirePlayer() as? MediaController
+                val player = connection.requirePlayer()
+                attachListener(player)
+                val controller = player as? MediaController
                 if (controller != null) {
                     controller
                         .sendCustomCommand(
@@ -290,7 +294,9 @@ class PlaybackRepositoryImpl(
     override suspend fun setScrubbingMode(enabled: Boolean): AppResult<Unit> =
         try {
             withContext(dispatchers.main) {
-                val controller = connection.requirePlayer() as? MediaController
+                val player = connection.requirePlayer()
+                attachListener(player)
+                val controller = player as? MediaController
                 if (controller != null) {
                     val args = Bundle().apply { putBoolean(PlaybackCommands.ARG_SCRUBBING_ENABLED, enabled) }
                     controller.sendCustomCommand(

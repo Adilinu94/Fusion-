@@ -89,7 +89,10 @@ detekt {
 // Die Untergrenzen sind der gemessene Ist-Stand (Kover LINE, 2026-09-22,
 // nach Ausschluss des generierten Hilt-/Dagger-Codes), abgerundet — eine
 // RATSCHE: sie duerfen nur steigen. Module unter dem Ziel sind
-// Abbau-Kandidaten; 0 = faktisch ungetestet, vorerst nur Report.
+// Abbau-Kandidaten. `:domain:settings` steht bewusst NICHT in der Map:
+// das Modul enthaelt nur Interfaces (keine messbaren Zeilen, Kover-Report
+// leer) — Vertragstests stehen in `SettingsContractTest`. Ein Floor von 0
+// wuerde ein Gate vortaeuschen, das es nicht gibt.
 // Gate: `./gradlew koverVerify` (laeuft in der CI mit den Unit-Tests).
 private val coverageFloors: Map<String, Int> =
     mapOf(
@@ -98,7 +101,6 @@ private val coverageFloors: Map<String, Int> =
         "domain:library" to 77,
         "domain:playback" to 41,
         "domain:sensor" to 88,
-        "domain:settings" to 0,
         "domain:timer" to 86,
         "domain:workout" to 75,
         "data:audio" to 64,
