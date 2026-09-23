@@ -16,6 +16,13 @@ object CalibrationThresholds {
     const val REST_GYRO_MEAN_MAX_DEG_PER_SEC = 15.0
     const val REST_ACCEL_SIGMA_MAX_G = 0.05
     const val MIN_ACTIVITY_SAMPLES = 5
+
+    /**
+     * Untergrenze fuer die Bewegungs-Schwelle der Achsenanalyse (deg/s).
+     * Zugleich die Schwelle, ab der die Live-Schaetzung im Einzel-Rep eine
+     * Bewegung sieht.
+     */
+    const val MIN_ACTIVITY_GYRO_DEG_PER_SEC = 15.0
 }
 
 /** Live rest-gate snapshot for the calibration wizard UI. */
@@ -31,6 +38,41 @@ data class RestGateSnapshot(
     val ready: Boolean
         get() = gateOk && minSecondsReached
 }
+
+/**
+ * RC-8: nachrechenbare Fakten der fertigen Kalibrierung fuer die
+ * Review-Erklaerung im Wizard. Der Wizard zeigt daraus Saetze wie "4 von 5
+ * Wiederholungen wiedergefunden" oder "Schwelle nur 2.1-fach ueber dem
+ * Ruherauschen" — statt nur einer Prozentzahl, mit der niemand etwas
+ * anfangen kann.
+ *
+ * Bewusst nur Fakten, keine Bewertung und keine Texte: dieses Modul kennt
+ * weder Gebietsschema noch Ressourcen. Was ein Wert bedeutet, entscheidet
+ * die UI-Schicht.
+ */
+data class CalibrationReview(
+    /** Mit der gelernten Schwelle wiedergefundene Reps im 5er-Satz. */
+    val detectedRepsKnownSet: Int,
+    /** Soll-Zahl des 5er-Satzes (aus dem Wizard, i. d. R. 5). */
+    val expectedRepsKnownSet: Int,
+    /** Wiedergefundene Reps im Langsam-Satz; null ohne Langsam-Satz. */
+    val detectedRepsSlowSet: Int?,
+    /** Soll-Zahl des Langsam-Satzes; null ohne Langsam-Satz. */
+    val expectedRepsSlowSet: Int?,
+    /** Streuung der Rep-Abstaende im 5er-Satz (std/mean); null bei < 2 Reps. */
+    val intervalCv: Double?,
+    /**
+     * Abstand der Schwelle zum Ruherauschen in Sigma des gewaehlten Signals:
+     * (theta - baseline) / max(noiseFloor, eps). Kleine Werte bedeuten, dass
+     * Rauschen und Rep-Spitze nah beieinander liegen — dann zaehlt die
+     * Schwelle empfindlich.
+     */
+    val thresholdOverNoise: Double,
+    /** True, wenn die gemessene Accel-Schwelle > 0 ist (Zweitkanal aktiv). */
+    val accelVotingEnabled: Boolean,
+    /** Erwartete Rep-Dauer in Sekunden (Median der Abstaende). */
+    val expectedRepSeconds: Double,
+)
 
 /** Result of a completed guided calibration (persisted per exercise+device). */
 data class GuidedCalibrationResult(
@@ -53,6 +95,17 @@ data class GuidedCalibrationResult(
      * zu verwerfen.
      */
     val accelThreshold: Double = 0.0,
+    /** RC-8: nachrechenbare Fakten fuer die Review-Erklaerung im Wizard. */
+    val review: CalibrationReview? = null,
+)
+
+/**
+ * Rep-Markierung des Kantenzaehlers ([zaehleEdge]): Sample-Index und Hoehe
+ * der validierten Exkursion.
+ */
+internal data class RepMark(
+    val sampleIndex: Int,
+    val height: Double,
 )
 
 /**
@@ -118,6 +171,118 @@ class CalibrationController(
                 minSecondsReached = seconds >= CalibrationThresholds.REST_MIN_SECONDS,
             )
         }
+
+    /**
+     * RC-8: Live-Schaetzung der im aktuellen Puffer sichtbaren Reps fuer die
+     * Stufen-Anzeige ("Reps erkannt: n"). null in Stufen ohne Zaehlung.
+     *
+     * Bewusst eine **Schaetzung fuer die Fuehrung**, keine Zaehlung: sie
+     * laeuft auf denselben Puffern und derselben Zaehlfunktion wie die
+     * Stufen-Auswertung, aber mit den zu diesem Zeitpunkt besten Parametern.
+     * Vor Abschluss von Stufe B existiert noch keine gelernte Schwelle; dort
+     * dient derselbe Startwert, mit dem der Sweep beginnt (Baseline + 3σ).
+     * Erst der Abschluss der Stufe entscheidet — und im Review korrigiert der
+     * Nutzer die tatsaechlich ausgeuehrte Zahl.
+     */
+    val liveRepEstimate: Int?
+        get() =
+            when (stage) {
+                Stage.SINGLE_REP -> {
+                    val restS = rest ?: return null
+                    CalibrationLiveEstimator.activityBursts(bufA, restS.gyroBias, restS.sigmaGyro)
+                }
+
+                Stage.KNOWN_SET -> {
+                    liveCount(bufB, useLearnedCfg = false)
+                }
+
+                Stage.SLOW_SET -> {
+                    liveCount(bufC, useLearnedCfg = true)
+                }
+
+                else -> {
+                    null
+                }
+            }
+
+    /** Live-Schaetzung fuer Stufen B/C auf der GP-Projektion (siehe Estimator). */
+    private fun liveCount(
+        buf: List<SensorSample>,
+        useLearnedCfg: Boolean,
+    ): Int? {
+        val axis = axisResult ?: return null
+        val restS = rest ?: return null
+        return CalibrationLiveEstimator.provisionalRepCount(
+            buf = buf,
+            achse = axis.achse,
+            bias = restS.gyroBias,
+            sampleRateHz = sampleRateHz,
+            sweepCfg = sweepCfg,
+            baselineChosen = baselineChosen,
+            useLearnedCfg = useLearnedCfg,
+            provisionalRefractoryS = 0.35 * axis.t0,
+        )
+    }
+
+    /**
+     * RC-8: "Stufe wiederholen" — leert den Puffer der aktuellen Stufe und
+     * verwirft, was daraus schon abgeleitet wurde. Die Stufe selbst bleibt
+     * stehen (kein Ruecksprung, keine verlorenen Vorergebnisse).
+     */
+    fun repeatStage() {
+        redoFrom(stage)
+    }
+
+    /**
+     * RC-8: springt auf eine fruehere Sammel-Stufe zurueck und verwirft
+     * alles, was von ihr abhaengt — Puffer, abgeleitete Ergebnisse und
+     * spaetere Stufen. Gedacht fuer das Review: ein misslungenes 5er-Set
+     * laesst sich wiederholen, ohne Ruhe und Einzel-Rep erneut zu machen.
+     *
+     * Erlaubt sind nur die Sammel-Stufen bis einschliesslich SLOW_SET und nur
+     * rueckwaerts (auf eine spaetere Stufe "zurueck" zu springen wuerde
+     * Ergebnisse vortaeuschen, die es nicht gibt). REVIEW/DONE/FAILED sind
+     * keine Ziele — dafuer gibt es [start].
+     */
+    fun redoFrom(target: Stage) {
+        if (!isRunning) return
+        val order =
+            listOf(
+                Stage.REST,
+                Stage.SINGLE_REP,
+                Stage.KNOWN_SET,
+                Stage.SLOW_SET,
+                Stage.REVIEW,
+                Stage.DONE,
+                Stage.FAILED,
+            )
+        val targetIndex = order.indexOf(target)
+        val currentIndex = order.indexOf(stage)
+        val lastCollecting = order.indexOf(Stage.SLOW_SET)
+        if (targetIndex < 0 || targetIndex > lastCollecting) return
+        if (currentIndex < targetIndex) return
+
+        // Puffer der Ziel-Stufe und aller spaeteren Sammel-Stufen verwerfen.
+        if (targetIndex <= 0) bufRest.clear()
+        if (targetIndex <= 1) bufA.clear()
+        if (targetIndex <= 2) bufB.clear()
+        if (targetIndex <= 3) bufC.clear()
+
+        // Abgeleitetes verwerfen, das auf den verworfenen Puffern beruht.
+        if (targetIndex <= 0) rest = null
+        if (targetIndex <= 1) axisResult = null
+        if (targetIndex <= 2) {
+            signalsB = null
+            metaB = null
+            sweepCfg = null
+            thetaFinal = null
+            baselineChosen = null
+            quality = 0.0
+        }
+        if (targetIndex <= 3) signalsC = null
+
+        stage = target
+    }
 
     /** Starts a new calibration in stage REST (discards all buffers). */
     fun start() {
@@ -245,19 +410,46 @@ class CalibrationController(
         val expectedProminence =
             if (marks.size >= 2) median(marks.map { it.height }) else cfg.prominenz
 
+        // RC-8: Fakten fuer die Review-Erklaerung. Alles nachrechenbar aus
+        // demselben Durchlauf, den der Wizard gerade bewertet.
+        val noiseFloor = metaB?.get(cfg.signal)?.second ?: 0.0
+        val intervalsMean = mean(intervals)
+        val intervalCv =
+            if (intervals.size > 1 && intervalsMean > 0) std(intervals) / intervalsMean else null
+        val slowSig = signalsC?.get(cfg.signal)
+        val slowCount =
+            if (slowSig != null && bufC.isNotEmpty()) {
+                zaehleEdge(slowSig, sampleRateHz, theta, cfg.refractoryS, baseline, prominenz = cfg.prominenz).size
+            } else {
+                null
+            }
+        val accelThreshold = calibrateAccelThreshold(marks)
+        val review =
+            CalibrationReview(
+                detectedRepsKnownSet = marks.size,
+                expectedRepsKnownSet = knownSetCount,
+                detectedRepsSlowSet = slowCount,
+                expectedRepsSlowSet = if (slowCount != null) slowSetCount else null,
+                intervalCv = intervalCv,
+                thresholdOverNoise = (theta - baseline) / max(noiseFloor, REVIEW_NOISE_FLOOR_EPS),
+                accelVotingEnabled = accelThreshold > 0.0,
+                expectedRepSeconds = medT,
+            )
+
         return GuidedCalibrationResult(
             rotationAxis = axis.achse.toList(),
             gyroBias = restS.gyroBias.toList(),
             chosenSignal = cfg.signal,
             theta = theta,
             baseline = baseline,
-            noiseFloor = metaB?.get(cfg.signal)?.second ?: 0.0,
+            noiseFloor = noiseFloor,
             expectedProminence = expectedProminence,
             expectedDurationSamples = medT * sampleRateHz,
             expectedDurationMs = medT * 1_000.0,
             repTemplate = repTemplate,
             qualityScore = quality,
-            accelThreshold = calibrateAccelThreshold(marks),
+            accelThreshold = accelThreshold,
+            review = review,
         )
     }
 
@@ -477,7 +669,7 @@ class CalibrationController(
         val bias = rest.gyroBias
         val gyroZ = buf.map { s -> doubleArrayOf(s.gx - bias[0], s.gy - bias[1], s.gz - bias[2]) }
         val gyroMag = gyroZ.map { r -> sqrt(r[0] * r[0] + r[1] * r[1] + r[2] * r[2]) }
-        val schwelle = max(15.0, 4.0 * rest.sigmaGyro)
+        val schwelle = max(CalibrationThresholds.MIN_ACTIVITY_GYRO_DEG_PER_SEC, 4.0 * rest.sigmaGyro)
         val aktiv = gyroMag.indices.filter { gyroMag[it] > schwelle }
         if (aktiv.size < CalibrationThresholds.MIN_ACTIVITY_SAMPLES) return null
         val i0 = aktiv.first()
@@ -689,67 +881,10 @@ class CalibrationController(
     }
 
     // --- Counting path (Referenz zaehle_edge) -------------------------------
-
-    internal data class RepMark(
-        val sampleIndex: Int,
-        val height: Double,
-    )
-
-    internal fun zaehleEdge(
-        signal: DoubleArray,
-        hz: Double,
-        theta: Double,
-        refractoryS: Double,
-        baseline: Double,
-        fallingRatio: Double = 0.5,
-        prominenz: Double = 0.0,
-        fallingDebounce: Int = 4,
-    ): List<RepMark> {
-        val reps = mutableListOf<RepMark>()
-        var above = false
-        var excPeak = Double.NEGATIVE_INFINITY
-        var excIdx = -1
-        var preMin = Double.POSITIVE_INFINITY
-        var lastEnd = Int.MIN_VALUE / 2
-        var unterFalling = 0
-        val refrSamples = (refractoryS * hz).toInt()
-        val falling = baseline + (theta - baseline) * fallingRatio
-        for (i in signal.indices) {
-            val v = signal[i]
-            if (!above) {
-                if (v < preMin) preMin = v
-                if (v > theta) {
-                    if (i - lastEnd < refrSamples) continue
-                    above = true
-                    excPeak = v
-                    excIdx = i
-                    unterFalling = 0
-                }
-            } else {
-                if (v >= excPeak) {
-                    excPeak = v
-                    excIdx = i
-                }
-                if (v < falling) {
-                    unterFalling++
-                } else {
-                    unterFalling = 0
-                }
-                if (unterFalling >= fallingDebounce) {
-                    above = false
-                    unterFalling = 0
-                    if (prominenz > 0.0 && (excPeak - preMin) < prominenz) {
-                        preMin = v
-                        continue
-                    }
-                    reps.add(RepMark(excIdx, excPeak))
-                    lastEnd = i
-                    preMin = v
-                }
-            }
-        }
-        return reps
-    }
+    //
+    // Der Kantenzaehler und die Rep-Markierung liegen als Top-Level-Funktionen
+    // in CalibrationCounting.kt: reine Signalverarbeitung, die auch die
+    // Live-Schaetzung (CalibrationLiveEstimator) und Tests direkt nutzen.
 
     companion object {
         /** P2-Fix #22: so viele validierte Peaks braucht die Accel-Kalibrierung. */
@@ -769,6 +904,13 @@ class CalibrationController(
 
         /** EMA-Alpha der Accel-Glaettung (grob wie One-Euro bei 2 Hz/50 Hz). */
         const val ACCEL_EMA_ALPHA = 0.2
+
+        /**
+         * RC-8: Untergrenze fuer das Ruherauschen im Review-Verhaeltnis
+         * theta/Rauschen. Ein perfekt stilles synthetisches Rest-Fenster
+         * haette σ = 0; ohne Untergrenze waere das Verhaeltnis unendlich.
+         */
+        const val REVIEW_NOISE_FLOOR_EPS = 1e-3
     }
 }
 

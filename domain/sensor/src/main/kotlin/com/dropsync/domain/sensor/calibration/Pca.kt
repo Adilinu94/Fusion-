@@ -3,18 +3,6 @@ package com.dropsync.domain.sensor.calibration
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-/**
- * Jacobi eigenvalue decomposition of a symmetric 3x3 matrix (port of
- * _jacobiEigen3 in calibration_controller.dart). The design doc requires no
- * extra dependency for the 3D-gyro PCA ("Neue Dependencies": 3x3 is enough).
- *
- * Returns eigenvalues [w] and eigenvectors [v] (columns).
- */
-internal data class JacobiResult(
-    val w: DoubleArray,
-    val v: Array<DoubleArray>,
-)
-
 internal fun jacobiEigen3(aIn: Array<DoubleArray>): JacobiResult {
     val a = Array(3) { k -> aIn[k].copyOf() }
     val v =

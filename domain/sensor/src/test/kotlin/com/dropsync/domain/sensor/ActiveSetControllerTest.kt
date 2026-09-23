@@ -1,20 +1,30 @@
 package com.dropsync.domain.sensor
 
 import com.dropsync.core.testing.FakeClock
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.Executors
 
 /**
  * Umbauplan Phase 6: der [ActiveSetController] buendelt Countdown, Engine,
@@ -51,6 +61,9 @@ class ActiveSetControllerTest {
             health = health,
             clock = clock,
             countdownSeconds = 3,
+            // RC-1: Test-Dispatcher statt Dispatchers.Default, damit die
+            // virtuelle Zeit des runTest-Schedulers greift.
+            workerDispatcher = kotlinx.coroutines.test.UnconfinedTestDispatcher(testScheduler),
         )
 
     private fun sample(
@@ -187,6 +200,107 @@ class ActiveSetControllerTest {
             assertEquals("AA:BB", trace?.deviceId)
         }
 
+    /**
+     * C14 (T-14): Die UI speist den Peak-Blitz aus dem echten Rep-Event;
+     * der Controller stellt dafuer einen Live-Strom bereit.
+     */
+    @Test
+    fun `C14 rep-events erreichen den live-strom`() =
+        runTest {
+            val c = controller()
+            val seen = mutableListOf<RepEvent>()
+            val collector = launch { c.repEvents.collect { seen.add(it) } }
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            assertEquals(2, seen.size)
+            collector.cancel()
+            c.abort(SetAbortReason.CLEARED)
+        }
+
+    /**
+     * B2 (RC-19): Die am Satzende gemessene Rep-Periode seedet die
+     * Qualitaets-Erwartung des naechsten Satzes (Entscheidung 5.14: nur
+     * Qualitaet; Refraktaerzeit und Pending-Deckel bleiben am Mittelwert).
+     */
+    @Test
+    fun `naechster satz nutzt die gemessene periode`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+
+            val period = c.lastPlausibility.value?.periodSeconds
+            assertNotNull("zwei saubere Reps muessen eine Periode ergeben", period)
+            // twoRepSamples: Rep-Abstand 120 Samples = 2.4 s (der Rest
+            // zwischen den Reps gehoert zur Periode des Signals).
+            assertEquals("Periode der zwei Reps (~2.4 s)", 2.4, period!!, 0.3)
+            assertNull("vor dem naechsten Start ist noch nichts uebernommen", c.appliedQualityPeriodMs)
+
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertEquals(
+                "der naechste Satz muss die gemessene Periode als Qualitaets-Erwartung uebernehmen",
+                period * 1_000.0,
+                c.appliedQualityPeriodMs ?: -1.0,
+                1e-6,
+            )
+            c.abort(SetAbortReason.CLEARED)
+        }
+
+    @Test
+    fun `ein anderes geraet erbt die periode nicht`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            assertNotNull(c.lastPlausibility.value?.periodSeconds)
+
+            // Anderer Aufbau (Geraet): die Periode des Vorgaengers waere eine
+            // falsche Erwartung.
+            assertTrue(c.start(1L, "CC:DD", profile(deviceId = "CC:DD")))
+            assertNull(c.appliedQualityPeriodMs)
+            c.abort(SetAbortReason.CLEARED)
+        }
+
+    @Test
+    fun `finishAndTakeTrace verwirft die periode nicht`() =
+        runTest {
+            // finishAndTakeTrace ruft intern abort(CLEARED): die Periode
+            // gehoert zum abgeschlossenen Satz und muss den Log-Pfad
+            // ueberleben, sonst greift B2 im echten Ablauf nie.
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            val period = c.lastPlausibility.value?.periodSeconds ?: error("Periode erwartet")
+            c.finishAndTakeTrace()
+
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertEquals(period * 1_000.0, c.appliedQualityPeriodMs ?: -1.0, 1e-6)
+            c.abort(SetAbortReason.CLEARED)
+        }
+
     @Test
     fun `finishAndTakeTrace liefert unveraenderliche Sample-Kopie`() =
         runTest {
@@ -231,6 +345,63 @@ class ActiveSetControllerTest {
             assertEquals(ActiveSetPhase.IDLE, c.phase.value)
             assertEquals(0, c.countedReps.value)
             assertNull(c.finishAndTakeTrace())
+        }
+
+    // --- A3/S-2: Health-Erholung ------------------------------------------
+
+    @Test
+    fun `Gap im Fenster bricht ein laufendes Set ab`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            assertEquals(ActiveSetPhase.COUNTING, c.phase.value)
+
+            // Der Stream war gut, dann reisst der Funk: der Gap im Fenster
+            // macht den Health UNRELIABLE -> Abbruch bleibt scharf.
+            health.value =
+                SensorHealth(
+                    connectionState = SensorConnectionState.STREAMING,
+                    largestRecentGapMs = 560L,
+                )
+            runCurrent()
+
+            assertEquals(ActiveSetPhase.IDLE, c.phase.value)
+            assertEquals(0, c.countedReps.value)
+        }
+
+    @Test
+    fun `erholter Health laesst ein neues Set weiterlaufen`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            health.value =
+                SensorHealth(
+                    connectionState = SensorConnectionState.STREAMING,
+                    largestRecentGapMs = 560L,
+                )
+            runCurrent()
+            assertEquals(ActiveSetPhase.IDLE, c.phase.value)
+
+            // Der Gap faellt aus dem Fenster (A3): die Qualitaet erholt sich,
+            // ein neues Set zaehlt wieder — ohne Reconnect.
+            health.value =
+                SensorHealth(
+                    connectionState = SensorConnectionState.STREAMING,
+                    largestRecentGapMs = 0L,
+                )
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+
+            assertEquals(2, c.countedReps.value)
         }
 
     @Test
@@ -347,4 +518,147 @@ class ActiveSetControllerTest {
             assertNull(c.lastPlausibility.value)
             c.close()
         }
+
+    // --- RC-7/RC-17: Diagnose-Snapshot des gestoppten Sets -----------------
+
+    @Test
+    fun `stop friert den diagnose-snapshot ein`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            assertEquals(2, c.stop())
+
+            val report = c.lastDiagnostics.value
+            assertNotNull("stop muss den Snapshot setzen", report)
+            assertEquals(2, report?.countedReps)
+            assertEquals(true, (report?.framesProcessed ?: 0) > 0)
+            assertNotNull("Snapshot muss die Zweitmeinung tragen", report?.plausibility)
+            c.close()
+        }
+
+    @Test
+    fun `abort raeumt den diagnose-snapshot ab`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            assertNotNull(c.lastDiagnostics.value)
+
+            c.abort(SetAbortReason.EXERCISE_CHANGED)
+            assertNull(
+                "Diagnose darf einen abgebrochenen Satz nicht ueberleben",
+                c.lastDiagnostics.value,
+            )
+        }
+
+    @Test
+    fun `finishAndTakeTrace traegt den diagnose-snapshot in den Trace`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            val trace = c.finishAndTakeTrace()
+            assertNotNull("Trace muss die Diagnose tragen", trace?.diagnostics)
+            assertEquals(2, trace?.diagnostics?.countedReps)
+            assertNull(c.lastDiagnostics.value)
+        }
+
+    @Test
+    fun `Diagnose eines Vorgaenger-Sets ragt nicht in ein neues Set`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            advanceTimeBy(3_100)
+            runCurrent()
+            twoRepSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it) }
+                runCurrent()
+            }
+            c.stop()
+            assertNotNull(c.lastDiagnostics.value)
+
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertNull(c.lastDiagnostics.value)
+            c.close()
+        }
+
+    // --- RC-1: Zaehlpipeline off-main -------------------------------------
+
+    /**
+     * RC-1-Regressionstest: Der Sample-Collector (und mit ihm `onSample`)
+     * muss auf dem uebergebenen Worker-Dispatcher laufen, nie auf dem
+     * Main-/Test-Thread. Wird der Collector versehentlich ohne
+     * [ActiveSetController]-workerDispatcher gestartet, schlaegt dieser
+     * Test fehl.
+     */
+    @Test
+    fun `sample-collector laeuft auf dem worker dispatcher`() =
+        runTest {
+            val worker =
+                Executors
+                    .newSingleThreadExecutor { runnable -> Thread(runnable, WORKER_THREAD_NAME) }
+                    .asCoroutineDispatcher()
+            try {
+                val observedThreads = CopyOnWriteArrayList<String>()
+                val samples =
+                    flow {
+                        while (true) {
+                            observedThreads += Thread.currentThread().name
+                            emit(sample(0))
+                            delay(10)
+                        }
+                    }
+                val c =
+                    ActiveSetController(
+                        scope = backgroundScope,
+                        samples = samples,
+                        connectionState = connectionState,
+                        health = health,
+                        clock = FakeClock(),
+                        countdownSeconds = 3,
+                        workerDispatcher = worker,
+                    )
+                assertTrue(c.start(1L, "AA:BB", profile()))
+                advanceTimeBy(3_100)
+                runCurrent()
+                // Der echte Worker-Thread braucht reale Zeit; der virtuelle
+                // Scheduler kann darauf nicht warten.
+                withContext(Dispatchers.Default) {
+                    withTimeout(5_000) {
+                        while (observedThreads.isEmpty()) delay(10)
+                    }
+                }
+                assertTrue("Collector muss laufen", observedThreads.isNotEmpty())
+                assertTrue(
+                    "Zaehlpipeline darf nicht auf dem Main-Thread rechnen: $observedThreads",
+                    // Der Coroutine-Debug-Name haengt " @coroutine#N" an.
+                    observedThreads.all { it.startsWith(WORKER_THREAD_NAME) },
+                )
+                c.close()
+            } finally {
+                worker.close()
+            }
+        }
+
+    private companion object {
+        const val WORKER_THREAD_NAME = "counting-worker"
+    }
 }

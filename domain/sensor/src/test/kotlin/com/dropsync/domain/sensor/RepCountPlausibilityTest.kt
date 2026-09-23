@@ -119,6 +119,36 @@ class RepCountPlausibilityTest {
         assertEquals(5.0, result.periodSeconds!!, 0.2)
     }
 
+    @Test
+    fun `angefangene letzte wiederholung wird aufgerundet`() {
+        // B2 (RC-19): 7.4 Perioden im Fenster. Kaufmaennisch waeren das 7,
+        // am Set-Ende ist die letzte Wiederholung aber meist angeschnitten
+        // -> 8 (der Kommentar sagte das schon immer, der Code rundete anders).
+        val samplesPerPeriod = (2.0 * sampleRateHz).toInt()
+        val total = (7.4 * samplesPerPeriod).toInt()
+        val signal = DoubleArray(total) { i -> 60.0 * sin(2.0 * PI * i / samplesPerPeriod) }
+
+        val result = RepCountPlausibility.check(signal, sampleRateHz, countedReps = 8)
+
+        assertEquals(8, result.estimatedReps)
+        assertEquals(RepCountPlausibility.Verdict.CONSISTENT, result.verdict)
+    }
+
+    @Test
+    fun `gap im signal liefert keine belastbare periode`() {
+        // B2 (RC-19): Der Signalring traegt keine Timestamps — nach einer
+        // grossen Luecke waere die Zeitbasis komprimiert und die Periode
+        // still falsch. Der Aufrufer weiss von der Luecke (largeGapCount)
+        // und bekommt deshalb keine Aussage statt einer geratenen.
+        val signal = periodicSignal(reps = 8, periodS = 2.0)
+        val result = RepCountPlausibility.check(signal, sampleRateHz, countedReps = 8, hasLargeGap = true)
+
+        assertEquals(RepCountPlausibility.Verdict.INCONCLUSIVE, result.verdict)
+        assertNull(result.periodSeconds)
+        assertNull(result.estimatedReps)
+        assertEquals("auch ohne Aussage bleibt der gepruefte Zaehlerstand", 8, result.countedReps)
+    }
+
     // --- countedReps im Ergebnis (Umbauplan 2026-09-04 Phase 7) ----------
     //
     // Die UI zeigt beide Zahlen an. Holte sie den Zaehlerstand aus einer

@@ -115,6 +115,24 @@ data class CalibrationProfile(
      * dauerhaft abgeschaltet blieb.
      */
     val accelThreshold: Double = 0.0,
+    /**
+     * B3 (RC-20): Template-Match-Schwelle, mit der dieses Profil live
+     * gezaehlt wurde. Vorher lag der Wert nur als Code-Default (0.7) in
+     * [ExerciseEngineConfig] und war fuer Sweep/Replay nicht rekonstruierbar;
+     * `null`-Semantik gibt es hier bewusst nicht, der Default ist der
+     * bisherige Code-Default.
+     */
+    val templateThreshold: Double = 0.7,
+    /**
+     * B3 (RC-20): Mindest-Qualitaetsscore der Live-Pipeline (Default 0.55,
+     * wie [ExerciseEngineConfig.minQualityScore]).
+     */
+    val minQualityScore: Double = 0.55,
+    /**
+     * B3 (RC-20): Sakoe-Chiba-Bandbreite des DTW-Template-Vergleichs
+     * (Default 8, wie [TemplateMatcher.DTW_BAND]); gueltig 1..64.
+     */
+    val dtwBand: Int = 8,
 ) {
     /**
      * P2-Fix #22: true, wenn der Accel-Kanal eine belastbare Schwelle hat und
@@ -129,7 +147,9 @@ data class CalibrationProfile(
          * rejected by the codec ("recalibrate" instead of misinterpreting).
          * v4 adds revision/parentRevision/status/validatedSetCount.
          * v5 adds accelThreshold (P2-Fix #22).
+         * v6 adds templateThreshold/minQualityScore/dtwBand (B3/RC-20); die
+         * Felder werden transportiert, nicht gelernt (Stufe 1).
          */
-        const val PROFILE_SCHEMA_VERSION = 5
+        const val PROFILE_SCHEMA_VERSION = 6
     }
 }

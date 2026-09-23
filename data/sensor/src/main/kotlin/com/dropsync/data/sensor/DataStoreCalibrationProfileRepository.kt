@@ -1,8 +1,10 @@
 package com.dropsync.data.sensor
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -23,7 +25,10 @@ import javax.inject.Singleton
 
 // Internal statt private: der Modul-Test schreibt v3-Legacy-Bloe be fuer die
 // Migration direkt in denselben DataStore.
-internal val Context.calibrationProfileDataStore by preferencesDataStore(name = "sensor_calibration")
+internal val Context.calibrationProfileDataStore by preferencesDataStore(
+    name = "sensor_calibration",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * DataStore-backed persistence of per-exercise+device calibration profiles
@@ -31,8 +36,9 @@ internal val Context.calibrationProfileDataStore by preferencesDataStore(name = 
  *
  * Umbauplan Phase 0.1/1.4: profiles are schema- and engine-versioned and the
  * calibrated detection threshold is stored directly (no SPK/NPK roundtrip).
- * Legacy blobs (schema < PROFILE_SCHEMA_VERSION) are treated as "no profile"
- * so a stale blob never drives the pipeline with wrong parameters.
+ * Legacy blobs are read with defaults for fields they predate (v4/v5 -> v6,
+ * see [decode]); only unknown schemas are treated as "no profile" so a stale
+ * blob never drives the pipeline with wrong parameters.
  *
  * Umbauplan Phase 7.4: profiles are revisioned. Key layout:
  * - `cal_<ex>_<dev>_r<rev>`  -> encoded profile blob
@@ -276,13 +282,14 @@ class DataStoreCalibrationProfileRepository
         // --- Codec ------------------------------------------------------------
 
         /**
-         * Schema v5 layout (semicolon-separated):
+         * Schema v6 layout (semicolon-separated):
          * 0: schemaVersion, 1: engineVersion, 2: signalKind,
          * 3: rotationAxis (csv), 4: gyroBias (csv), 5: repTemplate (csv),
          * 6: expectedProminence, 7: qualityScore, 8: detectionThreshold,
          * 9: noiseFloor, 10: expectedDurationMs,
          * 11: revision, 12: parentRevision (-1 = null), 13: status,
-         * 14: validatedSetCount, 15: accelThreshold (P2-Fix #22)
+         * 14: validatedSetCount, 15: accelThreshold (P2-Fix #22),
+         * 16: templateThreshold, 17: minQualityScore, 18: dtwBand (B3/RC-20)
          */
         private fun encode(profile: CalibrationProfile): String =
             buildString {
@@ -317,14 +324,23 @@ class DataStoreCalibrationProfileRepository
                 append(profile.validatedSetCount)
                 append(';')
                 append(profile.accelThreshold)
+                append(';')
+                append(profile.templateThreshold)
+                append(';')
+                append(profile.minQualityScore)
+                append(';')
+                append(profile.dtwBand)
             }
 
         /**
-         * Liest v5 UND v4. v4-Bloebe (15 Felder, ohne `accelThreshold`) werden
-         * lesend auf v5 hochgezogen: `accelThreshold = 0.0` bedeutet "nicht
-         * kalibriert", die Live-Pipeline laeuft dann wie bisher ohne
-         * Accel-Voting. So muss niemand wegen P2-Fix #22 neu kalibrieren; der
-         * Wert entsteht bei der naechsten Kalibrierung von selbst.
+         * Liest v6, v5 UND v4. v5-Bloebe (16 Felder, ohne die drei
+         * B3-Schwellen) und v4-Bloebe (15 Felder, zusaetzlich ohne
+         * `accelThreshold`) werden lesend auf v6 hochgezogen:
+         * `accelThreshold = 0.0` bedeutet "nicht kalibriert", die
+         * Live-Pipeline laeuft dann wie bisher ohne Accel-Voting; die drei
+         * B3-Schwellen bekommen exakt die bisherigen Code-Defaults
+         * (0.7/0.55/8), damit sich das Zaehlverhalten von Altprofilen nicht
+         * still aendert. So muss niemand neu kalibrieren.
          */
         private fun decode(
             raw: String,
@@ -333,11 +349,18 @@ class DataStoreCalibrationProfileRepository
         ): CalibrationProfile? {
             if (raw.isEmpty()) return null
             val parts = raw.split(';')
-            if (parts.size != V5_FIELD_COUNT && parts.size != V4_FIELD_COUNT) return null
+            if (parts.size != V6_FIELD_COUNT && parts.size != V5_FIELD_COUNT && parts.size != V4_FIELD_COUNT) {
+                return null
+            }
             val schema = parts[0].toIntOrNull() ?: return null
-            // Versioned read: nur die aktuelle und die direkt vorhergehende
-            // Revision werden interpretiert.
-            val expectedSchema = if (parts.size == V5_FIELD_COUNT) CalibrationProfile.PROFILE_SCHEMA_VERSION else 4
+            // Versioned read: die aktuelle und die beiden vorhergehenden
+            // Revisionen werden interpretiert.
+            val expectedSchema =
+                when (parts.size) {
+                    V6_FIELD_COUNT -> CalibrationProfile.PROFILE_SCHEMA_VERSION
+                    V5_FIELD_COUNT -> 5
+                    else -> 4
+                }
             if (schema != expectedSchema) return null
             val engine =
                 parts[1].let { name ->
@@ -363,15 +386,36 @@ class DataStoreCalibrationProfileRepository
                 } ?: return null
             val validatedSets = parts[14].toIntOrNull() ?: return null
             val accelThreshold =
-                if (parts.size == V5_FIELD_COUNT) {
+                if (parts.size != V4_FIELD_COUNT) {
                     parts[15].toDoubleOrNull() ?: return null
                 } else {
                     0.0
+                }
+            val templateThreshold =
+                if (parts.size == V6_FIELD_COUNT) {
+                    parts[16].toDoubleOrNull() ?: return null
+                } else {
+                    DEFAULT_TEMPLATE_THRESHOLD
+                }
+            val minQualityScore =
+                if (parts.size == V6_FIELD_COUNT) {
+                    parts[17].toDoubleOrNull() ?: return null
+                } else {
+                    DEFAULT_MIN_QUALITY_SCORE
+                }
+            val dtwBand =
+                if (parts.size == V6_FIELD_COUNT) {
+                    parts[18].toIntOrNull() ?: return null
+                } else {
+                    DEFAULT_DTW_BAND
                 }
             if (axis.size != 3 || bias.size != 3 || template.isEmpty()) return null
             if (!threshold.isFinite() || threshold < 0.0) return null
             if (!durationMs.isFinite() || durationMs <= 0.0) return null
             if (!accelThreshold.isFinite() || accelThreshold < 0.0) return null
+            if (!templateThreshold.isFinite() || templateThreshold !in 0.0..1.0) return null
+            if (!minQualityScore.isFinite() || minQualityScore !in 0.0..1.0) return null
+            if (dtwBand !in MIN_DTW_BAND..MAX_DTW_BAND) return null
             return CalibrationProfile(
                 exerciseId = exerciseId,
                 deviceId = deviceId,
@@ -391,6 +435,9 @@ class DataStoreCalibrationProfileRepository
                 status = status,
                 validatedSetCount = validatedSets,
                 accelThreshold = accelThreshold,
+                templateThreshold = templateThreshold,
+                minQualityScore = minQualityScore,
+                dtwBand = dtwBand,
             )
         }
 
@@ -448,10 +495,22 @@ class DataStoreCalibrationProfileRepository
         }
 
         private companion object {
+            /** Feldanzahl im v6-Blob (mit den drei B3-Schwellen). */
+            const val V6_FIELD_COUNT = 19
+
             /** Feldanzahl im v5-Blob (mit accelThreshold). */
             const val V5_FIELD_COUNT = 16
 
             /** Feldanzahl im v4-Blob (ohne accelThreshold). */
             const val V4_FIELD_COUNT = 15
+
+            /** B3: Altblob-Defaults, exakt die bisherigen Code-Defaults. */
+            const val DEFAULT_TEMPLATE_THRESHOLD = 0.7
+            const val DEFAULT_MIN_QUALITY_SCORE = 0.55
+            const val DEFAULT_DTW_BAND = 8
+
+            /** B3: Gueltigkeitsgrenzen des DTW-Bands (wie BAUPLAN). */
+            const val MIN_DTW_BAND = 1
+            const val MAX_DTW_BAND = 64
         }
     }

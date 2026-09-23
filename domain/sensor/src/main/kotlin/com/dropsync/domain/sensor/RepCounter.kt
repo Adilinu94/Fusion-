@@ -7,6 +7,12 @@ data class RepResult(
     val qualityScore: Double? = null,
     val correlation: Double? = null,
     val rejectionReason: String? = null,
+    /**
+     * RC-17: klassifizierter Ablehnungsmechanismus. Der Freitext
+     * [rejectionReason] bleibt fuer Details erhalten; dieses Feld macht die
+     * Ablehnungen je Satz zaehlbar.
+     */
+    val rejection: RepRejectionReason? = null,
     /** Diagnostic: window size in samples (time decisions use ms). */
     val durationSamples: Int? = null,
     /** Rep duration in milliseconds (time basis: timestamps). */
@@ -181,6 +187,7 @@ class RepCounter(
                 repCounted = false,
                 repNumber = repCount,
                 rejectionReason = "Accel-Voting fehlgeschlagen: kein Peak im Accel-Kanal",
+                rejection = RepRejectionReason.ACCEL_VOTING,
             )
         }
 
@@ -192,6 +199,7 @@ class RepCounter(
                 repCounted = false,
                 repNumber = repCount,
                 rejectionReason = "Template-Match abgelehnt (NCC=${"%.3f".format(matchResult.correlation)})",
+                rejection = RepRejectionReason.TEMPLATE_MATCH,
             )
         }
 
@@ -201,6 +209,7 @@ class RepCounter(
                 repCounted = false,
                 repNumber = repCount,
                 rejectionReason = "Phasen-Validierung fehlgeschlagen: ${phaseResult.rejectionReason}",
+                rejection = RepRejectionReason.PHASE_VALIDATION,
             )
         }
 
@@ -217,11 +226,14 @@ class RepCounter(
                 repCounted = false,
                 repNumber = repCount,
                 rejectionReason = "Qualitaet zu niedrig (score=${"%.3f".format(qualityResult.score)})",
+                rejection = RepRejectionReason.QUALITY,
             )
         }
 
         repCount++
-        templateMatcher.addToPool(peak.window)
+        // B6 (RC-21): nur Reps oberhalb der Admission-Schwelle erweitern den
+        // Template-Pool (die Schwelle selbst lebt im TemplateMatcher).
+        templateMatcher.addToPool(peak.window, qualityResult.score)
         trackForAdaptation(peak.prominence, durationMs)
         return RepResult(
             repCounted = true,
@@ -287,8 +299,13 @@ class RepCounter(
      * Umbauplan Phase 2.6: verwirft einen laufenden Peak/Pending-Rep nach
      * einer grossen Zeitluecke. Der Filterzustand wird vom Aufrufer
      * (Pipeline) separat neu eingeschwungen.
+     *
+     * @return true, wenn wirklich ein Pending-Rep offen war und verworfen
+     *   wurde — nur so zaehlt die Diagnose (RC-16) echte Verwuerfe statt
+     *   jeder Ruhephase.
      */
-    fun abortPending() {
+    fun abortPending(): Boolean {
+        val hadPending = pendingPeak != null
         pendingPeak = null
         pendingWindow = null
         pendingStartMs = 0L
@@ -299,6 +316,7 @@ class RepCounter(
         recentAccelPeakTimestamps.clear()
         peakDetector.reset()
         accelPeakDetector?.reset()
+        return hadPending
     }
 
     /** Resets counter and detector state (new session / exercise switch). */

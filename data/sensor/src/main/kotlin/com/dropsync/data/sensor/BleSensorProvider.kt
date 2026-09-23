@@ -28,6 +28,7 @@ import com.dropsync.domain.sensor.SensorErrorReason
 import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
+import com.dropsync.domain.sensor.SensorTransport
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -104,8 +105,12 @@ class BleSensorProvider
         private val _connectionState = MutableStateFlow(SensorConnectionState.DISCONNECTED)
         override val connectionState: StateFlow<SensorConnectionState> = _connectionState.asStateFlow()
 
-        private val _samples = MutableSharedFlow<SensorSample>(extraBufferCapacity = 64)
-        override val samples: SharedFlow<SensorSample> = _samples.asSharedFlow()
+        // RC-10: EIN zentraler Fan-out statt rohem SharedFlow. Er verdrangt
+        // bei Ueberlast das aelteste Sample (DROP_OLDEST), zaehlt jede
+        // Verdrangung und speist alle Verbraucher (Waveform, Zaehlpipeline,
+        // Kalibrierung) mit derselben Folge.
+        private val sampleFanout = SensorSampleFanout(scope = scope)
+        override val samples: SharedFlow<SensorSample> = sampleFanout.samples
 
         private val _deviceEvents = MutableSharedFlow<DeviceEvent>(extraBufferCapacity = 8)
         override val deviceEvents: SharedFlow<DeviceEvent> = _deviceEvents.asSharedFlow()
@@ -116,14 +121,13 @@ class BleSensorProvider
         private val _health = MutableStateFlow(SensorHealth())
         override val health: StateFlow<SensorHealth> = _health.asStateFlow()
 
-        private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { _samples.tryEmit(it) })
+        private val jitterBuffer = JitterBuffer<SensorSample>(scope = scope, onFrame = { sampleFanout.emit(it) })
         private val dedupTracker = BatchDedupTracker(expectedBatchIntervalMs = 80)
         private val gattClient = BleGattClient()
         private val mtuNegotiation = MtuNegotiationSession()
 
         private var sensorDataChar: BluetoothGattCharacteristic? = null
         private var controlPointChar: BluetoothGattCharacteristic? = null
-        private var batteryChar: BluetoothGattCharacteristic? = null
         private var deviceEventChar: BluetoothGattCharacteristic? = null
 
         private var pollJob: Job? = null
@@ -163,6 +167,9 @@ class BleSensorProvider
         /** Wire-size rejections (diagnostics). */
         var parseErrors = 0
             private set
+
+        /** T-10/S-7: fehlgeschlagene Geraete-Event-Polls (Diagnose). */
+        private var deviceEventPollErrors = 0
 
         val duplicateReads: Int
             get() = dedupTracker.duplicateSkips
@@ -223,14 +230,6 @@ class BleSensorProvider
         /** STOP_STREAM (0x02). No-op when not connected. */
         override suspend fun stopStreaming() {
             sendControlCommand(CONTROL_STOP_STREAM)
-        }
-
-        /** REQUEST_BATTERY (0x03), then reads the BatteryLevel characteristic. */
-        suspend fun readBatteryPercent(): Int {
-            sendControlCommand(CONTROL_REQUEST_BATTERY)
-            delay(200)
-            val value = gattClient.read(batteryChar ?: return 0)
-            return value?.firstOrNull()?.toInt()?.and(0xFF) ?: 0
         }
 
         // --- Scan + connect -------------------------------------------------
@@ -376,7 +375,6 @@ class BleSensorProvider
             }
             sensorDataChar = service.getCharacteristic(SENSOR_DATA_UUID)
             controlPointChar = service.getCharacteristic(CONTROL_POINT_UUID)
-            batteryChar = service.getCharacteristic(BATTERY_LEVEL_UUID)
             deviceEventChar = service.getCharacteristic(DEVICE_EVENT_UUID)
             if (sensorDataChar == null || controlPointChar == null) {
                 if (cont.isActive) {
@@ -428,6 +426,7 @@ class BleSensorProvider
             usingNotifyTransport = false
             jitterBuffer.reset()
             jitterBuffer.start()
+            sampleFanout.reset()
             _connectionState.value = SensorConnectionState.STREAMING
 
             gattClient.enableNotification(sensorDataChar ?: return)
@@ -516,6 +515,7 @@ class BleSensorProvider
             pollJob?.cancel()
             jitterBuffer.reset()
             jitterBuffer.start()
+            sampleFanout.reset()
             _connectionState.value = SensorConnectionState.STREAMING
 
             pollJob =
@@ -560,7 +560,17 @@ class BleSensorProvider
             deviceEventPollJob =
                 scope.launch {
                     while (isActive && gattClient.isConnected) {
-                        runCatching { gattClient.read(ch)?.let(::onDeviceEventBytes) }
+                        // T-10/S-7: der frühere stumme runCatching verschluckte
+                        // auch Abbrueche; Poll-Fehler zaehlt jetzt der Health.
+                        try {
+                            gattClient.read(ch)?.let(::onDeviceEventBytes)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            deviceEventPollErrors++
+                            updateHealth()
+                            Log.d(LOG_TAG, "device-event poll: ${e.message}")
+                        }
                         delay(DEVICE_EVENT_POLL_MS)
                     }
                 }
@@ -624,7 +634,6 @@ class BleSensorProvider
             usingNotifyTransport = false
             sensorDataChar = null
             controlPointChar = null
-            batteryChar = null
             deviceEventChar = null
             lastDeviceEventSeq = 0
             jitterBuffer.stop()
@@ -647,8 +656,20 @@ class BleSensorProvider
                     missedBatches = dedupTracker.estimatedMissedBatches.toLong(),
                     parseErrors = parseErrors.toLong(),
                     jitterBufferDrops = jitterBuffer.droppedFrames.toLong(),
+                    samplesDropped = sampleFanout.droppedSamples,
                     largestGapMs = dedupTracker.largestGapMs,
+                    // A3/S-2: nur der Gap im Fenster steuert die Qualitaet.
+                    largestRecentGapMs = dedupTracker.largestRecentGapMs,
                     recentPacketLossRate = dedupTracker.recentPacketLossRate,
+                    deviceEventPollErrors = deviceEventPollErrors.toLong(),
+                    // P2-17/RC-7: Transport und MTU fuer das Diagnose-Panel.
+                    transport =
+                        when {
+                            remoteId == null -> SensorTransport.UNKNOWN
+                            usingNotifyTransport -> SensorTransport.BLE_NOTIFY
+                            else -> SensorTransport.BLE_POLL
+                        },
+                    negotiatedMtu = lastNegotiatedMtu.takeIf { it > 0 },
                 )
         }
 
@@ -686,12 +707,10 @@ class BleSensorProvider
             val SERVICE_UUID: UUID = UUID.fromString("0000fee0-0000-1000-8000-00805f9b34fb")
             val SENSOR_DATA_UUID: UUID = UUID.fromString("0000fee1-0000-1000-8000-00805f9b34fb")
             val CONTROL_POINT_UUID: UUID = UUID.fromString("0000fee2-0000-1000-8000-00805f9b34fb")
-            val BATTERY_LEVEL_UUID: UUID = UUID.fromString("0000fee3-0000-1000-8000-00805f9b34fb")
             val DEVICE_EVENT_UUID: UUID = UUID.fromString("0000fee4-0000-1000-8000-00805f9b34fb")
 
             const val CONTROL_START_STREAM = 0x01
             const val CONTROL_STOP_STREAM = 0x02
-            const val CONTROL_REQUEST_BATTERY = 0x03
 
             private const val SCAN_TIMEOUT_MS = 15_000L
             private const val FIRMWARE_STREAM_DELAY_MS = 600L

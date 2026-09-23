@@ -1,6 +1,7 @@
 package com.dropsync.domain.sensor
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -34,6 +35,10 @@ class ExerciseEnginePipelineIsolationTest {
         // Test wird sie fest vorgegeben; live kommt sie aus dem KNOWN_SET der
         // Guided Calibration.
         accelThreshold: Double = 0.1625,
+        // RC-17: fuer die Klassifizierungs-Tests abschaltbar. Mit aktivem
+        // ZUPT (Default) wird ein offener Pending-Rep beim Eintritt echter
+        // Ruhe verworfen (zuptAbortedPending) und erreicht decide() nie.
+        zuptEnabled: Boolean = true,
     ) = ExerciseEnginePipeline(
         ExerciseEngineConfig(
             rotationAxis = axis,
@@ -43,6 +48,7 @@ class ExerciseEnginePipelineIsolationTest {
             expectedProminence = 1.0,
             accelEnabled = accelEnabled,
             accelThreshold = accelThreshold,
+            zuptEnabled = zuptEnabled,
         ),
     )
 
@@ -209,5 +215,76 @@ class ExerciseEnginePipelineIsolationTest {
         }
         engine.processSample(ts + 100L, 0.0, 0.0, 0.0) // 120 ms seit letztem
         assertEquals(0, engine.largeGapCount)
+    }
+
+    // --- RC-17: klassifizierte Ablehnungszaehler ---------------------------
+
+    @Test
+    fun `accel-voting-ablehnungen werden dem mechanismus zugeordnet`() {
+        // Gleicher Fall wie oben (Gyro-Peaks ohne Accel-Partner), aber mit
+        // abgeschaltetem ZUPT: mit ZUPT verwirft der Ruhe-Eintritt die
+        // Pending-Reps als zuptAbortedPending, bevor decide() sie
+        // klassifizieren kann. Hier soll die Klassifizierung selbst geprueft
+        // werden. Der Stream ist verlaengert, damit auch der letzte Pending
+        // ueber das Zeitlimit finalisiert wird.
+        val engine = engine(accelEnabled = true, zuptEnabled = false)
+        (twoRepRawStream() + List(200) { 0.0 }).forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0, ay = 0.0, az = 0.0)
+        }
+        assertEquals(0, engine.repCount.value)
+        assertEquals(
+            "beide Gyro-Peaks muessen als Accel-Voting-Ablehnung gezaehlt werden",
+            2,
+            engine.rejectionCountsSnapshot[RepRejectionReason.ACCEL_VOTING],
+        )
+    }
+
+    @Test
+    fun `halbe Rep wird als phasen-ablehnung gezaehlt`() {
+        // Zwei halbe Reps: der zweite Peak finalisiert den ersten Pending
+        // (eine halbe Rep ohne negative Phase wird nie ueber das Zeitlimit
+        // geschlossen) und die Klassifizierung laeuft. ZUPT ist aus, sonst
+        // verwirft der Ruhe-Eintritt den Pending vorher als zuptAbortedPending.
+        val halfRep = (1..15).map { 60.0 * it / 15.0 } + (1..15).map { 60.0 - 60.0 * it / 15.0 }
+        val stream = List(60) { 0.0 } + halfRep + List(60) { 0.0 } + halfRep + List(40) { 0.0 }
+        val engine = engine(zuptEnabled = false)
+        stream.forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0)
+        }
+        assertEquals(0, engine.repCount.value)
+        assertEquals(
+            1,
+            engine.rejectionCountsSnapshot[RepRejectionReason.PHASE_VALIDATION],
+        )
+    }
+
+    @Test
+    fun `reset leert die ablehnungszaehler`() {
+        val engine = engine(accelEnabled = true, zuptEnabled = false)
+        (twoRepRawStream() + List(200) { 0.0 }).forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 1.0, ay = 0.0, az = 0.0)
+        }
+        assertEquals(2, engine.rejectionCountsSnapshot[RepRejectionReason.ACCEL_VOTING])
+
+        engine.reset()
+
+        assertEquals(emptyMap<RepRejectionReason, Int>(), engine.rejectionCountsSnapshot)
+    }
+
+    @Test
+    fun `ruhephase ohne offenen pending zaehlt keinen zupt-abbruch`() {
+        // RC-16: zuptAbortedPending misst echte Verwuerfe, nicht jede
+        // Ruhephase — sonst waere der Diagnose-Topf im Satz-Report und im
+        // Live-vs-Replay-Vergleich irrefuehrend. Zwei saubere Reps mit Ruhe
+        // dazwischen: Bias-Updates ja (die Ruhe ist da), Abbrueche null
+        // (kein Pending war offen). Der ZUPT-Detektor braucht echte
+        // Accel-Werte (Ruhe ~1 g) — ohne sie gilt jedes Sample als Bewegung.
+        val engine = engine()
+        twoRepRawStream().forEachIndexed { i, gx ->
+            engine.processSample(i * 20L, gx, 0.0, 0.0, ax = 0.02, ay = -0.98, az = 0.11)
+        }
+        assertEquals(2, engine.repCount.value)
+        assertTrue("Ruhe muss fuer Bias-Updates gutgeschrieben werden", engine.zuptBiasUpdates > 0)
+        assertEquals("ohne offenen Pending gibt es nichts zu verwerfen", 0, engine.zuptAbortedPending)
     }
 }

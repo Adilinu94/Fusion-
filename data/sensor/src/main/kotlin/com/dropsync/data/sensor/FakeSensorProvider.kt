@@ -5,6 +5,7 @@ import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SensorSample
+import com.dropsync.domain.sensor.SensorTransport
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -30,7 +31,9 @@ class FakeSensorProvider
 
         override val connectedDeviceId: StateFlow<String?> = MutableStateFlow(null)
 
-        private val _health = MutableStateFlow(SensorHealth())
+        // P2-17/RC-7: der Fake hat keinen Funkweg - das Diagnose-Panel soll
+        // ihn als solchen zeigen, nicht als unbekannt.
+        private val _health = MutableStateFlow(SensorHealth(transport = SensorTransport.FAKE))
         override val health: StateFlow<SensorHealth> = _health.asStateFlow()
 
         override suspend fun connect(deviceId: String?): com.dropsync.core.common.AppResult<Unit> =

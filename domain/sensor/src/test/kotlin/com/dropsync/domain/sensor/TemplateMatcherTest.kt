@@ -115,9 +115,37 @@ class TemplateMatcherTest {
 
     @Test
     fun `constant window is not added to pool`() {
-        val matcher = TemplateMatcher(poolSize = 5)
+        val matcher = TemplateMatcher()
         matcher.setTemplate(sine(64))
         matcher.addToPool(List(64) { 3.0 })
         assertEquals("konstantes Window normalisiert zu null und wird verworfen", 1, matcher.poolCount)
+    }
+
+    /**
+     * B6 (RC-21): Die Admission-Margin haelt grenzwertige Reps aus dem Pool.
+     * Eine Rep mit Score 0.58 (Schwelle 0.60) darf die Akzeptanzflaeche nicht
+     * dauerhaft erweitern; eine klar gute Rep schon. Ohne Score gilt das
+     * Altverhalten (kein Gate).
+     */
+    @Test
+    fun `pool admission rejects borderline rep`() {
+        val matcher = TemplateMatcher(admissionMinScore = 0.60)
+        matcher.setTemplate(sine(64, periods = 1.0))
+
+        matcher.addToPool(sine(64 + 3, periods = 2.0), qualityScore = 0.58)
+        assertEquals("grenzwertige Rep darf den Pool nicht erweitern", 1, matcher.poolCount)
+
+        matcher.addToPool(sine(64 + 4, periods = 2.0), qualityScore = 0.75)
+        assertEquals("klar gute Rep wird aufgenommen", 2, matcher.poolCount)
+
+        matcher.addToPool(sine(64 + 5, periods = 2.0))
+        assertEquals("ohne Score gilt das Altverhalten", 3, matcher.poolCount)
+    }
+
+    @Test
+    fun `admission threshold rejects invalid values`() {
+        val failure =
+            runCatching { TemplateMatcher(admissionMinScore = -0.1) }.exceptionOrNull()
+        assertTrue("negative Admission-Schwelle muss abgelehnt werden", failure is IllegalArgumentException)
     }
 }

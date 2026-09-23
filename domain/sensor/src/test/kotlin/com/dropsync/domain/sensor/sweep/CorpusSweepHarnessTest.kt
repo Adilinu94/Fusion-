@@ -27,88 +27,13 @@ import java.nio.file.Path
  * laeuft (Plan 6.2), aber ohne Flag ein No-Op, damit die CI ihn nie anfasst.
  */
 class CorpusSweepHarnessTest {
-    // Dasselbe deterministische Rep-Modell wie im Isolationstest: 0 -> 60
-    // -> -60 -> 0 ueber 60 Samples, 60 ruhige Samples davor/danach/dazwischen.
-    private fun repCycle(): List<Double> =
-        (1..15).map { 60.0 * it / 15.0 } +
-            (1..30).map { 60.0 - 120.0 * it / 30.0 } +
-            (1..15).map { -60.0 + 60.0 * it / 15.0 }
-
-    /** Gyro-Strom fuer [reps] Wiederholungen auf gx bei 50 Hz (20 ms). */
-    private fun gyroStream(reps: Int): List<Double> =
-        buildList {
-            addAll(List(60) { 0.0 })
-            repeat(reps) {
-                addAll(repCycle())
-                addAll(List(60) { 0.0 })
-            }
-        }
-
-    /**
-     * Accel-Strom: Ruhe (~1 g auf y, wie das reale Device auf dem Tisch) mit
-     * einer klaren Magnituden-Spitze je Rep (~0.16 g Abweichung). Die Spitzen
-     * liegen IN den Rep-Fenstern — nur so kann die Offline-Derivation
-     * ueberhaupt eine trennscharfe Schwelle finden und der Voting-Pfad
-     * geprueft werden. Die Staerke entspricht einem kraeftigen Zug, nicht
-     * einem Sensor-Artefakt: knapp ueber der Rausch-Untergrenze gewinnt
-     * niemand Vertrauen in das Werkzeug.
-     */
-    private fun accelStream(gyro: List<Double>): List<Triple<Double, Double, Double>> =
-        gyro.map { gx ->
-            if (gx > 5.0) Triple(0.15, -0.98, 0.60) else Triple(0.02, -0.98, 0.11)
-        }
-
-    private fun writeMiniCorpus(dir: Path) {
-        // Satz 1: 2 Reps; Satz 2: 3 Reps. Profil wie im Isolationstest
-        // (Achse [1,0,0], theta 32.5, Prominenz 1.0, Dauer 2000 ms) — das
-        // zaehlt dort deterministisch exakt.
-        val sets = listOf(2, 3)
-        val lines = mutableListOf<String>()
-        lines += """{"t":"session_start","sessionId":"mini"}"""
-        var globalIndex = 0L
-        sets.forEachIndexed { setIndex, reps ->
-            val gyro = gyroStream(reps)
-            val accel = accelStream(gyro)
-            lines += setWindowLine(setIndex, gyro.size, setIndex * 1_000L)
-            gyro.forEachIndexed { i, gx ->
-                val (ax, ay, az) = accel[i]
-                val ts = setIndex * 1_000L + globalIndex + i * 20L
-                lines +=
-                    """{"t":"sample","setIndex":$setIndex,"ts":$ts,"ax":$ax,"ay":$ay,"az":$az,"gx":$gx,"gy":0.0,"gz":0.0}"""
-            }
-            globalIndex += gyro.size * 20L
-        }
-        lines += """{"t":"session_end","sessionId":"mini"}"""
-        Files.writeString(dir.resolve("mini.jsonl"), lines.joinToString("\n") + "\n")
-        Files.writeString(
-            dir.resolve("mini.jsonl.meta.json"),
-            """
-            {
-              "recording": "mini.jsonl",
-              "exercise_id": "synthetic_curl",
-              "scenario": "calibrated",
-              "known_active_reps": [2, 3],
-              "device": "synthetic",
-              "samples_recorded": true
-            }
-            """.trimIndent(),
-        )
-    }
-
-    private fun setWindowLine(
-        setIndex: Int,
-        n: Int,
-        tsFirst: Long,
-    ): String =
-        """{"t":"set_window","setIndex":$setIndex,"exerciseId":7,"rateHz":50.0,"n":$n,""" +
-            """"tsFirst":$tsFirst,"tsLast":${tsFirst + (n - 1) * 20L},""" +
-            """"axis":[1.0,0.0,0.0],"bias":[0.0,0.0,0.0],"theta":32.5,""" +
-            """"prominence":1.0,"durationMs":2000.0,"accelTheta":0.0,"revision":1}"""
+    // Der Mini-Corpus liegt in SyntheticCorpus (geteilt mit den
+    // Live-vs-Replay-Tests und dem CI-Regressionsgate).
 
     @Test
     fun `harness laeuft gegen den mini-corpus und erzeugt die csv`() {
         val tmp = Files.createTempDirectory("sweep_mini")
-        writeMiniCorpus(tmp)
+        SyntheticCorpus.writeMiniCorpus(tmp)
         val csv = tmp.resolve("sweep.csv")
 
         val report =
@@ -136,7 +61,7 @@ class CorpusSweepHarnessTest {
     @Test
     fun `baseline zaehlt die eingebettete rep-zahl exakt`() {
         val tmp = Files.createTempDirectory("sweep_exact")
-        writeMiniCorpus(tmp)
+        SyntheticCorpus.writeMiniCorpus(tmp)
 
         val report =
             CorpusSweepHarness(tmp, tmp.resolve("sweep.csv")).sweep(
@@ -151,7 +76,7 @@ class CorpusSweepHarnessTest {
     @Test
     fun `accel-parametersatz deriviert eine trennscharfe schwelle und zaehlt weiter korrekt`() {
         val tmp = Files.createTempDirectory("sweep_accel")
-        writeMiniCorpus(tmp)
+        SyntheticCorpus.writeMiniCorpus(tmp)
 
         val report =
             CorpusSweepHarness(tmp, tmp.resolve("sweep.csv")).sweep(
@@ -215,6 +140,103 @@ class CorpusSweepHarnessTest {
         val row = report.rows.single()
         assertEquals(null, row.counted)
         assertTrue(row.note.contains("kein Profil"))
+    }
+
+    /**
+     * B3 (RC-20): Die drei Profil-Schwellen gehoeren ins Fenster — sonst
+     * misst der Replay eine Pipeline, die live nie gelaufen ist. Das
+     * Live-vs-Replay-Band liest sie direkt, der Sweep nimmt sie als
+     * Baseline und variiert nur die gesetzten Overrides.
+     */
+    @Test
+    fun `liveConfig und baseline-config replizieren die fensterschwellen`() {
+        val harness = CorpusSweepHarness(Path.of("unused"), Path.of("unused.csv"))
+        val window =
+            CorpusWindow(
+                setIndex = 0,
+                exerciseId = 7L,
+                rateHz = 50.0,
+                axis = listOf(1.0, 0.0, 0.0),
+                bias = listOf(0.0, 0.0, 0.0),
+                theta = 32.5,
+                prominence = 1.0,
+                durationMs = 2_000.0,
+                accelTheta = 0.0,
+                templateThreshold = 0.83,
+                minQualityScore = 0.61,
+                dtwBand = 12,
+                revision = 1,
+                samples = emptyList(),
+            )
+
+        val live = harness.liveConfig(window)
+        assertEquals(0.83, live.templateThreshold, 1e-9)
+        assertEquals(0.61, live.minQualityScore, 1e-9)
+        assertEquals(12, live.dtwBand)
+
+        val baseline =
+            harness.configFor(
+                window,
+                CorpusSweepHarness.ParameterSet("baseline"),
+                accelThreshold = 0.0,
+                accelEnabled = false,
+            )
+        assertEquals("baseline muss das Fenster replizieren", live.templateThreshold, baseline.templateThreshold, 1e-9)
+        assertEquals(live.minQualityScore, baseline.minQualityScore, 1e-9)
+        assertEquals(live.dtwBand, baseline.dtwBand)
+
+        val override =
+            harness.configFor(
+                window,
+                CorpusSweepHarness.ParameterSet("dtwBand=4", dtwBand = 4),
+                accelThreshold = 0.0,
+                accelEnabled = false,
+            )
+        assertEquals("Override schlaegt das Fenster", 4, override.dtwBand)
+        assertEquals("nicht gesetzte Werte bleiben am Fenster", 0.83, override.templateThreshold, 1e-9)
+    }
+
+    /**
+     * B3 (RC-20): v6-Fenster tragen die Schwellen, Altaufnahmen (ohne die
+     * Felder) lesen exakt die bisherigen Code-Defaults — sonst wuerde eine
+     * alte Aufnahme gegen eine andere Baseline gemessen als damals live.
+     */
+    @Test
+    fun `loader liest v6-schwellen und alte fenster bekommen die defaults`() {
+        val tmp = Files.createTempDirectory("sweep_v6_fields")
+        val lines =
+            listOf(
+                """{"t":"session_start","sessionId":"v6"}""",
+                """{"t":"set_window","setIndex":0,"exerciseId":7,"rateHz":50.0,"n":1,"tsFirst":0,"tsLast":0,""" +
+                    """"axis":[1.0,0.0,0.0],"bias":[0.0,0.0,0.0],"theta":32.5,"prominence":1.0,""" +
+                    """"durationMs":2000.0,"accelTheta":0.0,"templateThreshold":0.83,""" +
+                    """"minQualityScore":0.61,"dtwBand":12,"revision":1}""",
+                """{"t":"sample","setIndex":0,"ts":0,"ax":0.0,"ay":-0.98,"az":0.11,"gx":1.0,"gy":0.0,"gz":0.0}""",
+                """{"t":"set_window","setIndex":1,"exerciseId":7,"rateHz":50.0,"n":1,"tsFirst":20,"tsLast":20,""" +
+                    """"axis":[1.0,0.0,0.0],"bias":[0.0,0.0,0.0],"theta":32.5,"prominence":1.0,""" +
+                    """"durationMs":2000.0,"accelTheta":0.0,"revision":1}""",
+                """{"t":"sample","setIndex":1,"ts":20,"ax":0.0,"ay":-0.98,"az":0.11,"gx":1.0,"gy":0.0,"gz":0.0}""",
+                """{"t":"session_end","sessionId":"v6"}""",
+            )
+        Files.writeString(tmp.resolve("v6.jsonl"), lines.joinToString("\n") + "\n")
+        Files.writeString(
+            tmp.resolve("v6.jsonl.meta.json"),
+            """{"recording":"v6.jsonl","exercise_id":"e","scenario":"x","known_active_reps":[1,1],"device":"d"}""",
+        )
+
+        val (sessions, issues) = CorpusLoader(tmp).load()
+        assertEquals(emptyList<String>(), issues)
+        val windows = sessions.single().windows
+
+        val modern = windows.first { it.setIndex == 0 }
+        assertEquals(0.83, modern.templateThreshold, 1e-9)
+        assertEquals(0.61, modern.minQualityScore, 1e-9)
+        assertEquals(12, modern.dtwBand)
+
+        val legacy = windows.first { it.setIndex == 1 }
+        assertEquals(CorpusWindow.DEFAULT_TEMPLATE_THRESHOLD, legacy.templateThreshold, 1e-9)
+        assertEquals(CorpusWindow.DEFAULT_MIN_QUALITY_SCORE, legacy.minQualityScore, 1e-9)
+        assertEquals(CorpusWindow.DEFAULT_DTW_BAND, legacy.dtwBand)
     }
 
     /**

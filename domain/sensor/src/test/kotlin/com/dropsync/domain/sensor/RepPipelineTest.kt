@@ -1,28 +1,10 @@
 package com.dropsync.domain.sensor
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import kotlin.math.sin
 
 class RepPipelineTest {
-    @Test
-    fun `template extractor merges calibration windows`() {
-        val w1 = (0 until 50).map { sin(2 * Math.PI * it / 50) }
-        val w2 = (0 until 80).map { sin(2 * Math.PI * it / 80) }
-        val w3 = (0 until 60).map { sin(2 * Math.PI * it / 60) }
-        val template = TemplateExtractor.extract(listOf(w1, w2, w3))
-        assertNotNull(template)
-        assertEquals(TemplateExtractor.TEMPLATE_LENGTH, template!!.size)
-    }
-
-    @Test
-    fun `template extractor needs at least two reps`() {
-        assertNull(TemplateExtractor.extract(listOf(List(10) { 1.0 })))
-    }
-
     @Test
     fun `quality scorer rewards ideal rep`() {
         val scorer = QualityScorer(expectedProminence = 100.0, expectedDurationMs = 1_000.0)
@@ -152,6 +134,36 @@ class RepPipelineTest {
         // Insgesamt 4 bestaetigte Reps, Pool groesse 3: FIFO-Eviction.
         assertEquals(3, matcher.poolCount)
         assertEquals(4, counter.repCount)
+    }
+
+    @Test
+    fun `eine schwache Rep fuellt den Pool nicht`() {
+        // B6 (RC-21): Der Score der Standard-Rep liegt knapp ueber der
+        // Akzeptanzschwelle (0.55), aber unter einer hohen Admission-Schwelle
+        // -> die Rep zaehlt, der Pool bleibt aber leer. Mit niedriger
+        // Admission waechst der Pool wie bisher.
+        val strict = TemplateMatcher(poolSize = 3, admissionMinScore = 0.995)
+        val strictCounter =
+            newCounter(
+                expectedDurationMs = 1_400.0,
+                templateMatcher = strict,
+                peakDetector = PeakDetector(threshold = 32.5, expectedDurationMs = 1_400.0),
+            )
+        val strictSamples = fullCycle() + List(40) { 0.0 } + List(10) { 0.0 }
+        feed(strictCounter, strictSamples)
+        assertEquals("die Rep selbst zaehlt weiter", 1, strictCounter.repCount)
+        assertEquals("unter der Admission-Schwelle darf der Pool nicht wachsen", 0, strict.poolCount)
+
+        val open = TemplateMatcher(poolSize = 3, admissionMinScore = 0.5)
+        val openCounter =
+            newCounter(
+                expectedDurationMs = 1_400.0,
+                templateMatcher = open,
+                peakDetector = PeakDetector(threshold = 32.5, expectedDurationMs = 1_400.0),
+            )
+        feed(openCounter, strictSamples)
+        assertEquals(1, openCounter.repCount)
+        assertEquals("ueber der Admission-Schwelle waechst der Pool", 1, open.poolCount)
     }
 
     @Test

@@ -2,6 +2,7 @@ package com.dropsync.data.sensor
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -278,4 +279,97 @@ class DataStoreCalibrationProfileRepositoryTest {
             assertNull(prefs[legacyKey])
             repo.delete(3L, "LEGACY")
         }
+
+    // --- B3 (RC-20): Schema v6 -------------------------------------------
+
+    /**
+     * B3 (RC-20): Ein v5-Blob (16 Felder, ohne die drei Profil-Schwellen)
+     * wird gelesen und mit exakt den bisherigen Code-Defaults auf v6
+     * gehoben — sonst wuerde ein Altprofil still mit anderen Schwellen
+     * zaehlen als bei der Kalibrierung.
+     */
+    @Test
+    fun `v5-Blob wird gelesen und mit den B3-Defaults auf v6 gehoben`() =
+        runTest {
+            writeBlob(1L, "AA:BB", revision = 1, blob = v5Blob())
+            val loaded = (repo.load(1L, "AA:BB") as AppResult.Success).value
+            assertEquals(CalibrationProfile.PROFILE_SCHEMA_VERSION, loaded?.schemaVersion)
+            assertEquals(1.5, loaded?.detectionThreshold ?: 0.0, 1e-9)
+            assertEquals(0.7, loaded?.templateThreshold ?: 0.0, 1e-9)
+            assertEquals(0.55, loaded?.minQualityScore ?: 0.0, 1e-9)
+            assertEquals(8, loaded?.dtwBand)
+        }
+
+    /** S-10: Der v4-Lesepfad war nie getestet; v6 darf ihn nicht kappen. */
+    @Test
+    fun `v4-Blob wird weiterhin gelesen`() =
+        runTest {
+            writeBlob(2L, "AA:BB", revision = 1, blob = v4Blob())
+            val loaded = (repo.load(2L, "AA:BB") as AppResult.Success).value
+            assertEquals(CalibrationProfile.PROFILE_SCHEMA_VERSION, loaded?.schemaVersion)
+            assertEquals(0.0, loaded?.accelThreshold ?: -1.0, 1e-9)
+            assertEquals(0.7, loaded?.templateThreshold ?: 0.0, 1e-9)
+            assertEquals(8, loaded?.dtwBand)
+        }
+
+    @Test
+    fun `v6 round-trip erhaelt templateThreshold minQualityScore dtwBand`() =
+        runTest {
+            repo.save(
+                profile().copy(
+                    templateThreshold = 0.83,
+                    minQualityScore = 0.61,
+                    dtwBand = 12,
+                ),
+            )
+            val restored = (repo.load(1L, "AA:BB") as AppResult.Success).value
+            assertEquals(0.83, restored?.templateThreshold ?: 0.0, 1e-9)
+            assertEquals(0.61, restored?.minQualityScore ?: 0.0, 1e-9)
+            assertEquals(12, restored?.dtwBand)
+        }
+
+    @Test
+    fun `v6-Blob mit ungueltigem dtwBand wird verworfen`() =
+        runTest {
+            writeBlob(1L, "AA:BB", revision = 1, blob = v6Blob(dtwBand = 0))
+            assertNull((repo.load(1L, "AA:BB") as AppResult.Success).value)
+        }
+
+    @Test
+    fun `v6-Blob mit Schwelle ausserhalb 0 bis 1 wird verworfen`() =
+        runTest {
+            writeBlob(1L, "AA:BB", revision = 1, blob = v6Blob(templateThreshold = 1.5))
+            assertNull((repo.load(1L, "AA:BB") as AppResult.Success).value)
+        }
+
+    /** Schreibt einen rohen Blob unter den Revisions-Key (wie der Codec). */
+    private suspend fun writeBlob(
+        exerciseId: Long,
+        deviceId: String,
+        revision: Int,
+        blob: String,
+    ) {
+        val dataStore = context.calibrationProfileDataStore
+        dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("cal_${exerciseId}_${deviceId}_r$revision")] = blob
+            prefs[intPreferencesKey("cal_${exerciseId}_${deviceId}_active")] = revision
+        }
+    }
+
+    private fun v5Blob(): String =
+        "5;V2_RELIABLE;SIGNED_GYRO_PROJECTION;0.0,0.0,1.0;0.01,-0.02,0.03;" +
+            "0.1,0.5,1.0,0.5,0.1;0.4;0.85;1.5;0.2;500.0;1;-1;ACTIVE;0;0.0"
+
+    private fun v4Blob(): String =
+        "4;V2_RELIABLE;SIGNED_GYRO_PROJECTION;0.0,0.0,1.0;0.01,-0.02,0.03;" +
+            "0.1,0.5,1.0,0.5,0.1;0.4;0.85;1.5;0.2;500.0;1;-1;ACTIVE;0"
+
+    private fun v6Blob(
+        templateThreshold: Double = 0.83,
+        minQualityScore: Double = 0.61,
+        dtwBand: Int = 12,
+    ): String =
+        "6;V2_RELIABLE;SIGNED_GYRO_PROJECTION;0.0,0.0,1.0;0.01,-0.02,0.03;" +
+            "0.1,0.5,1.0,0.5,0.1;0.4;0.85;1.5;0.2;500.0;1;-1;ACTIVE;0;0.0;" +
+            "$templateThreshold;$minQualityScore;$dtwBand"
 }

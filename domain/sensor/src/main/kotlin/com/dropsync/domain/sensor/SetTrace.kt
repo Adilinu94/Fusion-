@@ -39,4 +39,10 @@ data class SetTrace(
      * Dauer haengt daran, deshalb gehoert der Wert in den Mitschnitt.
      */
     val measuredSampleRateHz: Double = SampleRateEstimator.NOMINAL_RATE_HZ,
+    /**
+     * RC-7/RC-17: Diagnose-Snapshot des Sets (Frames, Gaps, ZUPT,
+     * klassifizierte Ablehnungen). null, wenn kein Snapshot vorliegt
+     * (z. B. Trace aus einem Pfad ohne [ActiveSetController.stop]).
+     */
+    val diagnostics: SetDiagnostics? = null,
 )

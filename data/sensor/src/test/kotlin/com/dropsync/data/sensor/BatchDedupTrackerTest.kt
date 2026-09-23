@@ -1,5 +1,8 @@
 package com.dropsync.data.sensor
 
+import com.dropsync.domain.sensor.SensorConnectionState
+import com.dropsync.domain.sensor.SensorHealth
+import com.dropsync.domain.sensor.SignalQuality
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -108,5 +111,74 @@ class BatchDedupTrackerTest {
         assertEquals(0L, tracker.largestGapMs)
         assertEquals(0.0, tracker.recentPacketLossRate, 0.0)
         assertEquals(0, tracker.recentMissedBatches)
+        assertEquals(0L, tracker.largestRecentGapMs)
+    }
+
+    // --- A3/S-2: Gap im gleitenden Fenster --------------------------------
+
+    @Test
+    fun `gap faellt nach dem fenster heraus`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80, gapWindowBatches = 10)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1560) // 560 ms Gap
+        assertEquals(560L, tracker.largestRecentGapMs)
+
+        // Zehn weitere Batches schieben den Gap aus dem Fenster.
+        repeat(10) { i -> tracker.shouldSkip(1640 + i * 80) }
+
+        assertEquals(0L, tracker.largestRecentGapMs)
+        assertEquals("kumulativ bleibt der Gap fuer die Diagnose sichtbar", 560L, tracker.largestGapMs)
+    }
+
+    @Test
+    fun `gap im fenster bleibt sichtbar`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80, gapWindowBatches = 10)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1560)
+
+        repeat(4) { i -> tracker.shouldSkip(1640 + i * 80) }
+
+        assertEquals(560L, tracker.largestRecentGapMs)
+    }
+
+    @Test
+    fun `gap groesser 80 s wird als resync nicht gezaehlt`() {
+        val tracker = BatchDedupTracker(expectedBatchIntervalMs = 80, gapWindowBatches = 10)
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1000 + 80_000) // >= 80 s: Resync, kein Gap
+
+        assertEquals(0L, tracker.largestRecentGapMs)
+        assertEquals(0L, tracker.largestGapMs)
+    }
+
+    @Test
+    fun `500-ms-gap danach 5 s sauber ergibt GOOD`() {
+        val tracker =
+            BatchDedupTracker(
+                expectedBatchIntervalMs = 80,
+                lossWindowBatches = 10,
+                gapWindowBatches = 63,
+            )
+        tracker.shouldSkip(1000)
+        tracker.shouldSkip(1560) // 560 ms Gap
+        val during =
+            SensorHealth(
+                connectionState = SensorConnectionState.STREAMING,
+                largestRecentGapMs = tracker.largestRecentGapMs,
+                recentPacketLossRate = tracker.recentPacketLossRate,
+            )
+        assertEquals(SignalQuality.UNRELIABLE, during.quality)
+
+        // 63 saubere Batches (rund 5 s) leeren das Gap-Fenster.
+        repeat(63) { i -> tracker.shouldSkip(1640 + i * 80) }
+
+        val after =
+            SensorHealth(
+                connectionState = SensorConnectionState.STREAMING,
+                largestRecentGapMs = tracker.largestRecentGapMs,
+                recentPacketLossRate = tracker.recentPacketLossRate,
+            )
+        assertEquals(0L, tracker.largestRecentGapMs)
+        assertEquals(SignalQuality.GOOD, after.quality)
     }
 }

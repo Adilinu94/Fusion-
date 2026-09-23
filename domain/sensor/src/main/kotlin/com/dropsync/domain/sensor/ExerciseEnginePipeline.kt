@@ -17,11 +17,35 @@ data class ExerciseEngineConfig(
     val envelopeCutoffHz: Double = 3.0,
     val templateThreshold: Double = 0.7,
     val minQualityScore: Double = 0.55,
+    /**
+     * B1 (RC-18, Stufe 1): einseitige Qualitaetstoleranzen des
+     * [QualityScorer]. In Ermuedungsrichtung (Prominenz faellt, Dauer steigt)
+     * gilt [fatigueTolerance] (+0.45 gegenueber der alten 1.0), gegen
+     * Schwung/Fremdbewegung [suspiciousTolerance] (-0.20). Plan-Namen:
+     * toleranceBelow/toleranceAbove.
+     */
+    val fatigueTolerance: Double = 1.45,
+    val suspiciousTolerance: Double = 0.80,
+    /**
+     * B6 (RC-21): Mindestabstand ueber [minQualityScore], den eine Rep
+     * erreichen muss, um in den Template-Pool aufgenommen zu werden
+     * (`admissionMinScore = minQualityScore + templateAdmissionMargin`).
+     * 0.0 = Altverhalten (jede akzeptierte Rep kommt in den Pool).
+     */
+    val templateAdmissionMargin: Double = 0.05,
     val expectedProminence: Double = 50.0,
     /** Umbauplan Phase 1.4: calibrated detection threshold (deg/s). */
     val detectionThreshold: Double = 32.5,
     /** Umbauplan Phase 4: expected rep duration in milliseconds. */
     val expectedDurationMs: Double = 1_000.0,
+    /**
+     * B2 (RC-19, Stufe 1): Startwert NUR fuer die Qualitaets-Erwartung
+     * ([QualityScorer.expectedDurationMs]) — z. B. die am Set-Ende gemessene
+     * Rep-Periode des Vorgaenger-Satzes. Refraktaerzeit und Pending-Deckel
+     * bleiben bewusst am gleitenden Mittelwert ([expectedDurationMs]).
+     * null = Profilwert verwenden.
+     */
+    val qualityDurationMs: Double? = null,
     val hasValidCalibration: Boolean = false,
     /** Punkt 4: Accel-Kanal + Voting aktiv (Feature-Flag fuer den Rollout). */
     val accelEnabled: Boolean = false,
@@ -62,6 +86,20 @@ data class ExerciseEngineConfig(
         require(templatePoolSize >= 1) { "templatePoolSize must be >= 1" }
         require(detectionThreshold.isFinite() && detectionThreshold >= 0.0) {
             "detectionThreshold must be finite and >= 0"
+        }
+        // B1 (RC-18): Toleranzen muessen positiv sein, sonst waere jeder
+        // Score 0 (Division durch 0 bzw. negative Toleranz).
+        require(fatigueTolerance.isFinite() && fatigueTolerance > 0.0) {
+            "fatigueTolerance must be finite and > 0"
+        }
+        require(suspiciousTolerance.isFinite() && suspiciousTolerance > 0.0) {
+            "suspiciousTolerance must be finite and > 0"
+        }
+        require(qualityDurationMs == null || (qualityDurationMs.isFinite() && qualityDurationMs > 0.0)) {
+            "qualityDurationMs must be null or finite and > 0"
+        }
+        require(templateAdmissionMargin.isFinite() && templateAdmissionMargin >= 0.0) {
+            "templateAdmissionMargin must be finite and >= 0"
         }
         // P2-Fix #22: der Accel-Kanal darf nur mit KALIBRIERTER Schwelle
         // laufen. Ein geratener Wert wuerde entweder alles durchlassen oder
@@ -115,16 +153,32 @@ class ExerciseEnginePipeline(
 
     private val qualityScorer =
         QualityScorer(
+            // B2 (RC-19): die gemessene Periode des Vorgaenger-Satzes seedet
+            // NUR die Qualitaets-Erwartung; die Refraktaerzeit des
+            // PeakDetectors bleibt am Profil-/Mittelwert.
+            expectedDurationMs = config.qualityDurationMs ?: config.expectedDurationMs,
             expectedProminence = config.expectedProminence,
-            expectedDurationMs = config.expectedDurationMs,
             minScore = config.minQualityScore,
+            // B1 (RC-18): einseitige Toleranzen aus der Config.
+            fatigueTolerance = config.fatigueTolerance,
+            suspiciousTolerance = config.suspiciousTolerance,
         )
+
+    /**
+     * B2 (RC-19): aktuelle Qualitaets-Erwartung des Motors (Diagnose/Tests).
+     * Sie folgt ab der dritten Rep dem gleitenden Mittelwert; der Startwert
+     * kann aus [ExerciseEngineConfig.qualityDurationMs] stammen.
+     */
+    internal val qualityExpectedDurationMs: Double
+        get() = qualityScorer.expectedDurationMs
 
     private val templateMatcher =
         TemplateMatcher(
             threshold = config.templateThreshold,
             poolSize = config.templatePoolSize,
             dtwBand = config.dtwBand,
+            // B6 (RC-21): grenzwertige Reps nicht in den Pool lassen.
+            admissionMinScore = config.minQualityScore + config.templateAdmissionMargin,
         )
 
     private val repCounter =
@@ -214,6 +268,17 @@ class ExerciseEnginePipeline(
     var zuptAbortedPending = 0
         private set
 
+    /**
+     * RC-17: Ablehnungen je Mechanismus im aktuellen Set. Gefuellt in
+     * [processSample]/[processFrame] aus [RepResult.rejection]; geleert in
+     * [reset]. Nur Mechanismen mit mindestens einem Treffer.
+     */
+    private val rejectionCounts = mutableMapOf<RepRejectionReason, Int>()
+
+    /** Momentaufnahme der Ablehnungszaehler (Diagnose/Satz-Report). */
+    val rejectionCountsSnapshot: Map<RepRejectionReason, Int>
+        get() = rejectionCounts.toMap()
+
     /** P2-Fix #24: true, solange der Sensor als ruhend erkannt ist. */
     val isStationary: Boolean
         get() = zupt?.isStationary == true
@@ -248,6 +313,7 @@ class ExerciseEnginePipeline(
         framesProcessed++
         pushSignalSample(frame.smoothedGp)
         val repResult = repCounter.process(frame)
+        trackRejection(repResult)
         if (repResult.repCounted) {
             _repCount.value = repCounter.repCount
             _repEvents.tryEmit(
@@ -292,6 +358,16 @@ class ExerciseEnginePipeline(
     }
 
     /**
+     * RC-17: zaehlt eine klassifizierte Ablehnung. Der RepCounter liefert je
+     * finalisiertem Pending-Rep genau EIN [RepResult], deshalb ist hier keine
+     * Deduplizierung noetig.
+     */
+    private fun trackRejection(repResult: RepResult) {
+        val reason = repResult.rejection ?: return
+        rejectionCounts[reason] = (rejectionCounts[reason] ?: 0) + 1
+    }
+
+    /**
      * P2-Fix #24: fuehrt die ZUPT-Segmentierung auf den ROHEN Werten aus.
      *
      * Zwei Wirkungen:
@@ -323,9 +399,12 @@ class ExerciseEnginePipeline(
         if (!result.zuptConfirmed) return
 
         // Ruhe bestaetigt: ein noch offener Pending-Rep hat keine
-        // Rueckbewegung mehr zu erwarten.
-        repCounter.abortPending()
-        zuptAbortedPending++
+        // Rueckbewegung mehr zu erwarten. Gezaehlt wird nur der ECHTE
+        // Verwerf-Fall (RC-16) — eine Ruhephase ohne offenen Pending ist
+        // kein verlorener Rep.
+        if (repCounter.abortPending()) {
+            zuptAbortedPending++
+        }
 
         detector.biasEstimate?.let { bias ->
             signalChain.updateGyroBias(bias)
@@ -358,6 +437,9 @@ class ExerciseEnginePipeline(
             signal = signalHistory(),
             sampleRateHz = appliedSampleRateHz,
             countedReps = repCounter.repCount,
+            // B2 (RC-19): eine Luecke im Set macht die Zeitbasis im Ring
+            // unbrauchbar (keine Timestamps) -> keine Aussage.
+            hasLargeGap = largeGapCount > 0,
         )
 
     /**
@@ -386,6 +468,7 @@ class ExerciseEnginePipeline(
         framesProcessed++
         pushSignalSample(frame.smoothedGp)
         val repResult = repCounter.process(frame)
+        trackRejection(repResult)
         if (repResult.repCounted) {
             _repCount.value = repCounter.repCount
             _repEvents.tryEmit(
@@ -435,6 +518,7 @@ class ExerciseEnginePipeline(
         zupt?.reset()
         zuptBiasUpdates = 0
         zuptAbortedPending = 0
+        rejectionCounts.clear()
     }
 
     companion object {

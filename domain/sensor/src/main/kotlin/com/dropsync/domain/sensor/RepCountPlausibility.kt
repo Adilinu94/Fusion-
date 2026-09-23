@@ -1,6 +1,7 @@
 package com.dropsync.domain.sensor
 
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.min
 
@@ -73,10 +74,18 @@ object RepCountPlausibility {
         signal: DoubleArray,
         sampleRateHz: Double,
         countedReps: Int,
+        /**
+         * B2 (RC-19): true, wenn das Set eine grosse Zeitluecke enthielt.
+         * Der Signalring traegt keine Timestamps — die Luecke komprimiert
+         * die Zeitbasis, Dauer und Periode waeren still falsch. Dann gibt es
+         * bewusst KEINE Aussage statt einer geratenen.
+         */
+        hasLargeGap: Boolean = false,
     ): Result {
         if (signal.size < MIN_SAMPLES || sampleRateHz <= 0.0) {
             return inconclusive(countedReps)
         }
+        if (hasLargeGap) return inconclusive(countedReps)
 
         val minLag = (sampleRateHz * MIN_REP_SECONDS).toInt().coerceAtLeast(2)
         val maxLag = min((sampleRateHz * MAX_REP_SECONDS).toInt(), signal.size / 2)
@@ -102,8 +111,9 @@ object RepCountPlausibility {
         val periodSeconds = bestLag / sampleRateHz
         val durationSeconds = signal.size / sampleRateHz
         // Aufrunden statt abrunden: die letzte Wiederholung ist am Set-Ende
-        // meist nicht vollstaendig im Fenster.
-        val estimated = Math.round(durationSeconds / periodSeconds).toInt().coerceAtLeast(1)
+        // meist nicht vollstaendig im Fenster (B2/RC-19: der Code rundete
+        // kaufmaennisch, der Kommentar sagte bereits "aufrunden").
+        val estimated = ceil(durationSeconds / periodSeconds).toInt().coerceAtLeast(1)
 
         val diff = abs(countedReps - estimated)
         val verdict =

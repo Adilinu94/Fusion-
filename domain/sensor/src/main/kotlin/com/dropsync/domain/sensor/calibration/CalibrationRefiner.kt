@@ -132,6 +132,11 @@ object CalibrationRefiner {
                     expectedDurationMs = candidate.expectedDurationMs,
                     detectionThreshold = candidate.detectionThreshold,
                     hasValidCalibration = true,
+                    // B3 (RC-20): die Revalidierung muss mit denselben
+                    // Schwellen laufen wie die Live-Pipeline.
+                    templateThreshold = candidate.templateThreshold,
+                    minQualityScore = candidate.minQualityScore,
+                    dtwBand = candidate.dtwBand,
                     // P2-Fix #22: die Revalidierung muss mit DENSELBEN
                     // Kanaelen laufen wie die Live-Pipeline, sonst
                     // reproduziert sie einen Count, den es live nie gibt.

@@ -1,15 +1,21 @@
 package com.dropsync.domain.sensor
 
 import com.dropsync.core.common.Clock
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Lifecycle eines live gezaehlten Sets (Umbauplan Phase 6): Countdown,
@@ -36,6 +42,14 @@ class ActiveSetController(
     private val health: Flow<SensorHealth>,
     private val clock: Clock,
     private val countdownSeconds: Int = DEFAULT_COUNTDOWN_SECONDS,
+    /**
+     * RC-1: CPU-lastige Verarbeitung (Filter, ZUPT, Peak-Erkennung, bei
+     * Treffern DTW/Phasenpruefung/Qualitaet) laeuft auf diesem Dispatcher,
+     * nicht auf dem Main-Thread. Der UI-Zustand bleibt ueber
+     * `MutableStateFlow` thread-sicher; das Set-Logging (z. B. Robolectric)
+     * kann denselben Test-Dispatcher uebergeben.
+     */
+    private val workerDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
     private val _phase = MutableStateFlow(ActiveSetPhase.IDLE)
     val phase: StateFlow<ActiveSetPhase> = _phase.asStateFlow()
@@ -59,7 +73,24 @@ class ActiveSetController(
     private val _lastPlausibility = MutableStateFlow<RepCountPlausibility.Result?>(null)
     val lastPlausibility: StateFlow<RepCountPlausibility.Result?> = _lastPlausibility.asStateFlow()
 
+    /**
+     * RC-7/RC-17: Diagnose-Snapshot des zuletzt GESTOPPTEN Sets. Gefuellt in
+     * [stop], geleert in [start]/[abort]. Die Train-UI zeigt daraus den
+     * Satz-Report, das Diagnose-Panel den letzten Stand.
+     */
+    private val _lastDiagnostics = MutableStateFlow<SetDiagnostics?>(null)
+    val lastDiagnostics: StateFlow<SetDiagnostics?> = _lastDiagnostics.asStateFlow()
+
     private var engine: ExerciseEnginePipeline? = null
+
+    /**
+     * C14 (T-14): Live-Rep-Events des laufenden Sets fuer die UI (Peak-Blitz,
+     * Rep-Hero). Kein Replay (extraBufferCapacity), damit ein spaet
+     * abonnierender Screen keine alten Blitze nachholt.
+     */
+    private val _repEvents = MutableSharedFlow<RepEvent>(extraBufferCapacity = 16)
+    val repEvents: SharedFlow<RepEvent> = _repEvents.asSharedFlow()
+
     private var exerciseId: Long = -1L
     private var deviceId: String? = null
     private var profileRevision: Int = 0
@@ -67,6 +98,25 @@ class ActiveSetController(
     private val bufferedSamples = mutableListOf<SensorSample>()
     private val bufferedRepEvents = mutableListOf<RepEvent>()
     private var startedAtMs: Long = 0L
+
+    /**
+     * B2 (RC-19): die am Ende des letzten Sets gemessene Rep-Periode (ms)
+     * samt Zuordnung. Sie seedet beim naechsten Set DESSELBEN Geraets die
+     * Qualitaets-Erwartung ([ExerciseEngineConfig.qualityDurationMs]);
+     * Refraktaerzeit und Pending-Deckel bleiben am Mittelwert (5.14).
+     * Gesetzt in [stop], verworfen in [abort].
+     */
+    private var lastMeasuredPeriodMs: Double? = null
+    private var lastMeasuredPeriodExerciseId: Long = -1L
+    private var lastMeasuredPeriodDeviceId: String? = null
+
+    /**
+     * B2 (RC-19): Periode (ms), mit der der LAUFENDE Satz seine
+     * Qualitaets-Erwartung gestartet hat; null = Profilwert. Diagnose/Test —
+     * die Zaehlung selbst haengt nicht daran.
+     */
+    var appliedQualityPeriodMs: Double? = null
+        private set
 
     /** Letzter Abbruchgrund fuer Diagnose und Tests (P4-Fix #30). */
     var lastAbortReason: SetAbortReason? = null
@@ -102,6 +152,14 @@ class ActiveSetController(
         // Reste eines vorherigen Sets (stop ohne finish) gehoeren nicht in
         // das neue Set.
         cancelJobs()
+        // B2 (RC-19): die gemessene Periode nur fuer dasselbe Geraet/UEbung
+        // uebernehmen - eine Periode aus einem anderen Aufbau waere eine
+        // falsche Erwartung.
+        val periodSeed =
+            lastMeasuredPeriodMs?.takeIf {
+                exerciseId == lastMeasuredPeriodExerciseId && deviceId == lastMeasuredPeriodDeviceId
+            }
+        appliedQualityPeriodMs = periodSeed
         engine =
             ExerciseEnginePipeline(
                 ExerciseEngineConfig(
@@ -109,8 +167,17 @@ class ActiveSetController(
                     gyroBias = profile.gyroBias,
                     expectedProminence = profile.expectedProminence,
                     expectedDurationMs = profile.expectedDurationMs,
+                    // B2 (RC-19): nur die Qualitaets-Erwartung seeden;
+                    // Refraktaerzeit/Pending bleiben am Profil-/Mittelwert.
+                    qualityDurationMs = periodSeed,
                     detectionThreshold = profile.detectionThreshold,
                     hasValidCalibration = true,
+                    // B3 (RC-20): die drei Schwellen kommen aus dem Profil,
+                    // nicht mehr aus den Code-Defaults; Altprofile wurden beim
+                    // Laden mit genau diesen Defaults hochgezogen.
+                    templateThreshold = profile.templateThreshold,
+                    minQualityScore = profile.minQualityScore,
+                    dtwBand = profile.dtwBand,
                     // P2-Fix #22: das Accel-Voting laeuft, sobald die
                     // Kalibrierung eine trennscharfe Schwelle gemessen hat.
                     // Ohne kalibrierten Wert (Altprofile aus Schema v4)
@@ -135,14 +202,29 @@ class ActiveSetController(
         // P2-Fix #19: die Zweitmeinung des Vorgaenger-Sets darf nicht in ein
         // neues Set hineinragen.
         _lastPlausibility.value = null
+        // RC-7: gleiches gilt fuer den Diagnose-Snapshot des Vorgaengers.
+        _lastDiagnostics.value = null
         bufferedSamples.clear()
         bufferedRepEvents.clear()
         _phase.value = ActiveSetPhase.COUNTDOWN
         _countdownRemaining.value = countdownSeconds
 
         val activeEngine = engine
-        eventJob = scope.launch { activeEngine?.repEvents?.collect { bufferedRepEvents.add(it) } }
-        sampleJob = scope.launch { samples.collect { onSample(it) } }
+        eventJob =
+            scope.launch {
+                activeEngine?.repEvents?.collect { event ->
+                    bufferedRepEvents.add(event)
+                    // C14 (T-14): die UI speist ihren Peak-Blitz aus dem
+                    // echten Rep-Event statt aus einer Flanken-Heuristik.
+                    _repEvents.tryEmit(event)
+                }
+            }
+        // RC-1: die Zaehlpipeline laeuft off-main; der Collector selbst
+        // startet im uebergebenen Scope, verarbeitet aber auf dem Worker.
+        sampleJob =
+            scope.launch(workerDispatcher) {
+                samples.collect { onSample(it) }
+            }
         healthJob = scope.launch { health.collect { onHealth(it) } }
         connectionJob =
             scope.launch {
@@ -223,20 +305,70 @@ class ActiveSetController(
      *
      * P2-Fix #19: beim Stoppen laeuft die Autokorrelations-Pruefung ueber das
      * mitgeschnittene Signal, solange die Engine noch steht.
+     *
+     * B5/RC-1: suspend. Die Phase faellt VOR dem Join auf IDLE (es wird kein
+     * Sample mehr angenommen), danach wartet [cancelJobsAndJoin] den
+     * Sample-Worker wirklich ab — `cancel()` allein ist kooperativ und liesse
+     * ihn waehrend der Leseoperationen weiter in Puffer und Engine schreiben.
+     * Die Plausibilitaet rechnet auf dem [workerDispatcher], nicht auf dem
+     * Aufrufer-Thread.
      */
-    fun stop(): Int {
-        cancelJobs()
-        _lastPlausibility.value = engine?.checkPlausibility()
-        val counted = _countedReps.value
+    suspend fun stop(): Int {
         _phase.value = ActiveSetPhase.IDLE
         _countdownRemaining.value = 0
-        return counted
+        cancelJobsAndJoin()
+        val activeEngine = engine
+        val plausibility =
+            if (activeEngine == null) {
+                null
+            } else {
+                withContext(workerDispatcher) { activeEngine.checkPlausibility() }
+            }
+        _lastPlausibility.value = plausibility
+        // B2 (RC-19): die Periode fuer den naechsten Satz merken (nur
+        // Qualitaets-Erwartung, Entscheidung 5.14).
+        lastMeasuredPeriodMs =
+            plausibility
+                ?.periodSeconds
+                ?.takeIf { it.isFinite() && it > 0.0 }
+                ?.times(1_000.0)
+        lastMeasuredPeriodExerciseId = exerciseId
+        lastMeasuredPeriodDeviceId = deviceId
+        // RC-7/RC-17: den Diagnose-Snapshot beim Stoppen einfrieren - danach
+        // kann die UI den Satz-Report zeigen, auch wenn noch nicht geloggt ist.
+        _lastDiagnostics.value = diagnosticsSnapshot()
+        return _countedReps.value
+    }
+
+    /**
+     * RC-7/RC-17: Momentaufnahme aller Diagnose-Zaehler des stehenden
+     * Motors. null, wenn kein Set laeuft/stand.
+     */
+    private fun diagnosticsSnapshot(): SetDiagnostics? {
+        val activeEngine = engine ?: return null
+        return SetDiagnostics(
+            countedReps = _countedReps.value,
+            framesProcessed = activeEngine.framesProcessed,
+            framesRejected = activeEngine.framesRejected,
+            largeGapCount = activeEngine.largeGapCount,
+            zuptBiasUpdates = activeEngine.zuptBiasUpdates,
+            zuptAbortedPending = activeEngine.zuptAbortedPending,
+            measuredSampleRateHz = activeEngine.estimatedSampleRateHz,
+            signalQuality = _currentSignalQuality.value,
+            rejectionCounts = activeEngine.rejectionCountsSnapshot,
+            plausibility = _lastPlausibility.value,
+        )
     }
 
     /**
      * Bricht das aktive Set atomar ab (Umbauplan Phase 6 / P0-Fix):
      * Countdown, Engine, Zaehlstand, Puffer und Phase werden GEMEINSAM
      * zurueckgesetzt. Idempotent; darf aus jedem Zustand aufgerufen werden.
+     *
+     * B5: bewusst synchron (ohne Join) — sie laeuft auch aus `onCleared()`,
+     * wo der Scope bereits gecancelt ist und ein suspend/join wirkungslos
+     * waere. `runBlocking` auf Main ist tabu; die Collector sterben durch
+     * `cancel()` und fassen den dann geleerten Zustand nicht mehr an.
      */
     fun abort(reason: SetAbortReason) {
         cancelJobs()
@@ -253,6 +385,13 @@ class ActiveSetController(
         // Zustand eine Wirkung nach draussen — deshalb hier und nicht in
         // Phase 6.
         _lastPlausibility.value = null
+        // RC-7: der Diagnose-Snapshot gehoert ebenfalls zum Zaehlstand.
+        _lastDiagnostics.value = null
+        // B2 (RC-19): [lastMeasuredPeriodMs] bleibt bewusst stehen — sie
+        // gehoert zum letzten per [stop] ABGESCHLOSSENEN Satz, nicht zu
+        // diesem Abbruch (finishAndTakeTrace ruft hier CLEARED). Nur die
+        // Zuordnung des laufenden Satzes wird geleert.
+        appliedQualityPeriodMs = null
         bufferedSamples.clear()
         bufferedRepEvents.clear()
         exerciseId = -1L
@@ -264,19 +403,34 @@ class ActiveSetController(
     /**
      * Friert den Set-Mitschnitt ein (unveraenderliche Kopien) und raeumt den
      * Controller auf. Liefert null, wenn kein Set lief (nichts zu lernen).
+     *
+     * B5/RC-1: suspend. Erst die Phase schliessen, dann den Sample-Worker per
+     * Join beenden, dann den Puffer kopieren — sonst koennte der Worker
+     * waehrend `toList()` noch Samples anhaengen (Teilkopie) oder nach dem
+     * `clear()` in [abort] noch eines nachtragen.
      */
-    fun finishAndTakeTrace(): SetTrace? {
-        if (engine == null) {
-            _phase.value = ActiveSetPhase.IDLE
-            return null
-        }
-        val activeEngine = engine
+    suspend fun finishAndTakeTrace(): SetTrace? {
+        val activeEngine =
+            engine ?: run {
+                _phase.value = ActiveSetPhase.IDLE
+                return null
+            }
+        _phase.value = ActiveSetPhase.IDLE
+        _countdownRemaining.value = 0
+        cancelJobsAndJoin()
+        // Ein paralleler abort/start hat den Motor inzwischen ersetzt: Puffer
+        // und Zaehler gehoeren dann nicht mehr zu diesem Mitschnitt.
+        if (engine !== activeEngine) return null
         // P2-Fix #19/#21: Zweitmeinung und gemessene Rate gehoeren in den
         // Mitschnitt. `stop()` hat die Pruefung eventuell schon gerechnet -
         // dann den vorhandenen Wert wiederverwenden statt erneut ueber das
         // Signal zu laufen.
-        val plausibility = _lastPlausibility.value ?: activeEngine?.checkPlausibility()
-        val measuredRateHz = activeEngine?.estimatedSampleRateHz ?: SampleRateEstimator.NOMINAL_RATE_HZ
+        val plausibility =
+            _lastPlausibility.value ?: withContext(workerDispatcher) { activeEngine.checkPlausibility() }
+        val measuredRateHz = activeEngine.estimatedSampleRateHz ?: SampleRateEstimator.NOMINAL_RATE_HZ
+        // RC-7: den beim Stop eingefrorenen Snapshot bevorzugen; nur wenn
+        // direkt (ohne stop) abgeschlossen wird, jetzt einen ziehen.
+        val diagnostics = _lastDiagnostics.value ?: diagnosticsSnapshot()
         val trace =
             SetTrace(
                 exerciseId = exerciseId,
@@ -291,6 +445,7 @@ class ActiveSetController(
                 durationMs = clock.elapsedRealtimeMs() - startedAtMs,
                 plausibility = plausibility,
                 measuredSampleRateHz = measuredRateHz,
+                diagnostics = diagnostics,
             )
         abort(SetAbortReason.CLEARED)
         return trace
@@ -301,6 +456,7 @@ class ActiveSetController(
         abort(SetAbortReason.CLEARED)
     }
 
+    /** Bricht alle Collector ab, ohne auf sie zu warten (start/abort). */
     private fun cancelJobs() {
         countdownJob?.cancel()
         countdownJob = null
@@ -312,6 +468,23 @@ class ActiveSetController(
         healthJob = null
         connectionJob?.cancel()
         connectionJob = null
+    }
+
+    /**
+     * B5: beendet alle Collector und WARTET auf ihren Abschluss. Der
+     * Sample-Collector wird zuerst abgewartet — er schreibt als Einziger in
+     * Puffer und Engine. Nur so sind die Leseoperationen von [stop] und
+     * [finishAndTakeTrace] frei von gleichzeitigen Schreibern.
+     */
+    private suspend fun cancelJobsAndJoin() {
+        val jobs = listOf(sampleJob, eventJob, healthJob, connectionJob, countdownJob)
+        countdownJob = null
+        sampleJob = null
+        eventJob = null
+        healthJob = null
+        connectionJob = null
+        jobs.forEach { it?.cancel() }
+        jobs.forEach { it?.join() }
     }
 
     companion object {

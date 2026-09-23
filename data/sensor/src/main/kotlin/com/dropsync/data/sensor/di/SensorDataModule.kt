@@ -3,9 +3,11 @@ package com.dropsync.data.sensor.di
 import com.dropsync.data.sensor.BleSensorProvider
 import com.dropsync.data.sensor.DataStoreCalibrationProfileRepository
 import com.dropsync.data.sensor.FakeSensorProvider
+import com.dropsync.data.sensor.InMemorySetDiagnosticsLog
 import com.dropsync.data.sensor.SwitchingSensorProvider
 import com.dropsync.domain.sensor.CalibrationProfileRepository
 import com.dropsync.domain.sensor.SensorProvider
+import com.dropsync.domain.sensor.SetDiagnosticsLog
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -37,4 +39,12 @@ object SensorDataModule {
     fun provideCalibrationProfileRepository(
         store: DataStoreCalibrationProfileRepository,
     ): CalibrationProfileRepository = store
+
+    /**
+     * RC-7: geteilter Log des letzten Satz-Diagnose-Snapshots (Train schreibt,
+     * Diagnose-Panel liest).
+     */
+    @Provides
+    @Singleton
+    fun provideSetDiagnosticsLog(log: InMemorySetDiagnosticsLog): SetDiagnosticsLog = log
 }

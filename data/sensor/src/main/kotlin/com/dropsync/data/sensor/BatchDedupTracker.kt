@@ -18,6 +18,12 @@ class BatchDedupTracker(
     private val expectedBatchIntervalMs: Int = 80,
     /** Window for the recent loss rate (batches). */
     private val lossWindowBatches: Int = 50,
+    /**
+     * A3/S-2: Window for the recent gap (batches). 63 Batches sind bei
+     * 80 ms rund 5 s — ein einzelner Aussetzer darf die Qualitaet nicht
+     * dauerhaft auf UNRELIABLE festnageln.
+     */
+    private val gapWindowBatches: Int = 63,
 ) {
     private var lastTimestampMs: Int? = null
 
@@ -33,12 +39,23 @@ class BatchDedupTracker(
     var largestGapMs = 0L
         private set
 
+    /**
+     * A3/S-2: groesster Gap innerhalb des Fensters (0, wenn im Fenster kein
+     * Gap lag). Diesen Wert nutzt [SensorHealth.quality] — der kumulative
+     * [largestGapMs] bleibt fuer die Diagnose erhalten.
+     */
+    val largestRecentGapMs: Long
+        get() = recentGaps.maxOrNull() ?: 0L
+
     /** Umbauplan Phase 3: missed batches inside the recent window. */
     var recentMissedBatches = 0
         private set
 
     // true = batch arrived, false = batch missed (ring buffer).
     private val recentWindow = ArrayDeque<Boolean>()
+
+    // Gap, der beim Eintreffen des jeweiligen Batches gemessen wurde.
+    private val recentGaps = ArrayDeque<Long>()
 
     /** Missed / (seen + missed) over the last [lossWindowBatches] batches. */
     val recentPacketLossRate: Double
@@ -61,25 +78,34 @@ class BatchDedupTracker(
         val elapsed = timestampMs - last
         // Negative or absurdly large elapsed: reconnect (timestamps restart)
         // or millis() overflow (~49.7 days) — resync silently, don't count.
+        var gapMs = 0L
         if (elapsed > 0 && elapsed < expectedBatchIntervalMs * 1000) {
             val missed = (elapsed.toDouble() / expectedBatchIntervalMs).roundToInt() - 1
             if (missed > 0) {
                 estimatedMissedBatches += missed
                 repeat(missed) { pushRecent(false) }
-                if (elapsed.toLong() > largestGapMs) largestGapMs = elapsed.toLong()
+                gapMs = elapsed.toLong()
+                if (gapMs > largestGapMs) largestGapMs = gapMs
             }
         }
-        pushRecent(true)
+        pushRecent(true, gapMs)
         lastTimestampMs = timestampMs
         return false
     }
 
-    private fun pushRecent(seen: Boolean) {
+    private fun pushRecent(
+        seen: Boolean,
+        gapMs: Long = 0L,
+    ) {
         recentWindow.addLast(seen)
+        recentGaps.addLast(gapMs)
         if (!seen) recentMissedBatches++
         while (recentWindow.size > lossWindowBatches) {
             val oldest = recentWindow.removeFirst()
             if (!oldest) recentMissedBatches--
+        }
+        while (recentGaps.size > gapWindowBatches) {
+            recentGaps.removeFirst()
         }
     }
 
@@ -91,5 +117,6 @@ class BatchDedupTracker(
         largestGapMs = 0L
         recentMissedBatches = 0
         recentWindow.clear()
+        recentGaps.clear()
     }
 }

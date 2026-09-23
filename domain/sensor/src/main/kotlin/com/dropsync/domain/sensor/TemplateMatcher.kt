@@ -56,7 +56,20 @@ class TemplateMatcher(
      * ([DTW_BAND]); Produktivcode setzt ihn nicht.
      */
     private val dtwBand: Int = DTW_BAND,
+    /**
+     * B6 (RC-21): Mindest-Qualitaetsscore fuer die Pool-Aufnahme. Null =
+     * keine Admission-Schwelle (Altverhalten). Grenzwertige Reps duerfen die
+     * Akzeptanzflaeche nicht dauerhaft erweitern; das Kalibrier-Template
+     * laeuft ueber [setTemplate] und ist von der Schwelle nicht betroffen.
+     */
+    private val admissionMinScore: Double? = null,
 ) {
+    init {
+        require(admissionMinScore == null || (admissionMinScore.isFinite() && admissionMinScore >= 0.0)) {
+            "admissionMinScore must be null or finite and >= 0"
+        }
+    }
+
     private val templates: MutableList<List<Double>> = mutableListOf()
 
     /** Sets the learned rep template (any length; resampled internally). */
@@ -72,9 +85,19 @@ class TemplateMatcher(
     /**
      * Punkt 5: nimmt ein bestaetigtes Rep-Window in den Pool auf
      * (normalisiert + resampled, FIFO mit [poolSize] Eintraegen).
+     *
+     * B6 (RC-21): Liegt [qualityScore] unter [admissionMinScore], bleibt der
+     * Pool unveraendert — eine grenzwertige Rep (z. B. Score 0.56 bei
+     * Schwelle 0.55) soll die Akzeptanzflaeche nicht dauerhaft erweitern.
+     * Ohne Score oder ohne Admission-Schwelle gilt das Altverhalten.
      */
-    fun addToPool(rawWindow: List<Double>) {
+    fun addToPool(
+        rawWindow: List<Double>,
+        qualityScore: Double? = null,
+    ) {
         if (rawWindow.size < 4) return
+        val admission = admissionMinScore
+        if (admission != null && qualityScore != null && qualityScore < admission) return
         val normalized = normalize(resample(rawWindow, TEMPLATE_LENGTH)) ?: return
         templates.add(normalized)
         if (templates.size > poolSize) {

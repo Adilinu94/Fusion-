@@ -1,5 +1,6 @@
 package com.dropsync.domain.sensor.sweep
 
+import com.dropsync.domain.sensor.RepRejectionReason
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.math.abs
@@ -35,12 +36,36 @@ data class CorpusSample(
 }
 
 /**
+ * Die Live-Seite eines Satzes, wie sie die `set`-Zeile traegt (RC-16).
+ *
+ * Der Offline-Harness spielt die Rohsamples durch eine frische Pipeline;
+ * erst mit diesen Werten kann er den Live-Lauf gegen den Replay-Lauf
+ * stellen und Abweichungen eingrenzen (Rate, Gaps, ZUPT, Filterframes,
+ * klassifizierte Ablehnungen). Alle Felder nullable: Altaufnahmen (vor
+ * P2-17/P2-18) tragen sie nicht.
+ */
+data class CorpusLiveRecord(
+    val countedReps: Int?,
+    val rejectionCounts: Map<RepRejectionReason, Int>,
+    val framesProcessed: Int?,
+    val framesRejected: Int?,
+    val largeGapCount: Int?,
+    val zuptBiasUpdates: Int?,
+    val zuptAbortedPending: Int?,
+)
+
+/**
  * Ein Satzfenster aus der JSONL (`set_window` + alle zugehoerigen Samples).
  *
  * Die Profilfelder stammen aus dem Nachtrag Phase 0.7: ohne sie ist ein
  * Fenster fuer Sweeps unbrauchbar ([hasProfile] false), weil das Replay
  * sonst auf die Neutralachse projiziert und eine Pipeline misst, die live
  * nie gelaufen ist.
+ *
+ * [live] kommt aus der `set`-Zeile desselben `setIndex` (RC-16): die
+ * Position der set-Zeilen in der Session ist der 0-basierte Satzindex, den
+ * auch der Recorder vergibt. Fehlt die Zeile (Altformat), bleibt [live]
+ * null — der Vergleich meldet das dann als Befund statt still zu raten.
  */
 data class CorpusWindow(
     val setIndex: Int,
@@ -52,10 +77,22 @@ data class CorpusWindow(
     val prominence: Double,
     val durationMs: Double,
     val accelTheta: Double,
+    /** B3 (RC-20): Profil-Schwellen; Altaufnahmen -> Code-Defaults. */
+    val templateThreshold: Double = DEFAULT_TEMPLATE_THRESHOLD,
+    val minQualityScore: Double = DEFAULT_MIN_QUALITY_SCORE,
+    val dtwBand: Int = DEFAULT_DTW_BAND,
     val revision: Int,
     val samples: List<CorpusSample>,
+    val live: CorpusLiveRecord? = null,
 ) {
     val hasProfile: Boolean get() = axis != null && bias != null
+
+    companion object {
+        /** B3: Altaufnahmen ohne die Felder lesen die bisherigen Defaults. */
+        const val DEFAULT_TEMPLATE_THRESHOLD = 0.7
+        const val DEFAULT_MIN_QUALITY_SCORE = 0.55
+        const val DEFAULT_DTW_BAND = 8
+    }
 }
 
 /** Manifest daneben: `<session>.jsonl.meta.json`. */
@@ -118,12 +155,20 @@ class CorpusLoader(
 
     private fun parseWindows(lines: List<String>): List<CorpusWindow> {
         val windows = mutableListOf<CorpusWindow>()
+        val setRecords = mutableListOf<Map<String, String>>()
         var current: Pair<Map<String, String>, MutableList<CorpusSample>>? = null
         for (raw in lines) {
             val line = raw.trim()
             if (line.isEmpty() || !line.startsWith("{")) continue
             val fields = JsonlLines.parseTopLevel(line)
             when (fields["t"]) {
+                "set" -> {
+                    // RC-16: die set-Zeilen in Reihenfolge sind der
+                    // 0-basierte Satzindex (Recorder-Vertrag). Sie kommen
+                    // VOR dem set_window desselben Satzes.
+                    setRecords += fields
+                }
+
                 "set_window" -> {
                     current?.let { windows += finishWindow(it.first, it.second) }
                     current = fields to mutableListOf()
@@ -135,8 +180,34 @@ class CorpusLoader(
             }
         }
         current?.let { windows += finishWindow(it.first, it.second) }
-        return windows
+        // Zuordnung ueber den setIndex, NICHT ueber die Listenposition:
+        // ein Satz ohne Samples hat eine set-Zeile, aber kein Fenster —
+        // die Positionen wuerden dann verrutschen.
+        return windows.map { window ->
+            window.copy(live = setRecords.getOrNull(window.setIndex)?.let(::liveRecordOf))
+        }
     }
+
+    /** Liest die Live-Diagnose aus einer `set`-Zeile (RC-16). */
+    private fun liveRecordOf(fields: Map<String, String>): CorpusLiveRecord =
+        CorpusLiveRecord(
+            countedReps = fields["liveCountedReps"]?.toIntOrNull(),
+            rejectionCounts =
+                fields["rejections"]
+                    ?.let { JsonlLines.parseTopLevel(it) }
+                    ?.mapNotNull { (name, count) ->
+                        val reason =
+                            RepRejectionReason.entries.firstOrNull { it.name == name }
+                                ?: return@mapNotNull null
+                        reason to (count.toIntOrNull() ?: 0)
+                    }?.toMap()
+                    .orEmpty(),
+            framesProcessed = fields["framesProcessed"]?.toIntOrNull(),
+            framesRejected = fields["framesRejected"]?.toIntOrNull(),
+            largeGapCount = fields["gaps"]?.toIntOrNull(),
+            zuptBiasUpdates = fields["zuptUpdates"]?.toIntOrNull(),
+            zuptAbortedPending = fields["zuptAborted"]?.toIntOrNull(),
+        )
 
     /**
      * Ordnet eine `sample`-Zeile dem offenen Fenster zu. Samples ohne
@@ -169,6 +240,15 @@ class CorpusLoader(
             prominence = windowFields["prominence"]?.toDoubleOrNull() ?: DEFAULT_PROMINENCE,
             durationMs = windowFields["durationMs"]?.toDoubleOrNull() ?: DEFAULT_DURATION_MS,
             accelTheta = windowFields["accelTheta"]?.toDoubleOrNull() ?: 0.0,
+            // B3 (RC-20): fehlende Felder = Altaufnahme -> Code-Defaults,
+            // damit der Baseline-Lauf das damalige Live-Verhalten trifft.
+            templateThreshold =
+                windowFields["templateThreshold"]?.toDoubleOrNull()
+                    ?: CorpusWindow.DEFAULT_TEMPLATE_THRESHOLD,
+            minQualityScore =
+                windowFields["minQualityScore"]?.toDoubleOrNull()
+                    ?: CorpusWindow.DEFAULT_MIN_QUALITY_SCORE,
+            dtwBand = windowFields["dtwBand"]?.toIntOrNull() ?: CorpusWindow.DEFAULT_DTW_BAND,
             revision = windowFields["revision"]?.toIntOrNull() ?: 0,
             samples = samples.toList(),
         )
