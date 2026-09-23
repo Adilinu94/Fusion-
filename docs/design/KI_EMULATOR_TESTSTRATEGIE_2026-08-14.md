@@ -105,8 +105,8 @@ Branchen-Faustregeln): Cold-Start < 500 ms, Frame-Budget 16 ms bei
 60 fps (adressierbar), keine geleakten Activities/Fragments in
 LeakCanary, Baseline-Profile generiert.
 
-Für dieses Projekt besonders relevant, weil in
-`docs/handoff_2026-08-13.md` (Abschnitt 6g/6h) bereits selbst als
+Für dieses Projekt besonders relevant, weil im Handoff der Vorsession
+(13.08., Abschnitt 6g/6h) bereits selbst als
 ungemessene Risiken benannt: Waveform-Neuzeichnung pro Frame,
 Library-Flow-Subscriptions bei 1000+ Songs, 200-ms-Positions-Ticker.
 Genau dafür ist Macrobenchmark/JankStats gebaut — konkreter Vorschlag,

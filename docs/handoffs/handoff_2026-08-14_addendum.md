@@ -1,6 +1,6 @@
 # Ergänzung zum Handoff (2026-08-14) — offene Fragen ohne Lösung
 
-**Zweck:** Ergänzt `docs/handoff_2026-08-13.md` und
+**Zweck:** Ergänzt den Handoff der Vorsession (13.08.) und
 `docs/design/KI_EMULATOR_TESTSTRATEGIE_2026-08-14.md`, ersetzt beide
 nicht — die sind bereits umfassend. Das hier ist eine bewusst kurze
 Liste von Fragen, zu denen ich (diese Session, kein Hardware-Zugriff)

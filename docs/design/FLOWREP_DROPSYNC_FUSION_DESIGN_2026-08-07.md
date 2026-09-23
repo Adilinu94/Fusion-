@@ -207,7 +207,7 @@ Plan:
 
 * Bei mehreren Markern wählt Planner nach Entscheidung 37 den mit kleinstem |restDuration - markerSec| wobei markerSec <= restDuration bevorzugt, nächster passender gewinnt.
 * Work Song Vorhören: Work Queue als MediaItems mit seek auf 0, Rest Queue läuft leise, CrossfadeController Equal Power schiebt Work leise nach laut während Rest laut nach leise.
-* Fallback Kette: 1 Marker -> exakt, 2 kein Marker -> normaler Übergang ab 0, 3 keine Rest Playlist -> nur ducking ohne Queue Wechsel.
+* Fallback Kette: 1 Marker -> exakt, 2 kein Marker -> normaler Übergang ab 0, 3 keine Rest Playlist -> NORMAL-Verhalten: die Musik läuft unverändert weiter, kein Queue-Wechsel, kein Ducking (nachgezogen an ADR-0012 und Entscheidung 7 vom 19.09.2026; die frühere Formulierung "nur ducking" war nie umgesetzt und ist gestrichen).
 * Einstellbarkeit: Rest Lautstärke -12 bis 0 dB (Default -8dB ca 30%), Crossfade 1000 bis 12000ms Default 3000, MixPreset 6 Chips mit Erklärung, Bit Perfect Hinweis wenn an -> DSP/Crossfade gebypassed.
 
 ### 7.1a Audio-Architektur (Zwei Player)

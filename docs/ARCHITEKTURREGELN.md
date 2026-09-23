@@ -1,6 +1,6 @@
 # Architekturregeln (Bauplan-Rekonstruktion)
 
-**Stand:** 2026-09-11 — Weg b aus Verbesserungsplan [B-DOC-1](../VERBESSERUNGSPLAN.md#b-doc-1)
+**Stand:** 2026-09-11 — Weg b aus Verbesserungsplan [B-DOC-1](plans/VERBESSERUNGSPLAN.md#b-doc-1)
 (Nutzerentscheidung "Regeln extrahieren").
 
 **Was das ist:** Der verbindliche technische Bauplan

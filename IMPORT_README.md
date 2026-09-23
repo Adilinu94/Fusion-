@@ -10,7 +10,7 @@ spiegelbildlich angewendet).
 **Warum kein `git subtree`:** hätte DropSync-Timers vollständige, von
 diesem Repo unabhängige Commit-Historie in die FlowRep-Historie
 eingewoben — bei einem Repo mit aktiver paralleler Multi-Session-Arbeit
-(siehe `docs/archive/umbauplan/STATUS_FORTSCHRITT.md`) ein größeres,
+(siehe `docs/STATUS_FORTSCHRITT.md`) ein größeres,
 schwerer rückgängig zu machendes strukturelles Risiko als eine einfache
 Kopie. Wer die volle Commit-Historie von DropSync-Timer braucht: Quelle
 oben ist unverändert unter der genannten URL/Commit abrufbar.

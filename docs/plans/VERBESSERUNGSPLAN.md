@@ -1259,8 +1259,8 @@ Darunter stehen aber noch ca. 40 KB Befundtext im **Praesens**
 behoben ist. Der Kopf sagt, die Tabelle habe Vorrang — aber niemand liest
 43 KB, um das zu erfahren.
 
-**Fix:** Befundteil nach `docs/archive/2026-08-12-review-befunde.md`
-verschieben. Im Original bleiben: Ist-Stand-Tabelle, die zwei echten
+**Fix:** Befundteil in einen Archiv-Ort unter `docs/archive/` verschieben.
+Im Original bleiben: Ist-Stand-Tabelle, die zwei echten
 Restpunkte (Ground-Truth-Traces, Gate 11b) und der Zielarchitektur-Umbauplan.
 
 <a name="b-doc-3"></a>
@@ -1363,7 +1363,7 @@ laut eigener Regel bei jeder Session "als Erstes gelesen" und waechst
 monoton.
 
 **Fix:** Bei der naechsten Milestone-Grenze schneiden:
-`docs/status/2026-08.md` fuer A-W, im Original nur der laufende Monat plus die
+eine Monatsdatei unter `docs/` fuer A-W, im Original nur der laufende Monat plus die
 Regeln im Kopf.
 
 <a name="b-doc-7"></a>

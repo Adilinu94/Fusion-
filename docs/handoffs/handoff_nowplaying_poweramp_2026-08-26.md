@@ -139,7 +139,7 @@ Die ausführliche Analyse steht in:
 - `docs/design/WISSEN_POWERAMP_OFFTRACK_2026-08-07.md`, Abschnitt 49
 - `docs/STATUS_FORTSCHRITT.md`, Abschnitt P1
 - `ui-test/POWERAMP_ONBOARDING_REVIEW.md`, Abschnitt 3 — inzwischen
-  [`qa/POWERAMP_ONBOARDING_REVIEW.md`](qa/POWERAMP_ONBOARDING_REVIEW.md)
+  [`qa/POWERAMP_ONBOARDING_REVIEW.md`](../qa/POWERAMP_ONBOARDING_REVIEW.md)
 
 ## 6. Betroffene FlowRep-Dateien
 
@@ -152,18 +152,19 @@ Primär:
 
 Unterstützend:
 
+- `core/designsystem/src/main/kotlin/com/dropsync/core/designsystem/component/CoverArtLoader.kt`
 - `core/designsystem/src/main/kotlin/com/dropsync/core/designsystem/component/CoverImage.kt`
 - `feature/player/src/main/res/values/strings.xml`
 - `feature/player/src/main/res/values-de/strings.xml`
-- [`design/reference/poweramp_live_09_player_started.png`](design/reference/poweramp_live_09_player_started.png)
-- [`design/reference/poweramp_live_12_player_progress.png`](design/reference/poweramp_live_12_player_progress.png)
-- [`design/reference/poweramp_live_13_player_paused.png`](design/reference/poweramp_live_13_player_paused.png)
-- [`design/reference/poweramp_live_14_player_seek.png`](design/reference/poweramp_live_14_player_seek.png)
-- [`design/reference/poweramp_live_15_player_next.png`](design/reference/poweramp_live_15_player_next.png)
-- [`design/reference/poweramp_live_20_player_baseline.png`](design/reference/poweramp_live_20_player_baseline.png)
-- [`design/reference/poweramp_live_31_artwork_swipe_left.png`](design/reference/poweramp_live_31_artwork_swipe_left.png)
-- [`design/reference/nowplaying_poweramp_calibrated.png`](design/reference/nowplaying_poweramp_calibrated.png)
-- [`design/reference/current_nowplaying_2026-08-26.png`](design/reference/current_nowplaying_2026-08-26.png) — Stand von FlowRep zum Zeitpunkt dieses Handoffs
+- [`design/reference/poweramp_live_09_player_started.png`](../design/reference/poweramp_live_09_player_started.png)
+- [`design/reference/poweramp_live_12_player_progress.png`](../design/reference/poweramp_live_12_player_progress.png)
+- [`design/reference/poweramp_live_13_player_paused.png`](../design/reference/poweramp_live_13_player_paused.png)
+- [`design/reference/poweramp_live_14_player_seek.png`](../design/reference/poweramp_live_14_player_seek.png)
+- [`design/reference/poweramp_live_15_player_next.png`](../design/reference/poweramp_live_15_player_next.png)
+- [`design/reference/poweramp_live_20_player_baseline.png`](../design/reference/poweramp_live_20_player_baseline.png)
+- [`design/reference/poweramp_live_31_artwork_swipe_left.png`](../design/reference/poweramp_live_31_artwork_swipe_left.png)
+- [`design/reference/nowplaying_poweramp_calibrated.png`](../design/reference/nowplaying_poweramp_calibrated.png)
+- [`design/reference/current_nowplaying_2026-08-26.png`](../design/reference/current_nowplaying_2026-08-26.png) — Stand von FlowRep zum Zeitpunkt dieses Handoffs
 
 Die Referenzbilder lagen ursprünglich unter `ui-test/screenshots/`. Dieses
 Verzeichnis ist seit 2026-08-30 nicht mehr versioniert (42 MB Emulator-

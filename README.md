@@ -126,6 +126,27 @@ Grundsatz: Lesen nur im Foreground (kein `READ_HEALTH_DATA_IN_BACKGROUND`), kein
 
 Grundsatz: keine Alpha-Abhaengigkeiten (material3 1.5.0-alpha verworfen), keine neue Library fuer Palette/Farbextraktion, bestehende Modulgrenzen (feature -> domain) eingehalten.
 
+### Verbesserungsplan MusicPlayer/DropSync + Rep-Zaehlung (19.09.2026)
+
+Fokussierter Plan fuer die zwei Schwerpunkte:
+`VERBESSERUNGSPLAN_MUSIC_DROPSYNC_REPCOUNT.md` (16 MP-Befunde,
+22 RC-Befunde, Entscheidungen, Phasen P0-P3). Dazu die Recherche-Notizen
+unter `docs/research/2026-09-19-*` und der Abgleich mit der bestehenden
+Tiefenrecherche `docs/research/RESEARCH_REPCOUNT_TTS_DROPSYNC_2026-09.md`.
+
+| Paket | Inhalt | Status |
+| ----- | ------ | ------ |
+| P0 | Drop-Auto wirksam (Bus an den Koordinator), Recorder nur Debug (ADR-0023), sichtbare Start-Gruende + 0-Hinweis, `+15 s` bei DropSync entfernt, DropRest-Sofortschutz | Abgeschlossen (Arbeitsbaum, Tests gruen) |
+| P1 | DropSync-Koordinator mit `PlayerMessage`-Landung + Zustandsmodell, Landung Stufe 1 (Fade aus DSP-Konfig), DropRest am Foreground-Service, `+15 s`/Resume rechnen ein, Pipeline + Lernpfad off-main, Drop-Auto persistiert (Default an), alle Marker als Kandidaten, Hero-Konsole (`Ziel in mm:ss`, Chips, `Plan abbrechen`, GO-Overlay), Mini-Player-Badge + Skip-Schutz, Sample-Fan-out (RC-10) mit Drop-Zaehler, Lern-Ereignis (RC-6) | Abgeschlossen (Arbeitsbaum, Tests gruen; offen: Preload-Messpunkt, Now-Playing-Statuszeile) |
+| P2 | Gate-11b-Kampagne (Adi), Live-vs-Replay + Korpus-Regressionsgate (Arbeitsbaum, noch nicht eingecheckt), Diagnose-Panel + Satz-Report mit Ablehnungs-Mechanismen (P2-17, RC-7/RC-17), Kalibrier-Wizard 2.0, Train-Konsole mit Rep-Hero/Quelle + Sensor-Kopfzeile (P2-20, RC-5/A.4), Now-Playing als Drop-Editor mit Marker-Sheet/Ziel/Statuszeile (P2-21, MP-7/A.4), Ermuedungsdrift, Downbeat-Offset, Crossfade-Spike (ADR-0022) | Teilweise (P2-17 + P2-18 + P2-19 + P2-20 + P2-21 umgesetzt; Rest offen) |
+| P3 | Crossfade-Bau nach Spike, Recovery, Geraetetaste, Undo/Haptik, DBA | Offen |
+
+**Hinweis zum Arbeitsbaum (A7/I-2/I-3):** Ein Teil der P2-Artefakte
+(Korpus-Gate unter `domain/sensor/.../sweep/`, `app/lint.xml`, `app/src/test/`)
+liegt nur im lokalen Arbeitsbaum und ist noch nicht eingecheckt. Ein frischer
+Clone hat das Korpus-Gate deshalb nicht; `lintDebug` braucht die genannten
+Dateien. Sobald sie committet sind, entfaellt dieser Hinweis.
+
 ## Build
 
 Voraussetzungen:
@@ -150,10 +171,13 @@ mklink /J C:\dev\jbr17 "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.8-hotspot"
 ```
 ./gradlew assembleDebug      # Debug-Build
 ./gradlew assembleRelease    # Release-Build (R8, unsigniert)
+./gradlew :core:designsystem:verifyRoborazziDebug  # Screenshot-Gate: MUSS vor `test` laufen (A7/I-1)
 ./gradlew test               # Unit-Tests aller Module
 ./gradlew spotlessCheck      # Formatierung und Lint
 ./gradlew lintDebug          # Android-Lint (CI-Gate, Umbauplan Phase 11)
 ./gradlew detekt             # Detekt-Codeanalyse (CI-Gate, Umbauplan Phase 11)
+# Screenshot-Referenzen bewusst neu schreiben (nur nach beabsichtigtem Redesign):
+./gradlew :core:designsystem:recordRoborazziDebug
 
 # Performance (braucht Geraet/Emulator; siehe Schritt 21 oben):
 ./gradlew :app:generateBaselineProfile          # erzeugt app/src/release/generated/baselineProfiles/ (Root oder API 33+, Emulator mit aosp-Abbild)
@@ -186,3 +210,17 @@ Architekturtest (`:core:testing`) prueft diese Regeln bei jedem Testlauf.
 - Lizenzinventar in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)
 - Zeitpunkte als UTC-Epoch-Millis, Gewichte als ganze Millikilogramm (`Long`)
 - Keine Analytics, keine Telemetrie, kein Netzwerkzugriff; Auto Backup ist deaktiviert
+
+## Dokumentation
+
+D7 (2026-09-22): Die Plaene lagen im Repo-Root und sind jetzt unter `docs/`
+gebundelt; ein Link-Check (`tools/doku_links_check.py`) laeuft in der CI.
+
+| Einstieg | Inhalt |
+|---|---|
+| [`docs/plans/`](docs/plans/README.md) | Alle Plaene (lebend: `BAUPLAN_*`, Ausbauplaene; historische Entwuerfe) |
+| [`docs/adr/`](docs/adr/README.md) | ADR-Index: getroffene Entscheidungen mit Datum und Status |
+| [`docs/STATUS_FORTSCHRITT.md`](docs/STATUS_FORTSCHRITT.md) | Fortschrittsprotokoll je Arbeitspaket (Abschnitte A bis AZ) |
+| [`docs/ARCHITEKTURREGELN.md`](docs/ARCHITEKTURREGELN.md) | Verbindliche Schicht- und Abhaengigkeitsregeln |
+| [`docs/handoffs/`](docs/handoffs/README.md) | Archiv abgeschlossener Sitzungen (Vergangenheit) |
+| [`docs/HARDWARE_TESTPLAN.md`](docs/HARDWARE_TESTPLAN.md) | Geraetetests, die nicht in der CI laufen |

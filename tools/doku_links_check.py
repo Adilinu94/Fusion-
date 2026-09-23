@@ -13,6 +13,7 @@ Archive) duerfen sie behalten - sie beschreiben Vergangenheit.
 Exit-Code 0 = alles gruen, 1 = tote Links oder nummerierte Verweise.
 """
 import re
+import os
 import sys
 from pathlib import Path
 
@@ -29,6 +30,27 @@ NUMMER_RE = re.compile(r"\bAbschnitt\s+\d+(?:a|b)?\b", re.IGNORECASE)
 FENCE_RE = re.compile(r"```.*?```", re.DOTALL)
 CODE_SPAN_RE = re.compile(r"`[^`\n]*`")
 
+# A7/I-4: Inline-Code-Pfade wie `feature/player/.../Foo.kt:123` muessen auf
+# eine existierende Datei zeigen. Bewusst konservativ: nur bekannte
+# Quell-Endungen, nur Pfade mit Verzeichnisanteil oder bekanntem Wurzelordner,
+# keine Platzhalter (`...`, `<...>`, `*`).
+PATH_SPAN_RE = re.compile(
+    r"`([A-Za-z0-9_./-]+\.(?:kt|kts|py|md|xml|yml|yaml|json|toml))(?::\d+(?:-\d+)?)?`"
+)
+PATH_ROOTS = (
+    "app/",
+    "core/",
+    "data/",
+    "domain/",
+    "feature/",
+    "training-core/",
+    "tools/",
+    "docs/",
+    "gradle/",
+    ".github/",
+    "benchmarks/",
+)
+
 # Dateien aus dem DropSync-Ursprungsrepo, die hier bewusst nicht
 # gespiegelt sind (Kopf-Tabelle des Design-Dokuments).
 KNOWN_EXTERNAL = {
@@ -38,7 +60,45 @@ KNOWN_EXTERNAL = {
 
 
 def collect_md_files() -> list[Path]:
-    return [p for p in DOCS.rglob("*.md") if ARCHIVE not in p.parents]
+    """Alle lebenden Doku-Dateien: docs/ (ohne Archiv) plus Root-Markdown.
+
+    A7/I-4: Die Root-Plaene (README, VERBESSERUNGSPLAN, BAUPLAN, Handbuecher)
+    liefen bisher an keinem Check vorbei - genau dort lebten die toten
+    Verweise.
+    """
+    docs = [p for p in DOCS.rglob("*.md") if ARCHIVE not in p.parents]
+    root = [p for p in REPO.glob("*.md")]
+    return sorted(set(docs + root))
+
+
+_REPO_FILES: list[str] | None = None
+
+
+def repo_files() -> list[str]:
+    """Alle Repo-Dateien (ohne Build-/VCS-Ordner), einmalig gesammelt."""
+    global _REPO_FILES
+    if _REPO_FILES is None:
+        files: list[str] = []
+        for dirpath, dirnames, filenames in os.walk(REPO):
+            dirnames[:] = [d for d in dirnames if d not in {".git", ".gradle", "build", ".idea"}]
+            for name in filenames:
+                files.append(os.path.join(dirpath, name).replace("\\", "/"))
+        _REPO_FILES = files
+    return _REPO_FILES
+
+
+def path_exists(candidate: str) -> bool:
+    """Existiert der Pfad direkt oder als abgekuerzter Modulpfad?
+
+    Doku kuerzt oft ab: `data/playback/Foo.kt` meint
+    `data/playback/src/main/kotlin/com/dropsync/data/playback/Foo.kt`.
+    Ein Suffix-Vergleich auf Dateiebene deckt das ab, ohne echte tote
+    Verweise zu verstecken.
+    """
+    if (REPO / candidate).exists():
+        return True
+    needle = "/" + candidate.replace("\\", "/")
+    return any(p.endswith(needle) for p in repo_files())
 
 
 def strip_code_spans(text: str) -> str:
@@ -63,10 +123,11 @@ def main() -> int:
         anchors[str(f)] = set(re.findall(r'<a name="([^"]+)"></a>', text))
     # Pass 2: Verweise pruefen.
     for f in files:
-        text = strip_code_spans(f.read_text(encoding="utf-8"))
-        rel = str(f.relative_to(DOCS))
+        raw = f.read_text(encoding="utf-8")
+        text = strip_code_spans(raw)
+        rel = str(f.relative_to(REPO))
         # Zahl-Verweis-Regel nur fuer lebende Design-Plaene.
-        if rel.startswith("design"):
+        if rel.startswith("docs/design") or rel.startswith("design"):
             for m in NUMMER_RE.finditer(text):
                 errors.append(f"{rel}:{text[:m.start()].count(chr(10)) + 1}: "
                               f"Zahl-Verweis '{m.group(0)}' - bitte benannten Anker verwenden")
@@ -96,6 +157,22 @@ def main() -> int:
                     except ValueError:
                         shown = target_path.relative_to(REPO)
                     errors.append(f"{rel}: Anker '#{anchor}' fehlt in {shown}")
+        # A7/I-4: Inline-Code-Pfade der LEBENDEN Root-Doku muessen auf
+        # existierende Dateien zeigen. Historische docs/-Plaene duerfen
+        # geplante oder spaeter entfernte Pfade nennen (Vergangenheit).
+        # D7: Die Root-Plaene sind nach docs/plans/ gewandert und behalten
+        # die Pruefung dort (sonst haette der Umzug sie still abgeschwaecht).
+        if f.parent == REPO or f.parent == DOCS / "plans":
+            for m in PATH_SPAN_RE.finditer(raw):
+                candidate = m.group(1)
+                if "..." in candidate:
+                    continue
+                if not any(candidate.startswith(root) for root in PATH_ROOTS):
+                    continue
+                if Path(candidate).name in KNOWN_EXTERNAL:
+                    continue
+                if not path_exists(candidate):
+                    errors.append(f"{rel}: toter Inline-Pfad '{candidate}'")
     if errors:
         print("Doku-Link-Check FEHLGESCHLAGEN:")
         for e in errors:

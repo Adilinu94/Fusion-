@@ -65,3 +65,29 @@ Option 2.
 - **Queue-Modell.** Waehrend aktiver Automatik uebernimmt die App die Queue
   (Rest-Musik <-> Work-Musik); die vorherige Queue wird nicht
   wiederhergestellt. Bei `NORMAL` bleibt alles unveraendert.
+
+## Nachtrag 2026-09-19
+
+Drei Punkte stimmen nicht mehr mit dem Code ueberein bzw. wurden
+praezisiert (Befund DOC-2 und Entscheidungen vom 19.09.2026):
+
+1. **Crossfade-Pfad.** Dieser ADR beschreibt
+   `PlaybackRepository.crossfadeTo` und `ACTION_CROSSFADE_TO`. Nach der
+   ADR-Konsolidierung (README Schritt 18) existiert kein
+   `CrossfadeController` mehr; der Code wechselt hart ueber
+   `playSongAt`/`ACTION_PLAY_SONG_AT` (`PlaybackRepositoryImpl.kt:136`,
+   `RestMusicCoordinator.kt:191`). **ADR-0022** beschreibt, wie der
+   ueberlappende Crossfade stufenweise zurueckkommt (Stufe 1: Kurve um den
+   harten Wechsel; Stufe 2: Dual-Player mit vorgeschaltetem Spike).
+2. **Fallback-Kette.** "Keine 'Rest/Pause'-Playlist -> NORMAL-Verhalten"
+   ist durch die Nutzerentscheidung vom 19.09.2026 (Entscheidung 7)
+   bestaetigt. Die abweichende Formulierung im Fusionsdesign 7.1
+   (Fallback 3: "nur Ducking ohne Queue-Wechsel") ist dort am 21.09.2026
+   nachgezogen (A9): die Musik laeuft unveraendert weiter, kein
+   Queue-Wechsel, kein Ducking.
+3. **Vorrang des Nutzers.** Der ADR verlangt, dass ein manueller Eingriff
+   **und** ein pausierter/abgebrochener Rest die Landung abbrechen. Der
+   Code prueft heute nur `isPlaying` im Moment der Landung; Skip, Seek und
+   Queue-Wechsel waehrend des Plans brechen ihn nicht ab. Das ist als
+   **MP-5** im Verbesserungsplan erfasst und wird im DropSync-Koordinator
+   (P1) behoben.

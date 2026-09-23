@@ -1452,3 +1452,899 @@ angefasst (nur gelesen). Zwei Ausnahmen mit Testbeleg:
   Dependency-Bumps (coroutines/datastore/Detekt-Alphas) erst bei stabilen
   Releases; Rest aus `VERBESSERUNGSPLAN.md` (B-SEC/B-DB/B-ARCH/B-UI/B-DOC);
   Geraeteabnahmen (P4/Schritt 13).
+
+## AN. Verbesserungsanalyse 2026-09: Pakete 0-4 (Session: OpenCode)
+
+Quelle: `docs/VERBESSERUNGSANALYSE_2026-09.md` (Befunde + Pakete 0-4).
+Arbeitsstand: Working Tree, kein Commit (Adi entscheidet ueber Stueckelung).
+
+- [x] Paket 0: CI-Baseline-Gate warnend statt blockierend; Dezimalkomma-Fix
+  im TrainViewModel mit Gegenbeweis-Tests; Reduced-Motion-Local
+  (`LocalReducedMotion`) eingezogen und die Hauptanimationsorte umgestellt
+  (Nav-Pill inkl. Icon-Pop, Now-Playing-Slide, CountUpText, Buttons,
+  ProgressRing, MiniPlayer, Library-AnimatedContent, Onboarding); das
+  Dashboard-Duplikat (eigene Settings-Abfrage) entfernt.
+- [x] Paket 1: `signingConfig` (keystore.properties/Env-Vars, in
+  `.gitignore`), `gradle/verification-metadata.xml` (sha256) inkl.
+  Nachtrag fuer spotless/detekt, Poppins-OFL als
+  `core/designsystem/POPLINS_OFL.txt`; Lint auf 0 Warnungen mit
+  `warningsAsErrors` (`app/lint.xml` dokumentiert ObsoleteSdkInt,
+  mipmap-anydpi-v26 bleibt wegen v31-Splash); erste `:app`-Unit-Tests
+  (`OnboardingViewModelTest`, `NavigationRoutesTest` inkl.
+  `calibrationRoute`-Extraktion) und CI-Schritt auf
+  `:benchmarks:assembleBenchmarkRelease` umgestellt (Check
+  `checkTestedAppObfuscation` dokumentiert deaktiviert:
+  self-instrumenting).
+- [x] Paket 1.7: DataStore-Korruption zentral
+  (`createResilientPreferencesDataStore` in `:core:common`) plus
+  CorruptionHandler in allen 15 Stores; Listener-Reconnect-Fix in
+  `PlaybackRepositoryImpl` (Listener folgt der Player-Instanz);
+  `AudioSessionId`-Listener statt einmaligem Lesen.
+- [x] Paket 2: Bit-Perfect verdrahtet (`setPreferredMixerAttributes`/
+  `clear` fuer USB ab API 34, `floatOutput` aus der Config,
+  Service-Neustart bei Wechsel, ehrlicher UI-Text); ReplayGain als Option
+  (`DspConfig.replayGainEnabled`, Persistenz, SwitchRow, Gain pro
+  Titelwechsel aus `integratedLufs`, Referenz -18 LUFS, Preamp-Knoten,
+  unabhaengig von `config.enabled`). Crossfade (2.9) bewusst offen
+  gelassen (Dual-Player = eigenes Feature, Entfernen invasiv; Entscheidung
+  dokumentiert). 2.11 mediaui: ADR-0020 entscheidet bereits (kein Wrapper).
+- [x] Paket 3.12: FTS-Suche verdrahtet (Kategorie-Suche nutzt
+  `searchResults`, geschnitten auf die Kategorie; Index-Rebuild in der
+  Scan-Transaktion statt je Query).
+- [x] Paket 3.13: Playlist-Duplikat-Schutz (`addToPlaylist` ueberspringt
+  bereits enthaltene Titel, Test) + Snackbar-Meldung; Import-Verstoesse
+  einzeln in den Einstellungen (max. 5 + Summe); SAF-Ordnerscan und
+  M3U-Import als UI-Einstieg (Picker, persistente URI-Rechte,
+  Ergebnis-Snackbars).
+- [x] Paket 3.14: Drop-Auto verdrahtet (`DropRestRequestBus` vom
+  TrainViewModel, 2 neue Tests), Log-Fehler als Snackbar; echte PRs aus
+  `personal_records` im Dashboard (DAO/Repo/Domain erweitert,
+  `ProgressFeedUiState.newPrRecords`, Tile 5 mit PR-Art und Wert,
+  3 Tests). Gewichtsschritt/paging bleiben als Rest offen (siehe unten).
+- [x] Paket 3.15: Timer-Presets aus den Einstellungen (ViewModel-StateFlow,
+  UI nutzt sie), POST_NOTIFICATIONS-Anfrage in der Timer-Route;
+  Persistenz-Drosselung war bereits umgesetzt.
+- [x] Paket 4.16: Compose BOM 2026.06.01 -> 2026.08.00 (Compose 1.12.0,
+  material3 1.4.0; Versionsverifikation ueber Google Maven) inkl.
+  aktualisierter Verifikationsmetadaten und gruener Screenshot-Gates;
+  Predictive Back der Bibliothek auf `DeferredAnimatedContent`
+  umgestellt (`DeferredTransitionState` + `mutableTransformSpec`);
+  `SideEffect` mit Keys fuer nicht-suspendierende Effekte
+  (LibraryScreen/NowPlayingScreen/LibraryContent/CategoryScreens).
+  M3-Expressive-Recherche verifiziert: 1.5.0 existiert nur als Alpha
+  (alpha28) -> bewusst NICHT umgestellt (Kommentar in libs.versions.toml).
+- [x] Paket 4.18 (Teil): `FlowRepTopBar` als einheitliches App-Bar-Muster
+  (Timer, Audio, Alle Saetze, Uebungsbibliothek migriert);
+  `FlowRepEmptyState`/`FlowRepErrorState` im Designsystem, verdrahtet in
+  Library-EmptyHint, ExerciseLibrary und AllSets; Radius-Tokens waren
+  bereits konsolidiert. Orphaned Komponenten: `DropRestCard` im
+  NowPlaying verdrahtet (nur sichtbar wenn Rest laeuft/startbar),
+  `MiniWaveform` in den Library-Listen wieder verdrahtet (war seit dem
+  Poweramp-Umbau tot, inkl. `currentProgress`/`waveformFor`),
+  `LineChart` und `FlowRepMetricCard` entfernt (keine Referenzen);
+  `BrandCard`/`BrandButtonSecondary` bleiben (Screenshot-Galerie).
+
+### Bewusst offen / Rest
+
+- [ ] Paket 2.9 Crossfade: Entscheidung Dual-Player vs. Entfernen noetig
+  (Entfernen betrifft 5 Module, Verdrahten ist ein eigenes Feature).
+- [ ] Paket 3.14-Rest: Session-/Routinen-UI, Paging fuer grosse
+  Bibliotheken, Gewichtsschritt-Feinschliff (1,25/2,5) — eigene Pakete.
+- [ ] Paket 4.17 Material 3 Expressive: erst nach stabilem material3 1.5.0
+  (aktuell nur Alphas), erfordert neue ADR.
+- [ ] Paket 4.19: build-logic-Convention-Plugins, Detekt-Baseline-Abbau,
+  Doku-Konsolidierung, `:app`-Testausbau — offen.
+- [ ] Geraeteabnahmen (Bit-Perfect nachweisbar, Crossfade hoerbar/entfernt,
+  200-%-Lauf) bleiben laut Analyse Abschnitt 6 manuell.
+
+### Gates dieser Session
+
+- [x] `test` (alle Module), `spotlessCheck`, `detekt`,
+  `:app:lintDebug` (0 Warnungen, warningsAsErrors), `:app:assembleDebug`,
+  `:app:assembleRelease` (R8), `:benchmarks:assembleBenchmarkRelease`,
+  `:core:designsystem:verifyRoborazziDebug` - alle gruen.
+
+## AO. Verbesserungsplan MusicPlayer/DropSync + Rep-Zaehlung: Entscheidungen, Recherche, P0 (2026-09-19, Session: OpenCode)
+
+Anlass: Adi hat einen neuen, fokussierten Verbesserungsplan fuer die zwei
+Schwerpunkte angefordert (MusicPlayer/DropSync und BLE-/IMU-Rep-Zaehlung),
+drei Recherche-Werkzeuge zum Testen gegeben und danach alle offenen Punkte
+per Entscheidungs-Wizard beantwortet.
+
+**Artefakte:**
+
+- `VERBESSERUNGSPLAN_MUSIC_DROPSYNC_REPCOUNT.md` (Hauptplan, ~1.450
+  Zeilen): 16 MusicPlayer/DropSync-Befunde (MP-1..MP-16), 22
+  Rep-Counting-Befunde (RC-1..RC-22), Abgleich mit der bestehenden
+  Tiefenrecherche (Anhang B), Entscheidungen (Anhang A), Phasen P0-P3.
+- `docs/research/2026-09-19-pausen-benachrichtigung-service-typ.md`,
+  `docs/research/2026-09-19-rep-counting-per-uebung.md`,
+  `docs/research/2026-09-19-downbeat-offset.md`.
+- ADR-0022 (Crossfade stufenweise, Spike vor Bau), ADR-0023
+  (Sensordaten nur in Debug-Builds), ADR-0012-Nachtrag (Crossfade-Pfad,
+  Fallback, Nutzer-Vorrang).
+
+**Werkzeugtest (reproduzierbar):** hyperresearch (venv, 1242 Tests/1
+Umgebungsfehler, `scholar search` ohne Key, Vault-Fetch), OpenResearch
+`orx` (Windows-CLI, `paper --full` 52 KB), Agent-Reach (589 Tests/3
+Umgebungsfehler, `doctor` 3/16, GitHub-Kanal via `gh`). Details in
+Abschnitt 0.2 des Plans.
+
+**Entscheidungen (19.09.2026):** Drop-Auto = Musik landet am Pausenende
+(Rest behaelt die Dauer); Recorder nur Debug; echter Crossfade gewuenscht
+(ADR-0022); Messungen vorerst zurueckgestellt; Sensor am Handgelenk;
+keine Rest-Playlist = nichts tun; Pausen-Notification mit Abbrechen;
+Gerätetaste = Satz starten/stoppen (von der Umsetzung festgelegt, P3).
+
+**P0 umgesetzt (Code, Arbeitsbaum):**
+
+- [x] **MP-1 Drop-Auto Ende-zu-Ende.** Der `RestMusicCoordinator`
+  (app-weit) konsumiert jetzt `DropRestRequestBus`; die Anforderung wirkt
+  fuer genau eine Pause (auch bei Verhalten NORMAL), plant bei laufender
+  Pause sofort und faellt ohne Work-Drop auf die Rest-Playlist zurueck.
+  `DropRestViewModel` konsumiert den Bus nicht mehr (manuelle Aktion).
+  Drei neue Koordinator-Tests inkl. Fallback und "ohne Rest-Playlist
+  greift nichts"; `onRestBegin` bricht eine alte Landung ab.
+- [x] **RC-2 Recorder nur Debug.** `ShadowRecorderModule` ist ein
+  `@Provides`-Modul: `FLAG_DEBUGGABLE` -> echter Recorder, sonst NoOp;
+  reine Funktion `isRecordingEnabled` + Test. ADR-0023.
+- [x] **RC-4/MP-6 sichtbare Gruende.** `LiveCountPanel` zeigt den
+  fehlenden Start-Grund (keine Uebung / kein Profil) mit CTA in den
+  Kalibrier-Wizard; nach 0 erkannten Reps erscheint ein Hinweis
+  (`train_counted_zero_hint`); `+15 s` wird bei DROPSYNC nicht mehr
+  angeboten. Strings DE/EN ergaenzt.
+- [x] **MP-12 Sofortschutz.** `DropRestViewModel.onCleared` beendet einen
+  laufenden DROPSYNC-Timer; reine Entscheidung
+  `shouldCancelOnCleared` + Test. Volle Loesung (Foreground-Service) in P1.
+
+**Verifikation dieser Session:** `:feature:player:testDebugUnitTest` und
+`:feature:workout:testDebugUnitTest` gruen (inkl. neuer Tests),
+`:app:assembleDebug` gruen, `spotlessCheck` gruen (nur die neue
+Modul-Datei war betroffen, keine fremden Dateien). Kein Commit - der
+Arbeitsbaum enthaelt weiterhin fremde, unfertige Aenderungen.
+
+**Offen aus diesem Block:** DropRest-Foreground-Service und
+Koordinator-Umzug des Monitors (P1-8); Crossfade-Spike (ADR-0022);
+Gate-11b-Kampagne durch Adi (Aufnahmen); Rest der Phasen P1-P3 im Plan.
+
+## AP. P1: DropSync-Koordinator, PlayerMessage-Landung, Foreground-Service, Off-main (2026-09-19, Session: OpenCode)
+
+P1 des Verbesserungsplans ist weitgehend umgesetzt (Arbeitsbaum, kein
+Commit). Schwerpunkt: ein Zustand statt drei halber Wege, Landung auf der
+Audio-Uhr, DropRest ueberlebt den Screen, Zaehlpipeline off-main.
+
+**Neue Bausteine (feature/player):**
+
+- `DropSyncCoordinator` (App-Scope, ersetzt `RestMusicCoordinator`):
+  beobachtet TimerEngine + Verhalten + Playback-Ereignisse, haelt den
+  einen `StateFlow<DropSyncState>` (Off/Planned/Armed/Landed/BestEffort/
+  Overridden/Failed/Cancelled), erkennt Nutzer-Vorrang (Pause, Seek,
+  Titel-, Queue-Wechsel) und rechnet Restzeit-Aenderungen ein.
+- `DropSyncPlanner`: Work-Kandidaten (MP-14: **alle** aktiven Marker je
+  Titel), Planner-Aufruf, Latenz + `crossfadeMs` aus der DSP-Konfiguration
+  (D9), Konfidenz (EXACT/DEGRADED).
+- `DropRestSessionMonitor`: app-weiter Monitor des manuellen DropRest
+  (Restzeit-Projektion, Cues, Abbruch bei Songwechsel/Seek/Pause) — der
+  Screen-Wechsel toetet die Sitzung nicht mehr (MP-12).
+- `DropLandingArmer` (data/playback): Media3-`PlayerMessage` an der
+  Wiedergabeposition (MP-3/D3), Stufe-1-Fade um den harten Wechsel
+  (Equal-Power-Kurven auf `Player.volume`, Mikro-Rampe), Watchdog mit
+  sichtbarem `BestEffort(WATCHDOG)`.
+
+**Domain/Ports:** `DropSyncState` + Enums (`domain/timer`),
+`DropLandingEvent` + `PlaybackRepository.armLanding/cancelLanding/
+landingEvents` (`domain/playback`), `RestMusicSettingsRepository.
+dropAutoEnabled` (Default an, MP-13).
+
+**Service/UI:** `DropRestViewModel` startet den `TimerService`
+(P1-8); der Service zeigt fuer DROPSYNC den Titel "DropSync" mit
+"Plan abbrechen"/"Pause beenden" statt `+15 s`. Der Train-Schalter ist
+persistiert (MP-13).
+
+**Off-main:** `ActiveSetController` verarbeitet Samples auf
+`workerDispatcher` (RC-1, Test uebergibt den Test-Dispatcher);
+`CalibrationRefiner.refine` laeuft auf `dispatchers.default` (RC-6);
+`recentDiffs` ist nach `exerciseId:deviceId` geschluesselt (RC-13);
+Waveform wird im Frame-Takt (33 ms) veroeffentlicht (RC-11).
+
+**Tests:** `DropSyncCoordinatorTest` (18 Faelle: Queue/Ducking, Armierung
+mit Latenz/Crossfade/mehreren Markern, Landed, Watchdog-Fallback,
+Best-Effort-Fallback, Override durch Pause, NORMAL, Pausenende, `+15 s`,
+Pause/Resume, Drop-Auto inkl. Fallbacks, app-weiter DropRest-Monitor);
+Fakes in `:core:testing` (`FakeRestMusicSettingsRepository`).
+`ActiveSetControllerTest` nutzt den RC-1-Dispatcher.
+
+**Verifikation:** `:feature:player`, `:feature:workout`,
+`:feature:settings`, `:data:playback`, `:data:timer`, `:domain:sensor`
+Tests gruen; `:app:assembleDebug` gruen; `detekt` gruen (Koordinator
+dafuer in Planner + Monitor gesplittet, LargeClass); `spotlessApply`
+lief nur ueber die eigenen Dateien (per Zeitstempel geprueft).
+
+**Offen aus diesem Block:** P1-10 (Rest-Console als Hero, Zustandsanzeige
+im Train-Tab), Sample-Fan-out (RC-10) + Dispatcher-Assert-Test, Preload
+(`setPreloadConfiguration`) am Armer, Crossfade-Spike (ADR-0022),
+Gate-11b-Kampagne durch Adi.
+
+## AQ. P1-Abschluss: Sample-Fan-out, Hero-Konsole, Lern-Ereignis (2026-09-19, Session: OpenCode)
+
+Die in AP offen gebliebenen P1-Punkte sind umgesetzt (Arbeitsbaum, kein
+Commit).
+
+**RC-10 Sample-Fan-out (`data/sensor`):** `SensorSampleFanout` ist der eine
+Verteiler vor allen Verbrauchern (Waveform, `ActiveSetController`,
+Kalibrierung). Statt stillem `tryEmit`-Verlust: Ringpuffer mit DROP_OLDEST
+(das AELTESTE faellt, die Gegenwart gewinnt) und exaktem Drop-Zaehler;
+ohne Abonnenten wird nichts gepuffert und nichts gezaehlt. Der Zaehler
+liegt als `SensorHealth.samplesDropped` vor; die Anzeige folgt mit dem
+Diagnose-Panel (P2-17). `BleSensorProvider` speist den Fan-out aus dem
+JitterBuffer und setzt ihn je Stream-Neustart zurueck.
+
+**RC-1 Dispatcher-Assert-Test:** `ActiveSetControllerTest` belegt per
+Thread-Namen, dass der Sample-Collector auf dem uebergebenen
+Worker-Dispatcher laeuft.
+
+**P1-10 Hero-Konsole + Plan-Abbruch:** Die `RestConsole` zeigt
+`Track · Marker · Ziel in mm:ss` (Landung am Pausenende: tickende
+Timer-Restzeit; DropRest: Marker-Projektion des Monitors), Statuschips
+`Audio vorbereitet` (nur echte Armierung, neues `Armed.audioPrepared`) und
+`Timing stabil` (nur EXACT), bei DROPSYNC `Plan abbrechen`
+(`DropSyncStateSource.cancelPlan()` nimmt Landung/Queue/Ducking zurueck,
+die Pause laeuft weiter) und nach der Landung ein kurzes
+`GO`/`Drop gelandet`-Overlay. Mini-Player-Badge und Next-Sperre waren
+bereits umgesetzt. Tests: `DropTargetRemainingTest` (feature/workout) +
+zwei Koordinator-Faelle fuer `cancelPlan`.
+
+**P1-12 Lern-Ereignis (RC-6):** `ProfileLearningEvent`
+(`Refined(revision)` / `RolledBack` / `SkippedImplausible` /
+`SkippedUnreliable`) als Einmal-Ereignis aus `learnFromTrace`; die
+Train-UI zeigt es als Snackbar. Vorher landete jedes Ergebnis nur im Log.
+Test: unplausible Bestaetigung (Signal 2 Reps, Eingabe 5) wird sichtbar
+gemeldet.
+
+**Preload (P1-6) bewusst offen:** Media3-1.11-`setPreloadConfiguration`
+laedt nur Queue-Items NACH dem aktuellen; unser Design setzt den
+Work-Titel erst bei der Landung (`setMediaItem`). Preload braucht damit
+einen sichtbaren Queue-Eintrag oder den zweiten Player (Stufe 2,
+ADR-0022) plus Geraete-Beleg — zurueckgestellt.
+
+**Verifikation dieser Session:** `spotlessApply` + `spotlessCheck` gruen;
+`:feature:player`, `:feature:workout`, `:domain:sensor`, `:data:sensor`
+Tests gruen (inkl. neuer Tests); `detekt` gruen; `:app:assembleDebug`
+gruen; `doku_links_check.py` gruen. Kein Commit — der Arbeitsbaum
+enthaelt weiterhin fremde, unfertige Aenderungen.
+
+**Offen aus diesem Block:** Now-Playing-Statuszeile unter der Waveform
+(MP-7-Detail); Preload (Messpunkt); Crossfade-Spike (ADR-0022);
+Gate-11b-Kampagne durch Adi.
+
+## AR. P2-17: Diagnose-Panel + Satz-Report, Ablehnungs-Mechanismen (2026-09-20, Session: OpenCode)
+
+RC-7 und RC-17 sind umgesetzt (Arbeitsbaum, kein Commit).
+
+**RC-17 Ablehnungs-Mechanismen:** Neues Enum `RepRejectionReason`
+(ACCEL_VOTING, TEMPLATE_MATCH, PHASE_VALIDATION, QUALITY);
+`RepResult.rejection` traegt die Klassifizierung, der Freitext
+`rejectionReason` bleibt fuer Details. Die Pipeline zaehlt je Satz
+(`rejectionCountsSnapshot`), `reset()` leert die Zaehler. Die
+`set`-Zeile des Shadow-Recorders traegt jetzt `rejections`
+(Mechanismus -> Anzahl), damit "N Abweichungen" im Corpus in ihre
+Ursachen zerfallen.
+
+**RC-7 Diagnose-Snapshot + Satz-Report:** `SetDiagnostics` (erkannt,
+Frames, Gaps, ZUPT, gemessene Rate, Signalqualitaet, Ablehnungen,
+Plausibilitaet) wird in `ActiveSetController.stop()` eingefroren
+(`lastDiagnostics`, geleert bei `start`/`abort`) und in den `SetTrace`
+uebernommen. Nach `stopCountedSet()` zeigt die Train-UI eine Snackbar
+(`Satz beendet: N erkannt · Rate R Hz · G Aussetzer · Z ZuPT ·
+K abgelehnt (Mechanismen)`); derselbe Snapshot geht in den
+`SetDiagnosticsLog` (in-memory, ueberlebt ViewModel-Grenzen).
+
+**Diagnose-Panel in den Einstellungen:** Neuer Entwickler-Schalter
+(`DebugSettingsRepository` in DataStore, Default aus) blendet
+Sensor-Live-Werte (Verbindung, Transport Notify/Poll, MTU, Drops, Gaps;
+`SensorHealth` um `transport`/`negotiatedMtu` erweitert) und den letzten
+Satz-Report ein (RC-7: "hinter Entwickler-Schalter").
+
+**Befund aus den Tests:** Bei aktivem ZUPT (Default) erreichen abgelehnte
+Kandidaten `decide()` oft gar nicht — der Ruhe-Eintritt verwirft sie
+vorher als `zuptAbortedPending`. Der Report zeigt beide Toepfe getrennt;
+wer "verlorene Reps" analysiert, muss zuerst hier schauen. Die
+Klassifizierungs-Tests schalten ZUPT deshalb gezielt ab.
+
+**Tests:** `ExerciseEnginePipelineIsolationTest` (3 Klassifizierungs-
+Faelle), `ActiveSetControllerTest` (4 Snapshot-Faelle),
+`TrainViewModelTest` (Report nach Stop + Log), `SetReportTextTest` (3),
+`JsonlShadowSessionRecorderTest` (+2), `SettingsViewModelTest` (+3),
+`DebugSettingsStoreTest` (2).
+
+**Verifikation:** `:domain:sensor`, `:data:sensor`, `:data:settings`,
+`:feature:workout`, `:feature:settings` Tests gruen. Kein Commit — der
+Arbeitsbaum enthaelt weiterhin fremde, unfertige Aenderungen.
+
+## AS. P2-18: Live-vs-Replay-Vergleich + CI-Regressionsgate (2026-09-20, Session: OpenCode)
+
+RC-16 ist umgesetzt (Arbeitsbaum, kein Commit).
+
+**Live-Diagnose im JSONL:** Die `set`-Zeile traegt zusaetzlich zu
+`rejections` (P2-17) die Live-Diagnose (`framesProcessed`,
+`framesRejected`, `gaps`, `zuptUpdates`, `zuptAborted`, `rateHz`);
+Aufrufer ohne Diagnose schreiben unveraendert das Altformat.
+
+**Loader + Vergleich:** `CorpusLoader` liest die `set`-Zeilen und ordnet
+sie den Fenstern ueber den `setIndex` zu (nicht ueber die
+Listenposition). `CorpusSweepHarness.compareLiveVsReplay()` spielt jedes
+Fenster mit der Live-Config (Profil aus dem JSONL, profilgesteuertes
+Accel-Voting, ZUPT an) durch eine frische Pipeline und schreibt eine CSV
+mit beiden Spalten (`live_counted`/`replay_counted`/`delta`) plus
+Diagnose (Gaps, ZUPT, Ablehnungen, Rate) und einer `note`, die
+Abweichungen eingrenzt. `configAdjust` ist der Gegenbeweis-Hook: eine
+geaenderte Refraktaerzeit aendert nur den Replay-Count, nie den
+Live-Count (Test).
+
+**CI-Regressionsgate:** `CorpusRegressionGateTest` fixiert auf einem
+deterministischen Goldkorpus (3 Saetze, einer mit halber Rep am Ende)
+die Replay-Counts [2,3,2], delta 0, keine Gaps und die
+ZUPT-Verwurf-Diagnose (1 echter Verwurf im Artefakt-Satz, 0 in den
+sauberen; die halbe Rep erreicht `decide()` nicht). Der echte
+Gate-Korpus (Adis Kampagnen-Aufnahmen) kommt spaeter dazu; derselbe
+Mechanismus.
+
+**Befund + Fix (Zaehler-Ehrlichkeit):** Der Vergleich zeigte, dass
+`zuptAbortedPending` bisher JEDEN Ruhe-Eintritt zaehlte (saubere
+2-Rep-Saetze standen bei 3 statt 0). `RepCounter.abortPending()` gibt
+jetzt zurueck, ob wirklich ein Pending offen war; der Zaehler misst
+echte Verwuerfe. Der Satz-Report und die P2-17-Aussage ("verlorene Reps
+zuerst in `zuptAbortedPending` suchen") werden damit erst belastbar.
+
+**Tests:** `CorpusLiveComparisonTest` (4: beide Spalten, Gegenbeweis,
+Zuordnung ohne Fenster, Fenster ohne Profil), `CorpusRegressionGateTest`
+(1), `ExerciseEnginePipelineIsolationTest` (+1 Zaehler-Semantik),
+`JsonlShadowSessionRecorderTest` (+2 Diagnose-Format); Fixture
+`SyntheticCorpus` (geteilt mit dem Sweep-Test).
+
+**Verifikation:** `spotlessCheck`, `detekt` (0), `:domain:sensor` und
+`:feature:workout` Tests gruen, `:app:assembleDebug` gruen. Kein
+Commit — der Arbeitsbaum enthaelt weiterhin fremde, unfertige
+Aenderungen.
+
+## AT. P2-19: Kalibrier-Wizard 2.0 (2026-09-20, Session: OpenCode)
+
+RC-8 ist umgesetzt (Arbeitsbaum, kein Commit).
+
+**Stepper + Live-Rueckmeldung:** Der Wizard zeigt die fuenf Stufen als
+Stepper (Haekchen/aktuell) und waehrend der Sammel-Stufen das Live-Signal
+(dieselbe Waveform wie der Train-Tab, jetzt in `SensorWaveform.kt`) plus
+"Reps erkannt: n von Ziel". Die Schaetzung nutzt denselben Kantenzaehler
+wie die Auswertung (`CalibrationLiveEstimator`): Stufe A zaehlt
+Bewegungs-Bursts, Stufe B einen robusten Startwert (p10/p99), Stufe C die
+gelernte Config. "Weiter" ist erst bei erfuellter Stufe tappbar
+(Rest-Gate bzw. mindestens eine sichtbare Bewegung, `advanceEnabled`).
+
+**Wiederholen statt Sackgasse:** "Stufe wiederholen" leert den Puffer der
+aktuellen Stufe; `redoFrom()` springt aus dem Review zurueck in den 5er-
+oder Langsam-Satz und verwirft die abhaengigen Ergebnisse (Sweep, Theta,
+Langsam-Signal), behaelt aber Ruhe und Einzel-Rep. Der Wizard kann damit
+auf einen misslungenen Satz reagieren, ohne alles neu zu machen.
+
+**Review mit Fakten:** `CalibrationReview` traegt wiedergefundene Reps
+(5er- und Langsam-Satz), Streuung der Rep-Abstaende, Abstand der Schwelle
+zum Ruherauschen, Accel-Zweitkanal an/aus und die erwartete Rep-Dauer.
+Die UI formuliert daraus Saetze ("4 von 5 Wiederholungen im Satz
+wiedergefunden", "Schwelle liegt nur 2.1-fach ueber dem Ruherauschen")
+und warnt bei Abweichungen; ohne Ergebnis bietet das Review direkt
+"5er-Satz wiederholen" an.
+
+**Einstieg an der Uebungszeile:** Unter der Chip-Reihe steht der
+Kalibrier-Status der gewaehlten Uebung mit Kurz-Kennung des Chips
+("Kalibriert fuer FlowRep #EEFF — neu kalibrieren" bzw. "noch nicht
+kalibriert"); der Einstieg fuehrt direkt in den Wizard.
+
+**Refactor (detekt-getrieben):** `zaehleEdge`/`RepMark` sind jetzt eine
+Top-Level-Funktion in `CalibrationCounting.kt` (Sprungbefehle entfernt),
+die Live-Schaetzung liegt in `CalibrationLiveEstimator.kt`; die
+`CalibrationController`-Klasse bleibt damit unter der
+LargeClass-Schwelle, die Baseline-Zeile fuer den alten Sprung-Loop ist
+entfernt.
+
+**Tests:** `CalibrationControllerWizardTest` +5 (Live-Schaetzung je
+Stufe, repeatStage, redoFrom inkl. Neurechnung, Verbot von Vorwaerts-/
+Review-Spruengen, Review-Fakten), `CalibrationViewModelTest` +3
+(Advance-Regel, repeatStage/redoStage, Review + Stufen-Ziel),
+`ShortDeviceLabelTest` (2).
+
+**Verifikation:** `spotlessCheck`, `detekt` (0), `:domain:sensor`
+(147 Tests) und `:feature:workout` (60 Tests) gruen, `:app:assembleDebug`
+gruen. Kein Commit.
+
+## AU. P2-20: Train-Konsole — Rep-Hero mit Quelle, Sensor-Kopfzeile, eine Primaeraktion (2026-09-20, Session: OpenCode)
+
+RC-5/A.4 ist umgesetzt (Arbeitsbaum, kein Commit).
+
+**Rep-Hero mit Quelle:** Die grosse Rep-Zahl traegt darunter ihre Herkunft
+(UI-Handbuch 7.4): `AUTO` ("Sensor verbunden"), `MANUELL KORRIGIERT` mit
+Original-Zaehlstand ("Sensor erkannte 7"), `MANUELL` bzw. `SENSOR GETRENNT`
+("Reps per +/- weiter", Design 8.1). Die Ableitung ist eine reine Funktion
+(`repsSourceOf`), der Zustand liegt im `RepSourceTracker`; `+/-` bleibt der
+schnelle Korrekturpfad.
+
+**Ein Fluss statt zwei Karten:** Start -> Countdown -> grosse Live-Zahl ->
+Stopp -> Korrektur -> Satz fertig laufen alle im Hero: Der Live-Zaehler ist
+aus der Sensor-Karte in die Rep-Sektion gezogen, die Waveform sitzt direkt
+unter der Zahl (Design 8.1). Waehrend der Zaehlung ist "Stopp" die
+Primaeraktion, sonst "Satz fertig"; der Start der Live-Zaehlung ist eine
+Ghost-Aktion, der Kalibrier-Einstieg bleibt an der Uebungszeile (RC-8).
+
+**Sensor-Kopfzeile:** Statt einer konkurrierenden Karte unter der Eingabe
+gibt es eine Kopfzeile ueber der Konsole: Chip/Status, Qualitaet ("Signal
+ok/schwach/unzuverlaessig") und Puls; der Fehlertext steht direkt unter dem
+Chip. Der doppelte "Kalibrieren"-Knopf entfaellt (der Einstieg ist die
+Uebungszeile).
+
+**Konsolen-Modus:** `WorkoutConsoleMode` (IDLE / SET_ENTRY / REST_RUNNING /
+GO_CUE) ersetzt die if/else-Kette in `TrainScreen`. `EXERCISE_DONE` fehlt
+bewusst: Die App kennt keinen Session-Abschluss (Umbauhandbuch 24.1),
+"Uebung abschliessen" fuehrt zurueck zur Uebungszeile (IDLE).
+
+**Refactor (detekt-getrieben):** `RepSourceTracker` haelt Zaehlstand und
+Sensorabriss, damit `TrainViewModel` unter der LargeClass-Schwelle bleibt;
+die neuen ViewModel-Tests liegen in `TrainViewModelRepSourceTest` (gleiche
+Regel wie beim Satz-Report-Test).
+
+**Tests:** `WorkoutConsoleStateTest` (11: Modus- und Quellen-Ableitung),
+`TrainViewModelRepSourceTest` (+5: AUTO, KORRIGIERT, MANUELL, Reset nach
+dem Loggen, SENSOR GETRENNT).
+
+**Verifikation:** `spotlessCheck`, `detekt` (0), `:domain:sensor`
+(147 Tests) und `:feature:workout` (76 Tests) gruen, `:app:assembleDebug`
+gruen. Kein Commit.
+
+## AV. P2-21: Now-Playing als Drop-Editor — Marker-Sheet, Legende, Statuszeile (2026-09-20, Session: OpenCode)
+
+MP-7/A.4 ist umgesetzt (Arbeitsbaum, kein Commit).
+
+**Marker-Tap-Sheet:** Tap oder Langdruck AUF einem Marker oeffnet das
+Bottom-Sheet (UI-Handbuch 14.4/14.5): Label, Zeit mit Millisekunden
+("01:18.420"), Status-Chip (Vorschlag/Bestaetigt automatisch/Manuell/
+Bestaetigt) plus "Aktives Ziel". Aktionen: "Ab Marker anhoeren" (Seek),
+Feinjustierung `-100/-10/+10/+100 ms` mit erhaltener Originalposition
+(`MarkerEditState`, "Zurueck auf Original" nur bei Abweichung), "Als
+DropSync-Ziel waehlen"/"Ziel entfernen", "Bestaetigen" fuer Vorschlaege,
+"Umbenennen" (neue `MarkerRepository.renameMarker`) und "Loeschen" mit
+Undo-Snackbar. Der Langdruck daneben setzt weiter einen neuen Marker; das
+Sofort-Loeschen per Langdruck entfaellt (UI-Handbuch 15.3).
+
+**Vorschlaege und Ziel auf der Waveform:** Unbestaetigte
+AUTO_DETECTED-Kandidaten des laufenden Songs zeichnen gedaempfte Ticks
+(gleiche Quelle wie die Review-Liste), das bevorzugte Ziel einen Diamanten
+ueber dem Tick. Die Legende unter der Waveform (`bestaetigt`, `Vorschlag`,
+`aktives Ziel`) ist als ganzer Satz fuer TalkBack verfuegbar.
+
+**"Ziel waehlen" wirkt real:** Das Ziel wird je Song persistiert
+(DataStore `DropTargetStore`, bewusst ohne Room-Migration) und der
+`DropSyncPlanner` bevorzugt es gegenueber der Naechster-Marker-Wahl SEINES
+Titels; die Titelwahl (kleinster Abstand zur Restzeit) bleibt unveraendert.
+Fehlt der Marker, greift die Automatik ohne Aufraeumen. Ein Vorschlag wird
+beim Zielsetzen bestaetigt.
+
+**DropSync-Statuszeile (MP-7-Detail):** Unter der Waveform in der Sprache
+der Konsole: `DROP BEREIT` + `"Track" · Drop 2 · Ziel in 01:27`, Countdown
+aus Plan-Deadline und monotoner Uhr (`DropStatusLine` als reine
+Ableitung), dazu `BEST EFFORT` und `MANUELL UEBERNOMMEN`; stumme Zustaende
+bleiben stumm. TalkBack hoert den ganzen Satz (UI-Handbuch 19.3).
+
+**Tests:** `NowPlayingDropStatusTest` (6), `MarkerEditStateTest` (4),
+`MarkerSheetFormatTest` (3), `DropTargetStoreTest` (2, Robolectric),
+`MarkerRepositoryImplTest` (+3 Umbenennen), `PlayerViewModelTest` (+7),
+`DropSyncCoordinatorTest` (+2 Ziel-Vorrang/Fallback).
+
+**Verifikation:** `spotlessCheck`, `detekt` (0), `:data:library`,
+`:feature:player`, `:feature:settings` und `:core:designsystem` gruen,
+`:app:assembleDebug` gruen. Kein Commit.
+
+## AW. Ausbauplan B5 + Tranche A: A1-A10 (2026-09-21, Session: OpenCode)
+
+Arbeitsbaum, kein Commit. Tranche A komplett umgesetzt; B5 als Vorzieher,
+weil der Join im `ActiveSetController` Vorbedingung fuer A1 war.
+
+**B5 (`ActiveSetController`):** `stop()`/`finishAndTakeTrace()` suspendieren;
+`cancelJobsAndJoin()` wartet den Sample-Collector wirklich ab (kooperatives
+`cancel()` allein reichte nicht); Phase wechselt VOR dem Join nach IDLE; die
+Plausibilitaet rechnet per `withContext(workerDispatcher)`; `abort()` bleibt
+bewusst synchron (KDoc). `TrainViewModel.stopCountedSet()` ist nur noch die
+UI-Fassade, `logSet` nimmt den Trace ueber `finishAndTakeTrace()`.
+
+**A1 (Undo/Haptik/PR):** Migration v11->v12
+(`personal_records.achieved_session_id` nullable, Table-Recreation),
+`PrRecord.achievedSessionId`; neuer `PersonalRecordRecomputer` (Union
+Cluster+Flat; ein Flat-Satz zaehlt als eigene Mini-Session
+`sessionId = -setId`) haengt an `WorkoutRepositoryImpl` UND an
+`FlatSetRepositoryImpl.logSet/deleteSet` (dieselbe Transaktion);
+Domain-Port `SetLogHaptics` + `AndroidSetLogHaptics`; neuer
+`SetLogController` (Logged/Undone/LogFailed), TrainViewModel mit
+`setLogEvents`/`undoLastSet()`/`clearUndo()`, Snackbar mit "Rueckgaengig";
+Strings `workout_set_saved`/`workout_set_undone`.
+
+**A2:** `DropRestSessionMonitor` stoppt bei PAUSED (und IDLE), statt die
+Pause weiterzuprojizieren.
+
+**A3:** `BatchDedupTracker` fuehrt ein 5-s-Fenster (`gapWindowBatches=63`);
+`SensorHealth.largestRecentGapMs` steuert die Qualitaet, Settings zeigt
+"Groesste Luecke (5 s)".
+
+**A4:** Shadow-Recorder-API suspend (Mutex + `Dispatchers.IO`); TrainViewModel
+startet die Session in einer Coroutine und beendet sie erst in `onCleared`
+(`closingScope`) — "Uebung abschliessen"/Disconnect beenden die Aufzeichnung
+nicht mehr.
+
+**A5/A6:** GoOverlay raeumt seinen Zustand im `finally`, Tap schliesst,
+LiveRegion; `nav_settings` de = "Einstellungen".
+
+**A7:** `tools/doku_links_check.py` prueft Root-Markdown und Inline-Code-Pfade
+(Suffix-Matching); tote Verweise gefixt; CI-Reihenfolge
+`:core:designsystem:verifyRoborazziDebug` VOR `./gradlew test` (I-1); README
+P2-Zeile ehrlich als "Arbeitsbaum, noch nicht eingecheckt" (I-2/I-3).
+
+**A8:** Tote Ressourcen entfernt (`QuickEqSheet`, `SignalProcessor`-Klasse,
+`TemplateExtractor` + 2 Tests, PlayerViewModel-DSP-Reste, Batterie-Lesepfad,
+`TimerWheelColumn.enabled`), 96 ungenutzte String-Keys aus beiden Locales;
+die live genutzten Norm-Helfer liegen jetzt in `SensorSampleMagnitudes.kt`.
+
+**A9:** `TimerSession`-KDoc geschaerft (DROPSYNC bewusst ohne Uhrstart);
+Fusionsdesign 7.1 an ADR-0012/Entscheidung 7 angeglichen.
+
+**A10 (PR-2, Auto-Drops beim Import):** Der Import-Bulk laeuft als EIN
+`AnalysisProfile.FULL`-Decode (`DeferredAnalysisScheduler.scheduleFullAnalysis`,
+WorkManager `track_analysis_<id>`, KEEP) statt der Kette
+WAVEFORM_ONLY -> MIX_METADATA: Waveform + Mix + Onset-Kandidaten in einem
+Durchgang — halbiert die Decodes pro importiertem Titel. Kandidatenzahl Top-3
+(`OnsetDetection.DEFAULT_MAX_CANDIDATES`; Erwartung "meist 2" plus Reserve);
+Scope alle neuen Titel (der Volldurchgang ist billiger als der alte
+Doppel-Decode, ein Playlist-Filter waere Kopplung ohne Gewinn); CPU/Batching
+unveraendert. Marker-Schreiben aus dem Worker in `OnsetCandidateWriter`
+extrahiert (ohne Hilt/WorkManager testbar). Bestands-Titel ohne Marker
+bekommen bewusst keine nachtraeglichen Kandidaten; der manuelle Weg
+("Drops automatisch erkennen") bleibt.
+
+**Wichtig fuer Tranche B:** A1 hat v11->v12 verbraucht — B4 (Downbeat)
+muss als v12->v13 geplant werden.
+
+**Verifikation:** `spotlessCheck` gruen, `detekt` 0 Befunde,
+`assembleDebug` gruen, `test` (alle Module) gruen. Neue/erweiterte Tests
+u. a. `OnsetCandidateWriterTest` (4), `TrackAnalysisPriorityPathTest`
+(+3 Importpfad), `OnsetDetectionTest` (+1 Default),
+`SetLogControllerTest` (8), `MigrationTest` v11->v12,
+`TrainViewModelShadowSessionTest`, `ActiveSetControllerStopTest` (5, aus
+`ActiveSetControllerTest` ausgezogen). `TrainViewModel` steht jetzt als
+kommentierter LargeClass-Eintrag in der detekt-Baseline (Wachstum durch
+A1/A4; die Extraktion der Kandidaten aus der Tiefendoku ist als eigene
+Arbeit vermerkt). Nebenbei zwei Testinfra-Flakes behoben:
+`OutputProfileControllerTest` wartet den letzten DataStore-Save-Through ab
+(uncaught exception im Folgetest), `ActiveSetControllerTest` geteilt
+(LargeClass-Grenze).
+
+## AX. Ausbauplan Tranche B (Rep-Zaehlqualitaet): B3, B1, B2, B6 (2026-09-21, Session: OpenCode)
+
+Arbeitsbaum, kein Commit. Reihenfolge nach der Tiefendoku (B5 war bereits
+fertig): B3 vor B1/B2 (replay-faehige Schwellen), B1 vor B2, B6 danach.
+**B4 (Downbeat + Snap) bleibt offen** — eigener Baustein, Migration
+v12->v13 (v12 durch A1 verbraucht), Analyzer + DB + Marker-Sheet.
+
+**B3 (RC-20, Profil-Schema v6):** `CalibrationProfile` um
+`templateThreshold = 0.7`, `minQualityScore = 0.55`, `dtwBand = 8` erweitert
+(hinten angehaengt, Position 16-18), `PROFILE_SCHEMA_VERSION = 6`. Codec
+liest v6/v5/v4; Altblobs werden mit exakt den bisherigen Code-Defaults
+hochgezogen (kein stiller Verhaltenswechsel), Validierung 0..1 fuer die
+Schwellen und 1..64 fuer `dtwBand`. `ActiveSetController.start()` und
+`CalibrationRefiner.revalidates()` reichen die Werte in die
+`ExerciseEngineConfig` durch; `CalibrationViewModel.confirmAndSave()` setzt
+sie explizit (Stufe 1: Transport, nicht gelernt). Recorder schreibt die drei
+Felder ins `set_window`; `CorpusFiles`/`CorpusSweepHarness` lesen sie
+(Altaufnahmen -> Defaults), `liveConfig`/`configFor` replizieren sie
+(baseline = Fenster), `SyntheticCorpus.setWindowLine` parametrisiert sie.
+
+**B1 (RC-18, einseitige Qualitaetsbewertung, Stufe 1):**
+`QualityScorer.oneSidedScore(ratio, fatigueIncreasesRatio)` — Ermuedung
+(Prominenz faellt, Dauer steigt) wird weit toleriert, Schwung eng;
+Richtung fuer Tempo invertiert, im Code kommentiert. **Abweichung von der
+Plan-Skizze:** Die Zahlen 0.45/0.20 woertlich waeren strenger als der
+Ist-Zustand (1.0) gewesen und haetten 19 Gates gebrochen (u. a.
+Golden-Corpus, Sweep, Live-vs-Replay, RepPipeline, Isolation, Refiner) —
+entgegen dem Planziel "lockert in der Ermuedungsrichtung". Sie sind deshalb
+als Deltas zur alten 1.0 gelesen: `fatigueTolerance = 1.45`,
+`suspiciousTolerance = 0.80` (Config + Sweep-`ParameterSet`). Neue Tests:
+`QualityScorerAsymmetryTest` (5), `RepCounterFatigueDriftTest` (2, 12-Rep-
+Driftsatz komplett + Referenzlauf 1.0/1.0 dokumentiert das Satzende-Delta).
+ADR-0024 schreibt die Entscheidung und die **Refraktaerzeit-Ausnahme**
+fest: Refraktaerzeit und Pending-Deckel bleiben am gleitenden Mittelwert,
+die einseitige Politik wirkt nur im Scorer.
+
+**B2 (RC-19, Autokorrelation als Quelle, Stufe 1):** `Math.round` ->
+`ceil` in `RepCountPlausibility` (der Kommentar sagte schon immer
+"aufrunden"); `check(..., hasLargeGap)` liefert bei einer grossen Luecke im
+Set bewusst INCONCLUSIVE (der Signalring hat keine Timestamps, die
+Zeitbasis waere still falsch — der Aufrufer kennt `largeGapCount`).
+Neuer Config-Seed `qualityDurationMs`: `ActiveSetController` merkt sich die
+gemessene Periode aus `lastPlausibility` (samt Uebung/Geraet) und seedet
+damit NUR die Qualitaets-Erwartung des naechsten Satzes (5.14);
+`finishAndTakeTrace()`/`abort(CLEARED)` loeschen die Periode nicht (sie
+gehoert zum abgeschlossenen Satz). Neue Tests: `QualityDurationSeedTest`,
+`ActiveSetControllerTest` (+3: naechster Satz erbt, anderes Geraet nicht,
+finishAndTakeTrace verwirft nicht), `RepCountPlausibilityTest` (+2).
+`TrainViewModelLearningEventTest` bekam eine eindeutig unplausible
+Korrektur (6 statt 5), weil die Schaetzung durch `ceil` naeher an
+plausiblen Eingaben liegt (Plan-Frage 3 war genau das Risiko).
+
+**B6 (RC-21, Template-Pool Admission-Margin, Variante 1):**
+`TemplateMatcher.addToPool(window, qualityScore)` nimmt nur Reps ab
+`admissionMinScore` auf; die Pipeline setzt
+`admissionMinScore = minQualityScore + templateAdmissionMargin`
+(Default 0.05, Config + Sweep). Das Kalibrier-Template laeuft weiter ueber
+`setTemplate` und ist nicht betroffen. DBA (Variante 2) bewusst nicht:
+das Auslaesekriterium ist die DTW-Streuung aus dem echten Corpus. Tests:
+`TemplateMatcherTest.pool admission rejects borderline rep`,
+`RepPipelineTest.eine schwache Rep fuellt den Pool nicht`.
+
+**Verifikation (2026-09-21, root):** `spotlessApply`/`spotlessCheck`,
+`detekt`, `assembleDebug`, `test` (alle Module) und `spotlessMiscCheck`
+gruen; `tools/doku_links_check.py` gruen (77 Dateien, ADR-0024 neu). Kein
+Golden-Corpus-Delta: die synthetischen Gates (`CorpusRegressionGateTest`,
+`CorpusSweepHarnessTest`, `CorpusLiveComparisonTest`,
+`CorpusReplayDeterminismTest`) halten ihre Baselines; die bindende Messung
+auf echten Aufnahmen folgt mit Gate 11b.
+
+## AY. Ausbauplan Tranche B komplett: B4 (Beat-Raster + Snap) und B7 (Fehler-/Lernsichtbarkeit) (2026-09-21, Session: OpenCode)
+
+Arbeitsbaum, kein Commit. **Tranche B ist damit abgeschlossen** (B1-B7).
+
+**B4 (RC-22/S-3, Beat-Raster-Offset):** `DownbeatAccumulator` in
+`:domain:audio` — Low-Pass 120 Hz (Biquad, Q 0.707), Huellkurve in 10-ms-
+Fenstern (gepuffert, weil das finale BPM erst am Ende des Ein-Pass-Decodes
+feststeht), Phasen-Faltung mit **48 Kandidaten** je Beat-Intervall, beste
+mittlere Low-Band-Energie gewinnt, Konfidenz = Ueberlegenheit gegen die
+beste Phase ausserhalb +/-4 Bins. Ohne messbaren Low-Band-Anteil (>= 5 %
+der Gesamtenergie) gibt es keine Aussage ("Stille vor Vermutung").
+**Abweichung von der Research-Skizze:** 4 Phasen haetten den Snap um bis zu
+einer Viertel-Beatperiode (117 ms bei 128 BPM) verschoben und damit das
+Abnahmekriterium "ein Marker, der ohne Snap richtig lag, wird nicht
+verschlechtert" verletzt; 48 Schritte entsprechen der Onset-Variante aus
+Umbauplan Phase 3.2. **Semantik:** Das ist die **Beat-Phase** (wo Kick/Bass
+sitzen), kein musikalischer Taktanfang (Umbauplan 3.2); die Feldnamen
+folgen dem Bauplan. **Konfidenz-Gate an der Leseseite** (Muster
+`MixConfidence`): Rohwerte bleiben in der DB, `DownbeatConfidence.
+acceptOffset` filtert; ADR-0025.
+
+Persistenz: `track_analysis.downbeat_offset_ms`/`downbeat_confidence`
+(Migration **v12->v13**, additiv nullable, Altzeilen bleiben NULL),
+`WaveformCodec.MIX_ANALYZER_VERSION` 1->2 — nur die Metadatenstufe wird neu
+berechnet, die Waveform bleibt gueltig (ADR-0015). Snap:
+`MarkerSnapping.snapToBeat(pos, bpm, downbeatOffsetMs)` rastet **nur mit
+gemessenem Offset** (`null` = kein Raster -> kein Snap), Fenster
+`min(250 ms, beatMs/2)`; das Sheet rastet automatisch beim Oeffnen (5.11),
+`MarkerEditState.snappedTo` behaelt das Original fuer "Zurueck auf
+Original", die Rastung wird wie jede Feinjustierung sofort uebernommen.
+Tests: `DownbeatAnalysisTest` (8 Faelle inkl. Gegenprobe und
+Phasen-Aufloesung), `MarkerSnappingTest` (+4), `MarkerEditStateTest` (+2),
+`PlayerViewModelTest` (+1), `TrackAnalysisConfidenceGateTest` (+2),
+`MigrationTest` (+1). Gefundener und behobener Fehler im eigenen Entwurf:
+der Low-Band-Anteil verglich RMS-Summen mit Energiesummen (Faktor
+`samplesPerWindow` zu klein) — der Anteils-Check fuehrt jetzt die
+Low-Band-Energie getrennt.
+
+**B7 (S-7/T-10, Fehler- und Lernsichtbarkeit):** Neues `TrainErrorEvent`
+(ExerciseCreationFailed, ProfileLoadFailed, LearningSaveFailed) als
+`Channel(BUFFERED)` + Snackbar im Train-Screen; ein Profil-Load-Failure ist
+nicht mehr von "nicht kalibriert" ununterscheidbar. Neues
+`ProfileLearningEvent.SkippedNotReproducible` fuer `refine == null` (vorher
+stumm). Lern-/Report-Events laufen jetzt ueber `Channel(BUFFERED)` statt
+`SharedFlow(extraBufferCapacity)` — Ereignisse ohne offenen Collector gehen
+nicht mehr verloren. `SensorHealth.deviceEventPollErrors` zaehlt die
+Geraete-Event-Poll-Fehler (der stumme `runCatching` ist ersetzt,
+`CancellationException` wird nicht mehr geschluckt) und ist im
+Diagnose-Panel sichtbar. Tests: `TrainViewModelErrorEventTest` (je Pfad
+ein Ereignis-Test; der Lern-Save-Fall nutzt ein invertiertes
+Kalibrier-Template: Live-Zaehlung 0, Refiner revalidiert 5, nur der Save
+scheitert), `TrainViewModelLearningEventTest` (+1).
+
+**Verifikation (2026-09-21, root):** `spotlessApply`/`spotlessCheck`,
+`detekt`, `assembleDebug`, `test` (alle Module) und `spotlessMiscCheck`
+gruen; `tools/doku_links_check.py` gruen (78 Dateien, ADR-0025 neu). Die
+Quellregel `ModuleDependencyRulesTest.cancellation wird nicht verschluckt`
+hat den neuen Catch in `BleSensorProvider` korrekt erzwungen (Guard direkt
+vor dem Exception-Catch). Schema-Export `13.json` liegt versionskontrolliert
+in `core/database/src/test/assets`. Bindende Belege offen: B4-Hoerprobe auf
+Adis Tracks (Gate 11b) fuer Offset-Treffer und Schwellen-Kalibrierung.
+
+## AZ. Ausbauplan Tranche D komplett: D1-D7 + Gesamtverifikation (2026-09-22, Session: OpenCode)
+
+**D1 (Screenshot-Gate + Feature-Screenshots):** Roborazzi-Gate fuer
+feature:workout und feature:player nachgezogen (`roborazzi { outputDir ... }`,
+Test-Dependencies, 4 neue Referenz-PNGs fuer Rest-Konsole und Now-Playing in
+dunkel/hell). Empirisch belegt: der normale `test`-Task dumpt nur nach
+build/intermediates, die Referenzen unter src/test/screenshots bleiben
+unberuehrt; das Gate wurde negativ bewiesen (getauschte Referenz ->
+`buttonsHell FAILED` / `restKonsoleNormal FAILED`), zwei unabhaengige
+Verify-Laeufe sind deterministisch. Das CI-Gate deckt jetzt designsystem,
+workout und player ab.
+
+**D2 (Detekt verschaerfen):** detekt war rot (10 Befunde). Test-Code fuer
+LargeClass/MatchingDeclarationName ausgenommen; produktiv behoben:
+`DropChain.plan` entzerrt (Helfer statt Komplexitaet 22), `NowPlayingScreen`
+(Undo-Snackbar ausgelagert), `DropSyncCoordinator.onPlaybackState`
+(`isUnexpectedSeek`), `LibraryViewModel` (neuer Baustein
+`LibraryMarkerReview`), Datei-Splits (`CoverArtLoader`, `TopLevelDestination`,
+`JacobiResult`). Baseline auf 23 Eintraege regeneriert; neue CI-Bremse
+`tools/detekt_baseline_count.py` (MAX_ENTRIES=23) haelt die Baseline klein -
+negativ verifiziert (neuer Smell ohne Baseline -> detekt rot; simuliertes
+Wachstum -> Bremse Exit 1).
+
+**D3 (Coverage):** Kover 0.9.9 im Root, Plugin nur fuer domain:*/data:*,
+Ratsche je Modul (`coverageFloors`) statt Einheits-60 % - begruendet, weil
+6 Module darunter liegen (data:playback 4,4 %). CI-Schritt `koverVerify`
+teilt sich die Test-Ausfuehrung mit dem Unit-Test-Schritt. Negativtest:
+minBound 99 % -> `:domain:timer:koverVerify` rot. Nebenbefund gefixt:
+die Test-Fakes in data:library/data:audio fehlten
+`observeSongsWithEnabledMarkers` (seit C4), 47+49 Tests wieder gruen.
+
+**D4 (Compose-UI-Tests, Welle 1):** 10 Robolectric-Compose-Tests in
+src/test: `RestConsoleBehaviorTest` (3: normale Pause, <60-s-Blockade,
+DROPSYNC-Kette ohne "+15 SECONDS"), `DropStatusRowTest` (4: Ready+A11y,
+Best-Effort, Overridden, PLAN_LOST+Dismiss), `LibraryDropSyncSectionTest`
+(3: Review-Aktionen, Dropsync-Karte, Detekt-CTA). Welle 2 offen
+(Train SET_ENTRY/Undo, Player Next/Details, Settings, Progress).
+
+**D5 (N+1/Indizes, Teilpaket A1-A4):** `getStats` als IN-Query,
+Playlist-Renumber als DELETE+Batch-Insert, Onset-Ersetzung in
+`@Transaction` (Rollback-Test), Index `song_markers(source,is_enabled)` mit
+Migration 13->14 und EXPLAIN-Nachweis (Filter/DELETE nutzen den Index, der
+Pending-JOIN nicht - im Test dokumentiert). A5-A8 offen.
+
+**D6 (Supply-Chain):** Dependabot (gradle + github-actions, woechentlich),
+wrapper-validation in beiden CI-Jobs, Wrapper-SHA256 gepinnt. Kritischer
+Fix: ein Doppelpunkt im D1-Step-Namen machte ci.yml ungueltig - behoben und
+per js-yaml validiert. Wichtig: `gradle/verification-metadata.xml` ist noch
+untracked und muss mitcommittet werden (Kover-Eintraege, sonst schlaegt das
+Gate in CI zu).
+
+**D7 (Doku-Struktur):** 15 Root-Plaene nach docs/plans/ (mit README),
+3 Handoffs nach docs/handoffs/, neuer ADR-Index (docs/adr/README.md),
+README-Abschnitt Dokumentation; `tools/doku_links_check.py` deckt
+docs/plans/ mit ab, alle relativen Links nachgezogen (81 Dateien gruen).
+
+**Abschlussverifikation (2026-09-22, root):** `spotlessCheck`, `detekt`,
+Screenshot-Gates (3 Module), `test` (alle Module), `:app:assembleDebug`,
+`koverVerify` und die drei Python-Gates gruen. Zwei Restbefunde behoben:
+`TrainViewModel._restPrefConfigured` ohne oeffentliche Entsprechung
+(ktlint backing-property-naming) umbenannt; Test-Fakes-Datei auf
+`FakeAudioEngineRepository.kt` umbenannt (ktlint filename). Die
+CRLF-Verstoesse im Arbeitsbaum (Windows-Checkout) sind per spotlessApply
+auf LF normalisiert. Offen: D4 Welle 2, D5 A5-A8, Gate-11b-Hoerprobe,
+E2/E3 geparkt.
+
+## BA. Ausbauplan Tranche D: D4 Welle 2 und D5 A5-A8 komplett (2026-09-22, Session: OpenCode)
+
+**D4 Welle 2 (21 Compose-Tests, alle gruen):** `SetEntryBehaviorTest` (5,
+feature:workout) pinnt SET_ENTRY (Uebung + genau eine Primaeraktion, Klick
+ruft onLogSet; gesperrt ohne Eingabe), IDLE (Platzhalter, bewusst keine
+Aktion) und den Undo-Pfad der Satz-Snackbar ("Set saved" + "Rueckgaengig"
+-> Undo, danach "Set removed"). `RestConsoleBehaviorTest` (+2, Welle 1
+hatte 3): das GO-Overlay erscheint nach der Landung, schliesst per Tap VOR
+dem 4-s-Selbstschluss (Testzeit-Messung) und traegt die Klick-Aktion
+selbst (A5/T-6). `NowPlayingBehaviorTest` (6, feature:player) pinnt: Next
+bleibt bedienbar und ruft den Skip-Pfad (C2/5.10 - die alte Idee "Details
+statt Next" ist damit endgueltig vom Tisch), Next ist ohne Folgetitel
+gesperrt; das Badge nennt den Plan mit Countdown und ist der
+Details-Einstieg, nennt die Kette (C16) und zeigt OVERRIDDEN/FAILED als
+Text. `MarkerSheetBehaviorTest` (5, feature:player) pinnt den
+Sheet-Inhalt: Vorschlag mit "Confirm" + Feinjustierung, "Back to
+original" nur bei Abweichung, Zielwahl/Loeschen, Ziel-Chip, Textliste mit
+Sprung zum Marker (C9). `SettingsSectionsTest` (1, feature:settings)
+erreicht alle acht Sektionen mit echtem SettingsViewModel+Fakes;
+`ProgressEmptyErrorTest` (2, feature:progress) prueft
+Onboarding-Leerzustand und Fehler+Retry (C6). Dafuer
+SetEntryHero/TrainEventSnackbars/EmptyConsoleHero/GoOverlay,
+PowerampModeRow/DropSyncBadgeChip (+ MarkerSheetContent als fensterloser
+Sheet-Inhalt) und ProgressDashboardContent internal; Compose-Test-Infra in
+feature:settings nachgezogen (robolectric, ui-test-junit4/-manifest, 2g
+Heap). Test-Fallstrick dokumentiert: mit `mainClock.autoAdvance = false`
+wird nach einem Klick nicht neu komponiert - Klick-Tests laufen mit der
+Standard-Uhr und messen die Testzeit, wenn ein Selbstschluss-Timer im
+Spiel ist.
+
+**D5 A5/A6 (Indizes, EXPLAIN-gemessen):** Der Migrationstest misst beide
+Zustaende auf einer v14-DB (400 Sessions, davon 2 ACTIVE; 3 Playlists mit
+je 200 Positionen; ANALYZE + Negativkontrolle): v14 Full-Scan bzw.
+Temp-B-Tree, v15 nutzt `index_workout_sessions_status` und
+`index_playlist_items_playlist_id_position` (Filter + JOIN) ohne
+Temp-B-Tree. Der einspaltige Playlist-Index ist ersetzt
+(Room-Validierung), Migration 14->15, Schema 15.json, DB-Version 15.
+
+**D5 A7 (Batch statt N+1):** `MarkerDao.getEnabledMarkersForSongs(songIds)`
+als IN-Query + `PlaylistDao.getSongsForLabelOnce(label)` als eine Abfrage
+fuer alle Playlists eines Labels; der Planner gruppiert in-memory
+(workCandidates und planChain teilen sich die Batch-Marker). Tests:
+Pausenbeginn laedt die Marker als EINE Batch-Abfrage
+(`batchCalls == [[20, 21]]`) und die Work-Titel als EINE Label-Abfrage;
+Replan nach +15 s laedt erneut (2 Batch-Aufrufe); songsForLabelOnce ist
+ein DAO-Aufruf; die Batch-Repository-Query liefert je Song nach Position.
+
+**D5 A8 (Gate-Polling entkoppelt):**
+`MarkerRepository.observeEnabledMarkersForSong(songId)` als Flow; das
+Drop-Rest-Gate kombiniert den 500-ms-Takt (nur snapshotNow, keine Query)
+mit dem Marker-Flow (ein Abo je Songwechsel; Room invalidiert bei
+Marker-Aenderungen). `DropRestViewModelTest` (2): ~5 Takte -> 1 Marker-Abo
+und >=5 Positions-Abtastungen; Songwechsel -> genau ein neues Abo.
+
+**Verifikation (2026-09-22, root):** spotlessCheck, detekt, 3x
+verifyRoborazziDebug, `test` (alle Module, inkl. der 27 neuen Tests),
+koverVerify, `:app:assembleDebug` und die drei Python-Gates
+(Design/Doku-Links/Detekt-Baseline) gruen. Offen bleibt nur Gate-11b
+(Adis Sensor-Aufnahmen), E2/E3 (geparkt) und der Commit durch den Nutzer -
+inkl. `gradle/verification-metadata.xml` sowie Schema 12-15.json
+(untracked).
+
+## BB. Tiefen-Audit: Kover-Bereinigung, 35 neue Tests, Ueberarbeitungsbericht (2026-09-22, Session: OpenCode)
+
+Anlass: "Pruefe sehr genau, ob es noch etwas zu verbessern gibt" nach dem
+D4/D5-Abschluss. Methode: Coverage-Inventar je Modul, Sichtung aller
+0-%-Klassen, TODO/`@Suppress`/`GlobalScope`/`!!`-Checks, Detekt-Baseline,
+Deprecation-Sichtung, Abgleich der offenen Punkte aus den Plaenen.
+
+- [x] **Kover-Messung bereinigt:** Generierter Hilt-/Dagger-Code
+  (`*_Factory`, `*_MembersInjector`, `*_GeneratedInjector`, `Hilt_*`,
+  `hilt_aggregated_deps`) verwaesserte die Linien-Coverage (in data:playback
+  ~17 % der Zeilen mit 0 %). Fuenf Filter-Patterns in der Root-build.gradle.kts,
+  am Report vorher/nachher verifiziert. Fallstricke dokumentiert: Kover-0.9-
+  Filter nutzen Punkt-Notation (Slash-Pattern matchen nicht), `*` matcht auch
+  Punkte (`*Hilt_*` genuegt), und der Gradle-Build-Cache liefert ohne
+  `--no-build-cache` veraltete Reports (Filter sind kein Task-Input).
+- [x] **35 neue Tests (alle gruen):** data:playback — PlaybackSettingsStoreTest
+  (2), RestMusicSettingsStoreTest (3), RouteProfileStoreTest (3: Tabellenwert
+  ueber Robolectric-SPEAKER-Fallback, Upsert, STALE-Rueckfall); data:timer —
+  RestTimerPreferencesStoreTest (4: Defaults, Preset-Bereinigung,
+  Get-Ready-Clamping, Korrupt-Fallback), DataStoreDropSyncPlanStoreTest
+  (6: C13-Marker-Roundtrip, "kein Marker"-Faelle, Clear); data:workout —
+  WorkoutGoalPreferencesStoreTest (3: Default, Roundtrip, Clamping);
+  data:sensor — BleErrorMapperTest (14: alle Heuristik-Kategorien,
+  Reihenfolge NOT_FOUND vor SERVICE_MISSING, Token-Vertrag).
+- [x] **Coverage-Ratsche angehoben** (nur steigend, koverVerify gruen):
+  domain:audio 85->87, domain:health 80->81, domain:library 75->77,
+  domain:playback 40->41, domain:sensor 85->88, domain:timer 85->86,
+  data:audio 60->64, data:health 40->42, data:library 60->62,
+  data:playback 0->13 (Ist 14,3), data:sensor 40->47 (Ist 48,5),
+  data:timer 40->49 (Ist 50,7), data:workout 60->62.
+- [x] **Test-Fallstricke dokumentiert:** DataStore ist zwischen Tests
+  derselben Klasse geteilt (Reset per `markStale`/Defaults im `@Before`);
+  ein zweiter `preferencesDataStore`-Delegate auf derselben Datei kollidiert
+  ("multiple DataStores active for the same file") — Seed-Tests ueber
+  Zweit-Delegates sind damit ausgeschlossen.
+- [x] **Bericht erstellt:** `docs/UEBERARBEITUNGSBERICHT_2026-09-22.md` mit
+  der vollstaendigen Restliste: data:playback-Kernlogik ohne Tests
+  (DropLandingArmer 79 Z., PlaybackRepositoryImpl 89, PlaybackService +
+  LibrarySessionCallback 208, Media3AudioClock 40, MediaControllerConnection 18)
+  — Empfehlung schmale Ports statt Mocking-Lib; data:timer-Rest (TtsSpeaker,
+  CountdownBeepPlayer, HapticsAdapter, AndroidCueOutput); data:sensor
+  BleGattClient; data:workout-Repository-Pfade; Detekt-Baseline-Abbau (23
+  Eintraege, 5 Schleifen-Befunde zuerst); Paket 4.19 (Convention-Plugins,
+  :app-Testausbau, Doku-Konsolidierung). Hygiene-Befunde (13
+  Deprecation-Suppresses, 16 `!!`, 1 TODO) geprueft und als unkritisch
+  eingeordnet.
+- [x] **Verifikation:** koverVerify gruen mit allen neuen Floors; die
+  betroffenen Modul-Testtasks (data:playback, data:timer, data:workout,
+  data:sensor, data:settings) gruen.
+- [x] **Runde 2 (Ports + Kernluecken, gleicher Tag):** `LandingPlayer`-Port +
+  `ExoLandingPlayer`-Adapter — `DropLandingArmer` ist Media3-frei und mit
+  9 Tests abgesichert (Zielposition, Landed-Delta, Watchdog
+  OVERRIDDEN/WATCHDOG, Cancel, Ersetzen, PLAYER_ERROR, detach, Fade-Rampe);
+  `DuckingTarget`-Port fuer `PlayerVolumeGateImpl`/`RestDuckingGateImpl`
+  (4 Tests); `AudioTrackTimestampReader` (2 Tests, Robolectric-Durchreichung);
+  `data:workout`-Repository-Pfade (`getSessionMusic`, `getExerciseDetail`,
+  `createCustomExercise`) + `TargetRepositoryValidationTest` (11 Tests);
+  `HapticsAdapter` (2 Tests); **Detekt-Baseline 23 -> 19** (vier
+  Schleifen-Befunde verhaltensgleich refactored: `FolderHierarchy`,
+  `LibraryRepositoryImpl`, `M3uPlaylistParser`, `StreamingResampler`;
+  `CalibrationController` bewusst belassen); `:app` Icon/Label-Test.
+  Coverage: data:playback 14,3 -> 25,6 %, data:workout 63,9 -> 80,0 %,
+  data:timer 50,7 -> 54,4 %; Floors 13->24, 62->78, 49->53. Verifikation:
+  spotlessCheck, detekt, koverVerify, alle betroffenen Modul-Tests,
+  Python-Gates (Baseline 19/23, Doku-Links, Design) und CRLF gruen.
+  Restliste: `docs/UEBERARBEITUNGSBERICHT_2026-09-22.md`.
