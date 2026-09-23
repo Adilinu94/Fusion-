@@ -2,16 +2,15 @@ package com.dropsync.feature.progress
 
 import android.content.Context
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -26,18 +25,26 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import com.dropsync.core.designsystem.component.FlowRepIconButton
+import com.dropsync.core.designsystem.component.FlowRepEmptyState
+import com.dropsync.core.designsystem.component.FlowRepErrorState
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.designsystem.component.FlowRepSurface
+import com.dropsync.core.designsystem.component.FlowRepTopBar
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import java.text.DateFormat
 import java.util.Date
@@ -52,11 +59,53 @@ class AllSetsViewModel
         workoutRepository: WorkoutRepository,
         @ApplicationContext private val appContext: Context,
     ) : ViewModel() {
-        val state: StateFlow<AllSetsUiState> =
-            combine(flatSetRepository.observeAllSets(), workoutRepository.observeExercises("de")) { sets, exercises ->
-                AllSetsUiState.from(sets, exercises, appContext.getString(R.string.progress_default_exercise))
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), AllSetsUiState.Empty)
+        // C6 (U-7): Laden und Fehler sind eigene Zustaende; Retry baut den
+        // Flow neu auf, statt den Fehler stumm zu verschlucken.
+        private val retryTrigger = MutableStateFlow(0)
+
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val screenState: StateFlow<AllSetsScreenState> =
+            retryTrigger
+                .flatMapLatest {
+                    val ready: Flow<AllSetsScreenState> =
+                        combine(
+                            flatSetRepository.observeAllSets(),
+                            workoutRepository.observeExercises("de"),
+                        ) { sets, exercises ->
+                            AllSetsScreenState.Ready(
+                                AllSetsUiState.from(
+                                    sets,
+                                    exercises,
+                                    appContext.getString(R.string.progress_default_exercise),
+                                ),
+                            )
+                        }
+                    ready.catch { emit(AllSetsScreenState.Error) }
+                }.stateIn(
+                    viewModelScope,
+                    SharingStarted.WhileSubscribed(5_000),
+                    AllSetsScreenState.Loading,
+                )
+
+        /** C6: laedt das Satz-Log nach einem Fehler neu. */
+        fun retry() {
+            retryTrigger.value++
+        }
     }
+
+/**
+ * C6 (U-7): Lade-/Fehlerzustand des Satz-Logs (vorher blieb ein Ladefehler
+ * als leere Liste stehen und sah wie "keine Saetze" aus).
+ */
+sealed interface AllSetsScreenState {
+    data object Loading : AllSetsScreenState
+
+    data object Error : AllSetsScreenState
+
+    data class Ready(
+        val sets: AllSetsUiState,
+    ) : AllSetsScreenState
+}
 
 data class AllSetsUiState(
     val personalRecords: List<ProgressSetRow>,
@@ -95,25 +144,63 @@ fun AllSetsScreen(
     modifier: Modifier = Modifier,
     viewModel: AllSetsViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    val state by viewModel.screenState.collectAsStateWithLifecycle()
+    when (val current = state) {
+        AllSetsScreenState.Loading -> {
+            Box(
+                modifier = modifier.fillMaxSize().padding(contentPadding),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator()
+            }
+        }
+
+        AllSetsScreenState.Error -> {
+            FlowRepErrorState(
+                text = stringResource(R.string.progress_error_load),
+                onRetry = viewModel::retry,
+                retryLabel = stringResource(R.string.progress_retry),
+                modifier = modifier.padding(contentPadding),
+            )
+        }
+
+        is AllSetsScreenState.Ready -> {
+            AllSetsList(
+                state = current.sets,
+                contentPadding = contentPadding,
+                onBack = onBack,
+                modifier = modifier,
+            )
+        }
+    }
+}
+
+/** C6: die eigentliche Liste (Ready-Fall), unveraendert zum Vorzustand. */
+@Composable
+private fun AllSetsList(
+    state: AllSetsUiState,
+    contentPadding: PaddingValues,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     LazyColumn(
         modifier = modifier.fillMaxSize(),
         contentPadding = contentPadding,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            Row(
-                modifier = Modifier.padding(start = 4.dp, top = 4.dp, end = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                FlowRepIconButton(
-                    icon = Icons.AutoMirrored.Filled.ArrowBack,
-                    contentDescription = stringResource(R.string.progress_back),
-                    onClick = onBack,
-                )
-                Text(
-                    text = stringResource(R.string.progress_title_all_sets),
-                    style = MaterialTheme.typography.headlineMedium,
+            FlowRepTopBar(
+                title = stringResource(R.string.progress_title_all_sets),
+                onBack = onBack,
+                backContentDescription = stringResource(R.string.progress_back),
+            )
+        }
+        // UI-Befund 4.2.7: Leerzustand statt stiller leerer Liste.
+        if (state.allSets.isEmpty()) {
+            item {
+                FlowRepEmptyState(
+                    text = stringResource(R.string.progress_empty_title),
+                    modifier = Modifier.fillParentMaxHeight(0.5f),
                 )
             }
         }
@@ -184,7 +271,7 @@ private fun AllSetsRow(
                     stringResource(R.string.progress_row_volume, ProgressFormatters.volume(row.set.volumeKg))
                 },
             style = MaterialTheme.typography.bodySmall,
-            color = if (showRecord) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (showRecord) rememberAccentTextColor() else MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }

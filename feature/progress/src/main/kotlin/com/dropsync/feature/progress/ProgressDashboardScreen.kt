@@ -1,7 +1,6 @@
 package com.dropsync.feature.progress
 
 import android.content.Context
-import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.AnimationVector1D
@@ -36,10 +35,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,20 +71,31 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.dropsync.core.designsystem.chart.BarChart
 import com.dropsync.core.designsystem.component.CountUpText
+import com.dropsync.core.designsystem.component.FlowRepErrorState
 import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.component.FlowRepSurface
 import com.dropsync.core.designsystem.component.ProgressRing
+import com.dropsync.core.designsystem.theme.LocalReducedMotion
 import com.dropsync.core.designsystem.theme.Spacing
+import com.dropsync.core.designsystem.theme.rememberAccentTextColor
 import com.dropsync.core.designsystem.theme.rememberWindowWidthSizeClass
+import com.dropsync.domain.workout.ExerciseInfo
+import com.dropsync.domain.workout.ExerciseTarget
+import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.PrRecord
 import com.dropsync.domain.workout.TargetRepository
 import com.dropsync.domain.workout.WorkoutGoalRepository
 import com.dropsync.domain.workout.WorkoutRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import java.text.DateFormat
 import java.util.Calendar
@@ -112,16 +124,47 @@ class ProgressViewModel
         // Einstellungen, live — Aenderungen wirken sofort auf Ring und Chart.
         // Uebungsziele aus Room (DB v9): ein neu gesetztes Ziel erscheint
         // ohne Neustart im Ziele-Tile.
-        val state: StateFlow<ProgressDashboardUiState> =
-            combine(
-                flatSetRepository.observeAllSets(),
-                workoutRepository.observeExercises("de"),
-                workoutGoalRepository.weeklyTrainingGoal,
-                targetRepository.observeAllTargets(),
-            ) { sets, exercises, weeklyGoal, targets ->
-                val names = exercises.associate { it.id to it.displayName }
-                val now = Calendar.getInstance()
-                val fallbackName = appContext.getString(R.string.progress_default_exercise)
+        // Echte PRs aus personal_records (Befund 3.14/153): Tile 5 zeigt
+        // jetzt die fachlich richtigen Rekord-Typen, nicht mehr nur den
+        // volumenbasierten Bestwert der letzten Saetze.
+        // C6 (U-7): Lade-/Fehlerzustand sichtbar; Retry baut den Flow neu auf.
+        private val retryTrigger = MutableStateFlow(0)
+
+        @OptIn(ExperimentalCoroutinesApi::class)
+        val screenState: StateFlow<ProgressDashboardScreenState> =
+            retryTrigger
+                .flatMapLatest {
+                    combine(
+                        flatSetRepository.observeAllSets(),
+                        workoutRepository.observeExercises("de"),
+                        workoutGoalRepository.weeklyTrainingGoal,
+                        targetRepository.observeAllTargets(),
+                        workoutRepository.observeAllPersonalRecords(),
+                    ) { sets, exercises, weeklyGoal, targets, personalRecords ->
+                        dashboardState(sets, exercises, weeklyGoal, targets, personalRecords)
+                    }.catch { emit(ProgressDashboardScreenState.Error) }
+                }.stateIn(
+                    viewModelScope,
+                    SharingStarted.WhileSubscribed(5_000),
+                    ProgressDashboardScreenState.Loading,
+                )
+
+        /** C6: laedt die Projektion nach einem Fehler neu. */
+        fun retry() {
+            retryTrigger.value++
+        }
+
+        private fun dashboardState(
+            sets: List<FlatSet>,
+            exercises: List<ExerciseInfo>,
+            weeklyGoal: Int,
+            targets: List<ExerciseTarget>,
+            personalRecords: List<PrRecord>,
+        ): ProgressDashboardScreenState {
+            val names = exercises.associate { it.id to it.displayName }
+            val now = Calendar.getInstance()
+            val fallbackName = appContext.getString(R.string.progress_default_exercise)
+            return ProgressDashboardScreenState.Ready(
                 ProgressDashboardUiState(
                     progress = ProgressUiState.from(sets, now, weeklyGoal),
                     feed =
@@ -130,6 +173,7 @@ class ProgressViewModel
                             exerciseNames = names,
                             now = now,
                             fallbackExerciseName = fallbackName,
+                            personalRecords = personalRecords,
                         ),
                     goals =
                         ProgressGoalsUiState.from(
@@ -139,8 +183,9 @@ class ProgressViewModel
                             now = now,
                             fallbackExerciseName = fallbackName,
                         ),
-                )
-            }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ProgressDashboardUiState())
+                ),
+            )
+        }
     }
 
 /**
@@ -158,19 +203,52 @@ fun ProgressDashboardScreen(
     modifier: Modifier = Modifier,
     viewModel: ProgressViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
-    ProgressDashboardContent(
-        state = state,
-        contentPadding = contentPadding,
-        onOpenTraining = onOpenTraining,
-        onOpenAllSets = onOpenAllSets,
-        onOpenExerciseLibrary = onOpenExerciseLibrary,
-        modifier = modifier,
-    )
+    val state by viewModel.screenState.collectAsStateWithLifecycle()
+    // C6 (U-7): Laden und Fehler sind eigene Zustaende mit Retry; nur der
+    // Ready-Fall zeigt das Bento-Dashboard.
+    when (val current = state) {
+        ProgressDashboardScreenState.Loading -> {
+            ProgressLoading(contentPadding = contentPadding, modifier = modifier)
+        }
+
+        ProgressDashboardScreenState.Error -> {
+            FlowRepErrorState(
+                text = stringResource(R.string.progress_error_load),
+                onRetry = viewModel::retry,
+                retryLabel = stringResource(R.string.progress_retry),
+                modifier = modifier.padding(contentPadding),
+            )
+        }
+
+        is ProgressDashboardScreenState.Ready -> {
+            ProgressDashboardContent(
+                state = current.dashboard,
+                contentPadding = contentPadding,
+                onOpenTraining = onOpenTraining,
+                onOpenAllSets = onOpenAllSets,
+                onOpenExerciseLibrary = onOpenExerciseLibrary,
+                modifier = modifier,
+            )
+        }
+    }
+}
+
+/** C6: Ladezustand des Dashboards (zentrierter Indikator, keine leere Seite). */
+@Composable
+private fun ProgressLoading(
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier.fillMaxSize().padding(contentPadding),
+        contentAlignment = Alignment.Center,
+    ) {
+        CircularProgressIndicator()
+    }
 }
 
 @Composable
-private fun ProgressDashboardContent(
+internal fun ProgressDashboardContent(
     state: ProgressDashboardUiState,
     contentPadding: PaddingValues,
     onOpenTraining: () -> Unit,
@@ -190,7 +268,7 @@ private fun ProgressDashboardContent(
             fontScale = LocalDensity.current.fontScale,
         )
     val singleColumn = columns != 2
-    val reducedMotion = LocalContext.current.isReducedMotion()
+    val reducedMotion = LocalReducedMotion.current
 
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(columns),
@@ -259,11 +337,17 @@ private fun ProgressDashboardContent(
                     ChartTile(progress = progress, modifier = Modifier.animateItem())
                 }
             }
-            if (feed.freshRecords.isNotEmpty()) {
+            if (feed.freshRecords.isNotEmpty() || feed.newPrRecords.isNotEmpty()) {
                 // PR-Zeile (R6): keine Kachel, nur Text — gefeiert wird im
                 // TrainScreen, nicht drei Stunden spaeter im Archiv.
+                // Befund 3.14/153: echte PR-Typen (Last/Volumen/Reps bei Last)
+                // haben Vorrang vor der volumenbasierten Naeherung.
                 item(span = StaggeredGridItemSpan.FullLine) {
-                    FreshRecordsRow(records = feed.freshRecords, onOpenAllSets = onOpenAllSets)
+                    if (feed.newPrRecords.isNotEmpty()) {
+                        FreshPrRecordsRow(records = feed.newPrRecords, onOpenAllSets = onOpenAllSets)
+                    } else {
+                        FreshRecordsRow(records = feed.freshRecords, onOpenAllSets = onOpenAllSets)
+                    }
                 }
             }
             // Ziele-Tile (R5): Uebungen ohne Ziel erscheinen nicht. Ohne
@@ -677,6 +761,7 @@ private fun FreshRecordsRow(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Spacing.radiusCard))
+                .minimumInteractiveComponentSize()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -695,6 +780,84 @@ private fun FreshRecordsRow(
         )
     }
 }
+
+/**
+ * TILE 5 mit echten PRs (Befund 3.14/153): jede Zeile nennt Uebung, PR-Art
+ * und den Rekordwert. Bei einem einzigen Rekord bleibt die einzeilige Form.
+ */
+@Composable
+private fun FreshPrRecordsRow(
+    records: List<ProgressPrRow>,
+    onOpenAllSets: () -> Unit,
+) {
+    val text =
+        if (records.size == 1) {
+            val row = records.first()
+            stringResource(
+                R.string.progress_pr_single,
+                row.exerciseName,
+                formatPrValue(row.record),
+            )
+        } else {
+            stringResource(R.string.progress_pr_many, records.size)
+        }
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(Spacing.radiusCard))
+                .minimumInteractiveComponentSize()
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    role = Role.Button,
+                ) { onOpenAllSets() }
+                .semantics(mergeDescendants = true) { role = Role.Button }
+                .padding(Spacing.space4),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column {
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (records.size > 1) {
+                // Detailzeilen: max. drei, der Rest steht in der Alle-Saetze-Route.
+                records.take(3).forEach { row ->
+                    Text(
+                        text = "${row.exerciseName} · ${prTypeLabel(row.record.type)}: ${formatPrValue(row.record)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+        }
+    }
+}
+
+/** Rekordwert im UI-Format: Last in kg, Reps ganzzahlig (E4c). */
+private fun formatPrValue(record: com.dropsync.domain.workout.PrRecord): String =
+    when (record.valueUnit) {
+        com.dropsync.core.model.PrValueUnit.MILLI_KG -> {
+            ProgressFormatters.weight(record.valueLong / 1_000_000.0)
+        }
+
+        com.dropsync.core.model.PrValueUnit.REPS -> {
+            record.valueLong.toString()
+        }
+    }
+
+private fun prTypeLabel(type: com.dropsync.core.model.PrType): Int =
+    when (type) {
+        com.dropsync.core.model.PrType.HIGHEST_LOAD -> R.string.progress_pr_type_highest_load
+        com.dropsync.core.model.PrType.HIGHEST_SESSION_VOLUME -> R.string.progress_pr_type_session_volume
+        com.dropsync.core.model.PrType.MOST_REPS_AT_LOAD -> R.string.progress_pr_type_most_reps
+    }
 
 /**
  * TILE 6 — Ziele (UI-Vertrag R5): Der einzige Tile, der mit dem Inhalt
@@ -749,10 +912,11 @@ private fun GoalsTile(
         Text(
             text = stringResource(R.string.progress_goals_add),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = rememberAccentTextColor(),
             modifier =
                 Modifier
                     .padding(top = Spacing.space8)
+                    .minimumInteractiveComponentSize()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -778,6 +942,7 @@ private fun GoalRow(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Spacing.radiusCard))
+                .minimumInteractiveComponentSize()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -922,6 +1087,7 @@ private fun GoalsHintRow(onOpenExerciseLibrary: () -> Unit) {
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(Spacing.radiusCard))
+                .minimumInteractiveComponentSize()
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -965,11 +1131,12 @@ private fun RecentSetsTile(
         Text(
             text = stringResource(R.string.progress_show_all_sets),
             style = MaterialTheme.typography.titleSmall,
-            color = MaterialTheme.colorScheme.primary,
+            color = rememberAccentTextColor(),
             modifier =
                 Modifier
                     .padding(top = Spacing.space8)
                     .clip(RoundedCornerShape(Spacing.radiusSmall))
+                    .minimumInteractiveComponentSize()
                     .clickable(
                         interactionSource = remember { MutableInteractionSource() },
                         indication = null,
@@ -1066,10 +1233,6 @@ private fun isoWeekNumber(weekStartEpochMs: Long): Int =
             firstDayOfWeek = Calendar.MONDAY
             minimalDaysInFirstWeek = 4
         }.get(Calendar.WEEK_OF_YEAR)
-
-/** Bei reduzierter Systemanimation: Endwerte sofort, kein Blitz (UI-Vertrag Bewegung). */
-private fun Context.isReducedMotion(): Boolean =
-    Settings.Global.getFloat(contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
 /** Zehnerteilung des Ziel-Fortschritts (UI-Vertrag R5). */
 private const val GOAL_DOTS = 10

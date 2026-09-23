@@ -5,6 +5,9 @@
     <string name="progress_back">Back</string>
     <string name="progress_default_exercise">Exercise</string>
     <string name="progress_empty_title">No training logged yet</string>
+    <!-- C6 (U-7): visible load error with retry. -->
+    <string name="progress_error_load">Could not load progress</string>
+    <string name="progress_retry">Retry</string>
     <string name="progress_empty_body">After your first set, FlowRep shows your volume, records and exercise history here.</string>
     <string name="progress_empty_open_training">Open training</string>
     <string name="progress_section_records">Personal records</string>
@@ -37,6 +40,9 @@
     <string name="progress_trend_flat">steady</string>
     <string name="progress_pr_single">New record: %1$s %2$s</string>
     <string name="progress_pr_many">%d new records this week</string>
+    <string name="progress_pr_type_highest_load">highest weight</string>
+    <string name="progress_pr_type_session_volume">best session volume</string>
+    <string name="progress_pr_type_most_reps">most reps at this weight</string>
     <string name="progress_goals_hint">Set a goal to see your progress per exercise</string>
     <string name="progress_section_goals">Goals</string>
     <string name="progress_goals_counter">%1$d of %2$d reached</string>
@@ -49,6 +55,5 @@
     <string name="progress_goal_no_set">no set yet</string>
     <string name="progress_goals_stale">Not trained for a while</string>
     <string name="progress_goals_add">Set a goal for an exercise</string>
-    <string name="progress_goal_a11y_progress">%d of 10</string>
     <string name="progress_show_all_sets">Show all sets</string>
 </resources>

@@ -5,6 +5,9 @@
     <string name="progress_back">Zurück</string>
     <string name="progress_default_exercise">Übung</string>
     <string name="progress_empty_title">Noch kein Training geloggt</string>
+    <!-- C6 (U-7): sichtbarer Ladefehler mit Retry. -->
+    <string name="progress_error_load">Verlauf konnte nicht geladen werden</string>
+    <string name="progress_retry">Erneut versuchen</string>
     <string name="progress_empty_body">Nach deinem ersten Satz zeigt FlowRep hier Volumen, Bestwerte und deinen Übungsverlauf.</string>
     <string name="progress_empty_open_training">Training öffnen</string>
     <string name="progress_section_records">Persönliche Bestwerte</string>
@@ -42,6 +45,9 @@
     <string name="progress_trend_flat">gleichbleibend</string>
     <string name="progress_pr_single">Neuer Bestwert: %1$s %2$s</string>
     <string name="progress_pr_many">%d neue Bestwerte diese Woche</string>
+    <string name="progress_pr_type_highest_load">höchstes Gewicht</string>
+    <string name="progress_pr_type_session_volume">bestes Session-Volumen</string>
+    <string name="progress_pr_type_most_reps">meiste Wiederholungen bei diesem Gewicht</string>
     <string name="progress_goals_hint">Setze ein Ziel, um deinen Fortschritt pro Übung zu sehen</string>
     <string name="progress_section_goals">Ziele</string>
     <string name="progress_goals_counter">%1$d von %2$d erreicht</string>
@@ -54,6 +60,5 @@
     <string name="progress_goal_no_set">noch kein Satz</string>
     <string name="progress_goals_stale">Länger nicht trainiert</string>
     <string name="progress_goals_add">Ziel für eine Übung setzen</string>
-    <string name="progress_goal_a11y_progress">%d von 10</string>
     <string name="progress_show_all_sets">Alle Sätze anzeigen</string>
 </resources>

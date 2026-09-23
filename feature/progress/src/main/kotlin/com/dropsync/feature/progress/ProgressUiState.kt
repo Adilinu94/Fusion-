@@ -16,6 +16,21 @@ data class ProgressWeekBar(
 )
 
 /**
+ * C6 (U-7): Lade-/Fehlerzustand des Dashboards. Vorher war "laedt noch" von
+ * "keine Saetze" nicht unterscheidbar und ein Ladefehler blieb stumm; der
+ * Fehlerfall bietet jetzt einen Retry an.
+ */
+sealed interface ProgressDashboardScreenState {
+    data object Loading : ProgressDashboardScreenState
+
+    data object Error : ProgressDashboardScreenState
+
+    data class Ready(
+        val dashboard: ProgressDashboardUiState,
+    ) : ProgressDashboardScreenState
+}
+
+/**
  * Dashboard-State nach UI-Vertrag (2026-08-22-flowtimer-integration-UI.md).
  *
  * Alle Definitionen dort: Ein Workout ist ein Kalendertag mit mindestens einem
