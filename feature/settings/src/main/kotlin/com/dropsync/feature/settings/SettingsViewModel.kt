@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.AccentColor
+import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
@@ -18,13 +19,20 @@ import com.dropsync.domain.audio.MixPreset
 import com.dropsync.domain.health.HeartRateAvailability
 import com.dropsync.domain.health.HeartRateSource
 import com.dropsync.domain.library.ImportReport
+import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
 import com.dropsync.domain.library.LibraryViewPreferencesRepository
 import com.dropsync.domain.library.MarkerDocumentParser
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.ParsedMarkerDocument
+import com.dropsync.domain.library.Playlist
 import com.dropsync.domain.playback.RestMusicSettingsRepository
+import com.dropsync.domain.sensor.SensorHealth
+import com.dropsync.domain.sensor.SensorProvider
+import com.dropsync.domain.sensor.SetDiagnostics
+import com.dropsync.domain.sensor.SetDiagnosticsLog
 import com.dropsync.domain.settings.AccentColorRepository
+import com.dropsync.domain.settings.DebugSettingsRepository
 import com.dropsync.domain.settings.ThemeSettingsRepository
 import com.dropsync.domain.timer.RestTimerPreferencesRepository
 import com.dropsync.domain.workout.ExportFormat
@@ -70,6 +78,7 @@ class SettingsViewModel
         @ApplicationContext private val context: Context,
         private val markerRepository: MarkerRepository,
         libraryRepository: LibraryRepository,
+        private val browseRepository: LibraryBrowseRepository,
         private val restMusicSettings: RestMusicSettingsRepository,
         private val themeSettings: ThemeSettingsRepository,
         private val accentColorSettings: AccentColorRepository,
@@ -80,6 +89,9 @@ class SettingsViewModel
         private val workoutRepository: WorkoutRepository,
         private val workoutGoalRepository: WorkoutGoalRepository,
         private val heartRateSource: HeartRateSource,
+        private val debugSettings: DebugSettingsRepository,
+        private val sensorProvider: SensorProvider,
+        private val setDiagnosticsLog: SetDiagnosticsLog,
         private val dispatchers: DispatcherProvider,
     ) : ViewModel() {
         /** Nicht zugeordnete Marker fuer die manuelle Zuordnung (Schritt 6.6). */
@@ -105,6 +117,24 @@ class SettingsViewModel
                 SharingStarted.WhileSubscribed(5_000),
                 RestMusicBehavior.NORMAL,
             )
+
+        /**
+         * C7 (U-5): Playlisten fuer die DropSync-Sektion (Work-/Rest-Zuordnung).
+         * Die Zuordnung ist dieselbe wie in der Bibliothek (eine Wahrheit).
+         */
+        val playlists: StateFlow<List<Playlist>> =
+            browseRepository.playlists.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                emptyList(),
+            )
+
+        fun setPlaylistLabel(
+            playlistId: Long,
+            label: PlaylistLabel?,
+        ) {
+            viewModelScope.launch { browseRepository.setPlaylistLabel(playlistId, label) }
+        }
 
         /** Gewaehltes App-Design (Systemdesign folgen / Hell / Dunkel). */
         val themeMode: StateFlow<ThemeMode> =
@@ -198,6 +228,39 @@ class SettingsViewModel
         /** Liest Verfuegbarkeit neu (nach Rueckkehr aus den Health-Einstellungen, B5). */
         fun refreshHeartRateAvailability() {
             viewModelScope.launch { heartRateSource.refreshAvailability() }
+        }
+
+        /**
+         * P2-17/RC-7: Entwickler-Schalter fuer den Diagnose-Abschnitt.
+         * Default aus; die Werte selbst kommen live aus dem Sensor-Provider
+         * und aus dem letzten Satz-Report des Train-Pfads.
+         */
+        val diagnosticsEnabled: StateFlow<Boolean> =
+            debugSettings.diagnosticsEnabled.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                false,
+            )
+
+        /** P2-17/RC-7: Live-Gesundheit der Sensorstrecke (Transport, MTU, Drops). */
+        val sensorHealth: StateFlow<SensorHealth> =
+            sensorProvider.health.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                SensorHealth(),
+            )
+
+        /** P2-17/RC-7: Diagnose-Snapshot des zuletzt gestoppten Satzes. */
+        val lastSetDiagnostics: StateFlow<SetDiagnostics?> =
+            setDiagnosticsLog.last.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                null,
+            )
+
+        /** Schaltet den Diagnose-Abschnitt an/aus (P2-17/RC-7). */
+        fun setDiagnosticsEnabled(enabled: Boolean) {
+            viewModelScope.launch { debugSettings.setDiagnosticsEnabled(enabled) }
         }
 
         private val mutableImportState = MutableStateFlow<ImportUiState>(ImportUiState.Idle)
@@ -296,10 +359,6 @@ class SettingsViewModel
                 stream.write(content.toByteArray(Charsets.UTF_8))
                 stream.flush()
             } ?: throw java.io.IOException("SAF-Output-Stream null")
-        }
-
-        fun dismissExportResult() {
-            mutableExportState.value = ExportUiState.Idle
         }
 
         /**
@@ -433,10 +492,6 @@ class SettingsViewModel
                 val clamped = db.coerceIn(DspConfig.REST_DUCK_MIN_DB, DspConfig.REST_DUCK_MAX_DB)
                 audioEngine.updateDspConfig(current.copy(restDuckDb = clamped))
             }
-        }
-
-        fun dismissImportResult() {
-            mutableImportState.value = ImportUiState.Idle
         }
 
         /** Liest hoechstens 5 MB + 1 Byte, ohne die Datei ganz zu halten. */

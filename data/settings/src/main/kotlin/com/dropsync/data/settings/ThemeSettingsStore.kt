@@ -1,7 +1,9 @@
 package com.dropsync.data.settings
 
 import android.content.Context
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.dropsync.core.model.ThemeMode
@@ -9,7 +11,10 @@ import com.dropsync.domain.settings.ThemeSettingsRepository
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
-private val Context.themeSettingsDataStore by preferencesDataStore(name = "theme_settings")
+private val Context.themeSettingsDataStore by preferencesDataStore(
+    name = "theme_settings",
+    corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+)
 
 /**
  * DataStore-Persistenz des App-Designs. Als stabiler Enum-String

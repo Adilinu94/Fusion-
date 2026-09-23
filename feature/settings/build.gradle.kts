@@ -33,6 +33,10 @@ android {
     }
 
     testOptions {
+        unitTests.all {
+            // D4: Compose+Robolectric-Test der Sektionsliste braucht mehr Heap.
+            it.maxHeapSize = "2g"
+        }
         unitTests {
             // Robolectric: SettingsViewModel bekommt einen Context per
             // Konstruktor (SAF-Import/Export). Die Zustandslogik selbst
@@ -51,6 +55,7 @@ dependencies {
     implementation(project(":domain:health"))
     implementation(project(":domain:library"))
     implementation(project(":domain:playback"))
+    implementation(project(":domain:sensor"))
     implementation(project(":domain:settings"))
     implementation(project(":domain:timer"))
     implementation(project(":domain:workout"))
@@ -75,6 +80,9 @@ dependencies {
     testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.turbine)
+    // D4: Compose-UI-Test der Einstellungs-Sektionen (Robolectric, ohne Geraet).
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
 }

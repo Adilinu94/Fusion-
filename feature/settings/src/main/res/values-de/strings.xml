@@ -7,6 +7,7 @@
     <string name="settings_import_running">Import läuft …</string>
     <string name="settings_import_report">Import abgeschlossen: %1$d hinzugefügt, %2$d aktualisiert, %3$d nicht zugeordnet.</string>
     <string name="settings_import_rejected">Import abgelehnt: %1$d ungültige Einträge. Es wurde nichts geändert.</string>
+    <string name="settings_import_more_violations">…und %1$d weitere.</string>
     <string name="settings_import_too_large">Die Datei ist größer als 5 MB und wurde nicht importiert.</string>
     <string name="settings_import_unreadable">Die Datei konnte nicht gelesen werden.</string>
     <string name="settings_import_malformed">Die Datei ist kein gültiges Markerdokument.</string>
@@ -25,9 +26,6 @@
         <item quantity="one">%1$d erkannter Drop-Kandidat wartet auf Prüfung.</item>
         <item quantity="other">%1$d erkannte Drop-Kandidaten warten auf Prüfung.</item>
     </plurals>
-    <string name="settings_candidate_confirm">Bestätigen</string>
-    <string name="settings_candidate_discard">Verwerfen</string>
-    <string name="settings_candidate_unknown_song">Unbekannter Song</string>
     <string name="settings_audio_section">Audio</string>
     <string name="settings_mix_section">Mix-Übergänge</string>
     <string name="settings_mix_toggle_title">Automatische Übergänge</string>
@@ -76,6 +74,14 @@
     <string name="settings_rest_music_drop_landing_desc">Wie die Pausen-Playlist, zusätzlich wird ein \"Training\"-Titel so getimt, dass sein Drop genau das Pausenende trifft.</string>
     <string name="settings_rest_duck_title">Pausenmusik-Lautstärke: %1$d dB</string>
     <string name="settings_rest_duck_desc">Senkt die Musik während der Pause ab. Der Countdown-Hinweis duckt nie doppelt, der stärkere Wert gewinnt.</string>
+    <!-- C7 (U-5): eigene DropSync-Sektion (Work-/Rest-Playlist, Auto-Vorschlaege). -->
+    <string name="settings_dropsync_section">DropSync</string>
+    <string name="settings_dropsync_playlists_desc">Ordne eine Work- und eine Pausen-Playlist zu. DropSync nutzt sie, um die Musik auf dem Drop zu landen.</string>
+    <string name="settings_dropsync_no_playlists">Noch keine Playlists — lege im Musik-Tab eine an.</string>
+    <string name="settings_dropsync_label_none">Keine Rolle</string>
+    <string name="settings_dropsync_label_work">Work</string>
+    <string name="settings_dropsync_label_rest">Pause</string>
+    <string name="settings_dropsync_auto_hint">Neue Titel erhalten automatisch Drop-Vorschläge zur Prüfung.</string>
     <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geräte bringen eigene Verzögerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
     <string name="settings_data_section">Daten</string>
@@ -110,4 +116,32 @@
     <string name="settings_accent_desc">Färbt Buttons, aktive Zustände und den Titel im Now-Playing. Funktioniert in Hell und Dunkel.</string>
     <string name="settings_accent_lime">Limette</string>
     <string name="settings_accent_blue">Blau</string>
+    <!-- P2-17/RC-7: Entwickler-Diagnose (hinter Schalter versteckt). -->
+    <string name="settings_developer_section">Entwickler</string>
+    <string name="settings_developer_diagnostics">Diagnose-Werte anzeigen</string>
+    <string name="settings_developer_diagnostics_desc">Sensor- und Zählwerte in diesem Bildschirm einblenden (technisch).</string>
+    <string name="settings_diag_sensor_title">Sensor (live)</string>
+    <string name="settings_diag_connection">Verbindung</string>
+    <string name="settings_diag_transport">Transport</string>
+    <string name="settings_diag_mtu">MTU</string>
+    <string name="settings_diag_quality">Qualität</string>
+    <string name="settings_diag_batches">Batches empfangen</string>
+    <string name="settings_diag_duplicates">Duplikate</string>
+    <string name="settings_diag_missed">Verpasst (geschätzt)</string>
+    <string name="settings_diag_parse_errors">Parse-Fehler</string>
+    <string name="settings_diag_device_event_poll_errors">Geräte-Event-Poll-Fehler</string>
+    <string name="settings_diag_jitter_drops">Jitter-Drops</string>
+    <string name="settings_diag_sample_drops">Sample-Drops (Fan-out)</string>
+    <string name="settings_diag_largest_gap">Größte Lücke (5 s)</string>
+    <string name="settings_diag_ms">%1$d ms</string>
+    <string name="settings_diag_last_set_title">Letzter Satz</string>
+    <string name="settings_diag_last_set_empty">Noch kein Satz gestoppt.</string>
+    <string name="settings_diag_counted">Erkannt</string>
+    <string name="settings_diag_rate">Rate</string>
+    <string name="settings_diag_frames">Frames (verarbeitet / verworfen)</string>
+    <string name="settings_diag_gaps">Aussetzer</string>
+    <string name="settings_diag_zupt_updates">ZUPT-Korrekturen</string>
+    <string name="settings_diag_zupt_aborted">ZUPT verworfene Reps</string>
+    <string name="settings_diag_rejections">Abgelehnt</string>
+    <string name="settings_diag_plausibility">Plausibilität</string>
 </resources>

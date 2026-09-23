@@ -57,6 +57,7 @@ import com.dropsync.core.designsystem.component.FlowRepPrimaryButton
 import com.dropsync.core.designsystem.component.FlowRepSectionHeader
 import com.dropsync.core.designsystem.theme.accentSwatchColor
 import com.dropsync.core.model.AccentColor
+import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.Song
 import com.dropsync.core.model.SongMarker
@@ -64,9 +65,16 @@ import com.dropsync.core.model.ThemeMode
 import com.dropsync.domain.audio.MixPreset
 import com.dropsync.domain.health.HEALTH_CONNECT_SETTINGS_ACTION
 import com.dropsync.domain.health.HeartRateAvailability
+import com.dropsync.domain.library.Playlist
+import com.dropsync.domain.sensor.SensorHealth
+import com.dropsync.domain.sensor.SetDiagnostics
 import com.dropsync.domain.workout.ExportFormat
 import com.dropsync.domain.workout.WorkoutGoalRepository
+import java.util.Locale
 import kotlin.math.roundToInt
+
+/** UI-Befund 4.2.3: max. angezeigte Import-Verstoesse; Rest als Summenzeile. */
+private const val MAX_SHOWN_VIOLATIONS = 5
 
 /**
  * Einstellungen (Schritt 12.2/12.3): Markerimport ueber den
@@ -85,6 +93,8 @@ fun SettingsScreen(
     val unmatched by viewModel.unmatchedMarkers.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
     val restMusicBehavior by viewModel.restMusicBehavior.collectAsStateWithLifecycle()
+    // C7 (U-5): Work-/Rest-Zuordnung der DropSync-Sektion.
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val accentColor by viewModel.accentColor.collectAsStateWithLifecycle()
     val getReadyEnabled by viewModel.getReadyEnabled.collectAsStateWithLifecycle()
@@ -95,6 +105,10 @@ fun SettingsScreen(
     val dspConfig by viewModel.dspConfig.collectAsStateWithLifecycle()
     val heartRateSyncEnabled by viewModel.heartRateSyncEnabled.collectAsStateWithLifecycle()
     val heartRateAvailability by viewModel.heartRateAvailability.collectAsStateWithLifecycle()
+    // P2-17/RC-7: Entwickler-Schalter + Diagnose-Werte (Sensor live, letzter Satz).
+    val diagnosticsEnabled by viewModel.diagnosticsEnabled.collectAsStateWithLifecycle()
+    val sensorHealth by viewModel.sensorHealth.collectAsStateWithLifecycle()
+    val lastSetDiagnostics by viewModel.lastSetDiagnostics.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val importState by viewModel.importState.collectAsStateWithLifecycle()
     var markerToLink by remember { mutableStateOf<SongMarker?>(null) }
@@ -127,46 +141,6 @@ fun SettingsScreen(
             SettingsScreenTitle()
         }
         item {
-            SettingsSectionTitle(stringResource(R.string.settings_appearance_section))
-        }
-        items(ThemeMode.entries, key = { it.name }) { option ->
-            ThemeModeOption(
-                option = option,
-                selected = option == themeMode,
-                onSelect = { viewModel.setThemeMode(option) },
-            )
-        }
-        item {
-            AccentColorSection(
-                selected = accentColor,
-                onSelect = viewModel::setAccentColor,
-            )
-        }
-        item {
-            SettingsSectionTitle(stringResource(R.string.settings_audio_section))
-        }
-        item {
-            ListItem(
-                headlineContent = { Text(stringResource(R.string.settings_audio_entry)) },
-                supportingContent = { Text(stringResource(R.string.settings_audio_entry_desc)) },
-                modifier =
-                    Modifier
-                        .fillMaxWidth()
-                        .heightIn(min = 48.dp)
-                        .clickable(onClick = onOpenAudioSettings),
-            )
-        }
-        item {
-            MixTransitionsSection(
-                crossfadeSeconds = dspConfig.crossfadeSeconds,
-                preset = dspConfig.mixPreset,
-                bitPerfectEnabled = dspConfig.bitPerfectEnabled,
-                onSetEnabled = viewModel::setMixEnabled,
-                onSetPreset = viewModel::setMixPreset,
-                onSetSeconds = viewModel::setMixSeconds,
-            )
-        }
-        item {
             SettingsSectionTitle(stringResource(R.string.settings_rest_music_section))
         }
         item {
@@ -188,6 +162,14 @@ fun SettingsScreen(
             RestDuckSection(
                 restDuckDb = dspConfig.restDuckDb,
                 onSetRestDuckDb = viewModel::setRestDuckDb,
+            )
+        }
+        item {
+            // C7 (U-5): eigene DropSync-Sektion — Work-/Rest-Playlist und
+            // der Hinweis auf die automatischen Drop-Vorschlaege.
+            DropSyncPlaylistsSection(
+                playlists = playlists,
+                onSetLabel = viewModel::setPlaylistLabel,
             )
         }
         item {
@@ -245,6 +227,46 @@ fun SettingsScreen(
             )
         }
         item {
+            SettingsSectionTitle(stringResource(R.string.settings_appearance_section))
+        }
+        items(ThemeMode.entries, key = { it.name }) { option ->
+            ThemeModeOption(
+                option = option,
+                selected = option == themeMode,
+                onSelect = { viewModel.setThemeMode(option) },
+            )
+        }
+        item {
+            AccentColorSection(
+                selected = accentColor,
+                onSelect = viewModel::setAccentColor,
+            )
+        }
+        item {
+            SettingsSectionTitle(stringResource(R.string.settings_audio_section))
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_audio_entry)) },
+                supportingContent = { Text(stringResource(R.string.settings_audio_entry_desc)) },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp)
+                        .clickable(onClick = onOpenAudioSettings),
+            )
+        }
+        item {
+            MixTransitionsSection(
+                crossfadeSeconds = dspConfig.crossfadeSeconds,
+                preset = dspConfig.mixPreset,
+                bitPerfectEnabled = dspConfig.bitPerfectEnabled,
+                onSetEnabled = viewModel::setMixEnabled,
+                onSetPreset = viewModel::setMixPreset,
+                onSetSeconds = viewModel::setMixSeconds,
+            )
+        }
+        item {
             SettingsSectionTitle(stringResource(R.string.settings_data_section))
         }
         item {
@@ -289,6 +311,38 @@ fun SettingsScreen(
             )
         }
         item { ImportResultText(importState) }
+        // UI-Befund 4.2.3: Verstoesse einzeln zeigen, nicht nur als Zahl.
+        val doneImport = importState as? ImportUiState.Done
+        if (doneImport != null && doneImport.report.wasRejected) {
+            item {
+                Column(Modifier.padding(horizontal = 16.dp)) {
+                    for (violation in doneImport.report.rejectedViolations.take(MAX_SHOWN_VIOLATIONS)) {
+                        Text(
+                            text =
+                                buildString {
+                                    append("• ")
+                                    violation.trackDisplayName?.let {
+                                        append(it)
+                                        append(": ")
+                                    }
+                                    append(violation.reason)
+                                },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(vertical = 2.dp),
+                        )
+                    }
+                    val remaining = doneImport.report.rejectedViolations.size - MAX_SHOWN_VIOLATIONS
+                    if (remaining > 0) {
+                        Text(
+                            text = stringResource(R.string.settings_import_more_violations, remaining),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
         item {
             Text(
                 text =
@@ -331,6 +385,35 @@ fun SettingsScreen(
                 style = MaterialTheme.typography.bodyMedium,
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
+        }
+        item {
+            // P2-17/RC-7: Entwickler-Bereich. Der Schalter ist immer
+            // sichtbar, die Werte erst nach dem Aktivieren (Design 8.4).
+            SettingsSectionTitle(stringResource(R.string.settings_developer_section))
+        }
+        item {
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_developer_diagnostics)) },
+                supportingContent = { Text(stringResource(R.string.settings_developer_diagnostics_desc)) },
+                trailingContent = {
+                    Switch(
+                        checked = diagnosticsEnabled,
+                        onCheckedChange = viewModel::setDiagnosticsEnabled,
+                    )
+                },
+                modifier =
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 48.dp),
+            )
+        }
+        if (diagnosticsEnabled) {
+            item {
+                DiagnosticsSensorSection(sensorHealth)
+            }
+            item {
+                DiagnosticsLastSetSection(lastSetDiagnostics)
+            }
         }
     }
 
@@ -639,6 +722,8 @@ private fun HealthSyncSection(
     onSetSyncEnabled: (Boolean) -> Unit,
     onManageAccess: () -> Unit,
 ) {
+    // C5 (U-8): Der Sync-Schalter nennt sein Ziel (vorher nur "an/aus").
+    val syncTitle = stringResource(R.string.settings_health_sync_title)
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(
             text = stringResource(R.string.settings_health_section),
@@ -662,7 +747,15 @@ private fun HealthSyncSection(
                     style = MaterialTheme.typography.bodySmall,
                 )
             }
-            Switch(checked = syncEnabled, onCheckedChange = onSetSyncEnabled)
+            // C5 (U-8): Der Schalter nennt sein Ziel, nicht nur "an/aus".
+            Switch(
+                checked = syncEnabled,
+                onCheckedChange = onSetSyncEnabled,
+                modifier =
+                    Modifier.semantics {
+                        contentDescription = syncTitle
+                    },
+            )
         }
         if (availability == HeartRateAvailability.PERMISSION_REQUIRED) {
             Text(
@@ -854,11 +947,74 @@ private fun RestMusicBehavior.descRes(): Int =
     }
 
 /**
+ * C7 (U-5): DropSync-Sektion — Work-/Rest-Playlist zuordnen. Die Zuordnung
+ * ist dieselbe wie in der Bibliothek (eine Wahrheit); neue Titel bekommen
+ * ihre Drop-Vorschlaege automatisch (A10), deshalb nur ein Hinweis.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DropSyncPlaylistsSection(
+    playlists: List<Playlist>,
+    onSetLabel: (Long, PlaylistLabel?) -> Unit,
+) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+        SettingsSectionTitle(stringResource(R.string.settings_dropsync_section))
+        Text(
+            text = stringResource(R.string.settings_dropsync_playlists_desc),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+        if (playlists.isEmpty()) {
+            Text(
+                text = stringResource(R.string.settings_dropsync_no_playlists),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        } else {
+            playlists.forEach { playlist ->
+                Column(Modifier.padding(bottom = 8.dp)) {
+                    Text(text = playlist.name, style = MaterialTheme.typography.bodyMedium)
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(top = 4.dp),
+                    ) {
+                        FilterChip(
+                            selected = playlist.label == null,
+                            onClick = { onSetLabel(playlist.id, null) },
+                            label = { Text(stringResource(R.string.settings_dropsync_label_none)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                        FilterChip(
+                            selected = playlist.label == PlaylistLabel.WORK,
+                            onClick = { onSetLabel(playlist.id, PlaylistLabel.WORK) },
+                            label = { Text(stringResource(R.string.settings_dropsync_label_work)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                        FilterChip(
+                            selected = playlist.label == PlaylistLabel.REST,
+                            onClick = { onSetLabel(playlist.id, PlaylistLabel.REST) },
+                            label = { Text(stringResource(R.string.settings_dropsync_label_rest)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                    }
+                }
+            }
+        }
+        Text(
+            text = stringResource(R.string.settings_dropsync_auto_hint),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
  * Duck-Regler fuer die Pausenmusik (Design Phase 7): -12..0 dB in
  * 2-dB-Schritten, Default -8. Der Wert ist Teil der DSP-Konfiguration
  * und wirkt als Preamp-Absenkung waehrend der Pause (nie doppelt mit
  * dem Cue-Ducking, der staerkere Wert gewinnt).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun RestDuckSection(
     restDuckDb: Double,
@@ -874,7 +1030,9 @@ private fun RestDuckSection(
             text = stringResource(R.string.settings_rest_duck_desc),
             style = MaterialTheme.typography.bodySmall,
         )
-        Row(
+        // C7 (U-5): FlowRow statt Row — die Chips laufen bei grosser
+        // Systemschrift nicht mehr aus dem Bild.
+        FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.padding(top = 8.dp),
         ) {
@@ -1002,4 +1160,131 @@ private fun AccentSwatch(
                     this.selected = selected
                 },
     )
+}
+
+/** P2-17/RC-7: Platzhalter fuer nicht verfuegbare Diagnosewerte. */
+private const val DIAGNOSTICS_DASH = "-"
+
+/**
+ * P2-17/RC-7: eine Zeile des Diagnose-Panels (Label links, Wert rechts).
+ * Technische Werte bleiben bewusst technisch (Enum-Namen) — das Panel ist
+ * ein Entwickler-Werkzeug, keine Nutzeroberflaeche.
+ */
+@Composable
+private fun DiagnosticRow(
+    label: String,
+    value: String,
+) {
+    Row(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(vertical = 2.dp),
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.weight(1f),
+        )
+        Text(
+            text = value,
+            style = MaterialTheme.typography.bodySmall,
+        )
+    }
+}
+
+/**
+ * P2-17/RC-7: Live-Werte der Sensorstrecke (Transport, MTU, Drops, Gaps).
+ * Die Daten kommen aus dem Sensor-Provider-Health-Flow; ohne verbundenen
+ * Chip steht der Fake-Transport mit Nullwerten.
+ */
+@Composable
+private fun DiagnosticsSensorSection(health: SensorHealth) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_diag_sensor_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        DiagnosticRow(stringResource(R.string.settings_diag_connection), health.connectionState.name)
+        DiagnosticRow(stringResource(R.string.settings_diag_transport), health.transport.name)
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_mtu),
+            health.negotiatedMtu?.let { "$it B" } ?: DIAGNOSTICS_DASH,
+        )
+        DiagnosticRow(stringResource(R.string.settings_diag_quality), health.quality.name)
+        DiagnosticRow(stringResource(R.string.settings_diag_batches), health.receivedBatches.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_duplicates), health.duplicateBatches.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_missed), health.missedBatches.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_parse_errors), health.parseErrors.toString())
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_device_event_poll_errors),
+            health.deviceEventPollErrors.toString(),
+        )
+        DiagnosticRow(stringResource(R.string.settings_diag_jitter_drops), health.jitterBufferDrops.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_sample_drops), health.samplesDropped.toString())
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_largest_gap),
+            // A3/S-2: die Qualitaet folgt dem Gap im Fenster (~5 s); der
+            // kumulative Wert steht im Satz-Report, nicht hier.
+            stringResource(R.string.settings_diag_ms, health.largestRecentGapMs),
+        )
+    }
+}
+
+/**
+ * P2-17/RC-7/RC-17: Diagnose des letzten gestoppten Satzes (Rate, Gaps,
+ * ZUPT, klassifizierte Ablehnungen, Plausibilitaet). Leer, solange in dieser
+ * App-Sitzung kein Satz gestoppt wurde.
+ */
+@Composable
+private fun DiagnosticsLastSetSection(report: SetDiagnostics?) {
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = stringResource(R.string.settings_diag_last_set_title),
+            style = MaterialTheme.typography.titleSmall,
+        )
+        if (report == null) {
+            Text(
+                text = stringResource(R.string.settings_diag_last_set_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
+        DiagnosticRow(stringResource(R.string.settings_diag_counted), report.countedReps.toString())
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_rate),
+            String.format(Locale.ROOT, "%.1f Hz", report.measuredSampleRateHz),
+        )
+        DiagnosticRow(stringResource(R.string.settings_diag_quality), report.signalQuality.name)
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_frames),
+            "${report.framesProcessed} / ${report.framesRejected}",
+        )
+        DiagnosticRow(stringResource(R.string.settings_diag_gaps), report.largeGapCount.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_zupt_updates), report.zuptBiasUpdates.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_zupt_aborted), report.zuptAbortedPending.toString())
+        DiagnosticRow(stringResource(R.string.settings_diag_rejections), report.totalRejections.toString())
+        // RC-17: Mechanismus-Zerlegung — haeufigster Grund zuerst.
+        for ((reason, count) in report.rejectionCounts.entries.sortedByDescending { it.value }) {
+            if (count > 0) {
+                DiagnosticRow(label = "  ${reason.name}", value = count.toString())
+            }
+        }
+        DiagnosticRow(
+            stringResource(R.string.settings_diag_plausibility),
+            report.plausibility?.verdict?.name ?: DIAGNOSTICS_DASH,
+        )
+    }
 }

@@ -5,12 +5,19 @@ import com.dropsync.core.model.AccentColor
 import com.dropsync.core.model.RestMusicBehavior
 import com.dropsync.core.model.ThemeMode
 import com.dropsync.core.testing.FakeFlatSetRepository
+import com.dropsync.core.testing.FakeLibraryBrowseRepository
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
+import com.dropsync.core.testing.FakeSensorProvider
+import com.dropsync.core.testing.FakeSetDiagnosticsLog
 import com.dropsync.core.testing.FakeWorkoutRepository
 import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.domain.audio.CrossfadeCurves
 import com.dropsync.domain.audio.DspConfig
 import com.dropsync.domain.audio.MixPreset
+import com.dropsync.domain.sensor.RepRejectionReason
+import com.dropsync.domain.sensor.SensorHealth
+import com.dropsync.domain.sensor.SensorTransport
+import com.dropsync.domain.sensor.SetDiagnostics
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -51,6 +58,11 @@ class SettingsViewModelTest {
     private val goals = RecordingWorkoutGoalRepository()
     private val heart = FakeHeartRateSourceForSettings()
 
+    // P2-17/RC-7: Entwickler-Schalter + Diagnose-Quellen.
+    private val debug = FakeDebugSettingsRepository()
+    private val sensor = FakeSensorProvider()
+    private val diagnosticsLog = FakeSetDiagnosticsLog()
+
     @Before
     fun setUpMainDispatcher() {
         // viewModelScope haengt am Main-Dispatcher; ohne setMain wirft jeder
@@ -68,6 +80,7 @@ class SettingsViewModelTest {
             context = RuntimeEnvironment.getApplication(),
             markerRepository = FakeMarkerRepository(),
             libraryRepository = FakeLibraryRepository(),
+            browseRepository = FakeLibraryBrowseRepository(),
             restMusicSettings = restMusic,
             themeSettings = theme,
             accentColorSettings = accent,
@@ -78,6 +91,9 @@ class SettingsViewModelTest {
             workoutRepository = FakeWorkoutRepository(),
             workoutGoalRepository = goals,
             heartRateSource = heart,
+            debugSettings = debug,
+            sensorProvider = sensor,
+            setDiagnosticsLog = diagnosticsLog,
             dispatchers = TestDispatcherProvider(dispatcher),
         )
 
@@ -201,6 +217,61 @@ class SettingsViewModelTest {
                     com.dropsync.domain.health.HeartRateAvailability.READY,
                     awaitItem(),
                 )
+            }
+        }
+
+    @Test
+    fun `diagnose-schalter wird gespeichert und durchgereicht`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.diagnosticsEnabled.test {
+                assertEquals(false, awaitItem())
+                model.setDiagnosticsEnabled(true)
+                advanceUntilIdle()
+                assertEquals(true, awaitItem())
+            }
+            assertEquals(true, debug.lastWritten)
+        }
+
+    @Test
+    fun `sensor-health wird fuer das diagnose-panel durchgereicht`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.sensorHealth.test {
+                awaitItem() // Startwert ohne Verbindung.
+                sensor.setHealth(
+                    SensorHealth(
+                        transport = SensorTransport.BLE_NOTIFY,
+                        negotiatedMtu = 247,
+                    ),
+                )
+                advanceUntilIdle()
+                val health = awaitItem()
+                assertEquals(SensorTransport.BLE_NOTIFY, health.transport)
+                assertEquals(247, health.negotiatedMtu)
+            }
+        }
+
+    @Test
+    fun `letzter satz-report wird fuer das diagnose-panel durchgereicht`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.lastSetDiagnostics.test {
+                assertEquals(null, awaitItem())
+                diagnosticsLog.record(
+                    SetDiagnostics(
+                        countedReps = 7,
+                        largeGapCount = 1,
+                        rejectionCounts = mapOf(RepRejectionReason.QUALITY to 2),
+                    ),
+                )
+                advanceUntilIdle()
+                val report = awaitItem()
+                assertEquals(7, report?.countedReps)
+                assertEquals(2, report?.rejectionCount(RepRejectionReason.QUALITY))
             }
         }
 }

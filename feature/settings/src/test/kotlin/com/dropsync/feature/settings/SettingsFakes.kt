@@ -28,6 +28,7 @@ import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.ScannedFile
 import com.dropsync.domain.playback.RestMusicSettingsRepository
 import com.dropsync.domain.settings.AccentColorRepository
+import com.dropsync.domain.settings.DebugSettingsRepository
 import com.dropsync.domain.settings.ThemeSettingsRepository
 import com.dropsync.domain.workout.WorkoutGoalRepository
 import kotlinx.coroutines.flow.Flow
@@ -47,6 +48,7 @@ import kotlinx.coroutines.flow.flowOf
  */
 class FakeRestMusicSettingsRepository(
     initial: RestMusicBehavior = RestMusicBehavior.NORMAL,
+    initialDropAuto: Boolean = RestMusicSettingsRepository.DEFAULT_DROP_AUTO_ENABLED,
 ) : RestMusicSettingsRepository {
     private val state = MutableStateFlow(initial)
     override val behavior: Flow<RestMusicBehavior> = state
@@ -55,9 +57,40 @@ class FakeRestMusicSettingsRepository(
     var lastWritten: RestMusicBehavior? = null
         private set
 
+    private val dropAutoState = MutableStateFlow(initialDropAuto)
+    override val dropAutoEnabled: Flow<Boolean> = dropAutoState
+
+    var lastDropAutoWritten: Boolean? = null
+        private set
+
     override suspend fun setBehavior(behavior: RestMusicBehavior) {
         lastWritten = behavior
         state.value = behavior
+    }
+
+    override suspend fun setDropAutoEnabled(enabled: Boolean) {
+        lastDropAutoWritten = enabled
+        dropAutoState.value = enabled
+    }
+}
+
+/**
+ * P2-17/RC-7: Entwickler-Schalter. Startwert explizit waehlbar, damit Tests
+ * sowohl "aus" (Default) als auch "an" (Diagnose sichtbar) abdecken.
+ */
+class FakeDebugSettingsRepository(
+    initial: Boolean = false,
+) : DebugSettingsRepository {
+    private val state = MutableStateFlow(initial)
+    override val diagnosticsEnabled: Flow<Boolean> = state
+
+    /** Zuletzt gesetzter Wert; null, wenn nie geschrieben wurde. */
+    var lastWritten: Boolean? = null
+        private set
+
+    override suspend fun setDiagnosticsEnabled(enabled: Boolean) {
+        lastWritten = enabled
+        state.value = enabled
     }
 }
 
@@ -192,6 +225,11 @@ class FakeMarkerRepository(
     override suspend fun getEnabledMarkersForSong(songId: Long): AppResult<List<SongMarker>> =
         AppResult.success(emptyList())
 
+    override suspend fun getEnabledMarkersForSongs(songIds: List<Long>): AppResult<Map<Long, List<SongMarker>>> =
+        AppResult.success(emptyMap())
+
+    override fun observeEnabledMarkersForSong(songId: Long): Flow<List<SongMarker>> = flowOf(emptyList())
+
     override suspend fun createManualMarker(
         songId: Long,
         label: String,
@@ -204,9 +242,23 @@ class FakeMarkerRepository(
 
     override suspend fun confirmMarker(markerId: Long): AppResult<Unit> = AppResult.success(Unit)
 
+    override val songsWithEnabledMarkers: Flow<Set<Long>> = flowOf(emptySet())
+
+    override suspend fun setMarkerEnabled(
+        markerId: Long,
+        enabled: Boolean,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun restoreMarker(marker: SongMarker): AppResult<Unit> = AppResult.success(Unit)
+
     override suspend fun moveMarker(
         markerId: Long,
         newPositionMs: Long,
+    ): AppResult<Unit> = AppResult.success(Unit)
+
+    override suspend fun renameMarker(
+        markerId: Long,
+        newLabel: String,
     ): AppResult<Unit> = AppResult.success(Unit)
 }
 

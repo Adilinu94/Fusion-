@@ -7,6 +7,7 @@
     <string name="settings_import_running">Importing …</string>
     <string name="settings_import_report">Import finished: %1$d added, %2$d updated, %3$d not linked.</string>
     <string name="settings_import_rejected">Import rejected: %1$d invalid entries. Nothing was changed.</string>
+    <string name="settings_import_more_violations">…and %1$d more.</string>
     <string name="settings_import_too_large">The file is larger than 5 MB and was not imported.</string>
     <string name="settings_import_unreadable">The file could not be read.</string>
     <string name="settings_import_malformed">The file is not a valid marker document.</string>
@@ -25,9 +26,6 @@
         <item quantity="one">%1$d detected drop candidate is waiting for review.</item>
         <item quantity="other">%1$d detected drop candidates are waiting for review.</item>
     </plurals>
-    <string name="settings_candidate_confirm">Confirm</string>
-    <string name="settings_candidate_discard">Discard</string>
-    <string name="settings_candidate_unknown_song">Unknown song</string>
     <string name="settings_audio_section">Audio</string>
     <string name="settings_mix_section">Mix transitions</string>
     <string name="settings_mix_toggle_title">Automatic transitions</string>
@@ -76,6 +74,14 @@
     <string name="settings_rest_music_drop_landing_desc">Like the break playlist, and a workout track is timed so its drop hits the end of the break.</string>
     <string name="settings_rest_duck_title">Break music volume: %1$d dB</string>
     <string name="settings_rest_duck_desc">Lowers the music during the break. The countdown cue never ducks twice.</string>
+    <!-- C7 (U-5): own DropSync section (work/rest playlist, auto suggestions). -->
+    <string name="settings_dropsync_section">DropSync</string>
+    <string name="settings_dropsync_playlists_desc">Assign a workout and a rest playlist. DropSync uses them to land the music on the drop.</string>
+    <string name="settings_dropsync_no_playlists">No playlists yet — create one in the Music tab.</string>
+    <string name="settings_dropsync_label_none">No role</string>
+    <string name="settings_dropsync_label_work">Workout</string>
+    <string name="settings_dropsync_label_rest">Rest</string>
+    <string name="settings_dropsync_auto_hint">New tracks automatically get drop suggestions for review.</string>
     <string name="settings_timing_hint">Timing adapts to your audio route. Bluetooth devices add latency of their own.</string>
     <string name="settings_extras_section">Workout extras</string>
     <string name="settings_data_section">Data</string>
@@ -110,4 +116,32 @@
     <string name="settings_accent_desc">For buttons, active states and the title in Now Playing.</string>
     <string name="settings_accent_lime">Lime</string>
     <string name="settings_accent_blue">Blue</string>
+    <!-- P2-17/RC-7: developer diagnostics (hidden behind a switch). -->
+    <string name="settings_developer_section">Developer</string>
+    <string name="settings_developer_diagnostics">Show diagnostic values</string>
+    <string name="settings_developer_diagnostics_desc">Sensor and counting values in this screen (technical).</string>
+    <string name="settings_diag_sensor_title">Sensor (live)</string>
+    <string name="settings_diag_connection">Connection</string>
+    <string name="settings_diag_transport">Transport</string>
+    <string name="settings_diag_mtu">MTU</string>
+    <string name="settings_diag_quality">Quality</string>
+    <string name="settings_diag_batches">Batches received</string>
+    <string name="settings_diag_duplicates">Duplicates</string>
+    <string name="settings_diag_missed">Missed (estimated)</string>
+    <string name="settings_diag_parse_errors">Parse errors</string>
+    <string name="settings_diag_device_event_poll_errors">Device-event poll errors</string>
+    <string name="settings_diag_jitter_drops">Jitter drops</string>
+    <string name="settings_diag_sample_drops">Sample drops (fan-out)</string>
+    <string name="settings_diag_largest_gap">Largest gap (5 s)</string>
+    <string name="settings_diag_ms">%1$d ms</string>
+    <string name="settings_diag_last_set_title">Last set</string>
+    <string name="settings_diag_last_set_empty">No set stopped yet.</string>
+    <string name="settings_diag_counted">Counted</string>
+    <string name="settings_diag_rate">Rate</string>
+    <string name="settings_diag_frames">Frames (processed / rejected)</string>
+    <string name="settings_diag_gaps">Gaps</string>
+    <string name="settings_diag_zupt_updates">ZUPT corrections</string>
+    <string name="settings_diag_zupt_aborted">ZUPT rejected reps</string>
+    <string name="settings_diag_rejections">Rejected</string>
+    <string name="settings_diag_plausibility">Plausibility</string>
 </resources>

@@ -2,9 +2,11 @@ package com.dropsync.data.settings.di
 
 import android.content.Context
 import com.dropsync.data.settings.AccentColorStore
+import com.dropsync.data.settings.DebugSettingsStore
 import com.dropsync.data.settings.OnboardingStore
 import com.dropsync.data.settings.ThemeSettingsStore
 import com.dropsync.domain.settings.AccentColorRepository
+import com.dropsync.domain.settings.DebugSettingsRepository
 import com.dropsync.domain.settings.OnboardingRepository
 import com.dropsync.domain.settings.ThemeSettingsRepository
 import dagger.Module
@@ -39,4 +41,14 @@ object SettingsDataModule {
     fun provideOnboardingRepository(
         @ApplicationContext context: Context,
     ): OnboardingRepository = OnboardingStore(context)
+
+    /**
+     * P2-17/RC-7: Entwickler-Schalter fuer den Diagnose-Abschnitt in den
+     * Einstellungen.
+     */
+    @Provides
+    @Singleton
+    fun provideDebugSettingsRepository(
+        @ApplicationContext context: Context,
+    ): DebugSettingsRepository = DebugSettingsStore(context)
 }
