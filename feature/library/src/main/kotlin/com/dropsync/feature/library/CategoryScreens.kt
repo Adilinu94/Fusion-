@@ -93,8 +93,7 @@ internal fun SongCategoryScreen(
     val visible = remember(sorted, visibleLimit) { sorted.take(visibleLimit) }
 
     /** Bildet einen sichtbaren Index auf die volle Liste ab (-1 = veraltet). */
-    fun fullIndex(visibleIndex: Int): Int =
-        visible.getOrNull(visibleIndex)?.let { sorted.indexOf(it) } ?: -1
+    fun fullIndex(visibleIndex: Int): Int = visible.getOrNull(visibleIndex)?.let { sorted.indexOf(it) } ?: -1
 
     val headerSubtitle =
         stringResource(

@@ -142,6 +142,9 @@ class SetEntryBehaviorTest {
         compose.setContent {
             FlowRepTheme {
                 val host = remember { SnackbarHostState() }
+                // Scaffold nur als Snackbar-Traeger; der Content-Padding-
+                // Parameter bleibt bewusst ungenutzt (Lint Suppress).
+                @Suppress("UnusedMaterial3ScaffoldPaddingParameter")
                 Scaffold(snackbarHost = { SnackbarHost(host) }) {
                     TrainEventSnackbars(
                         snackbarHostState = host,

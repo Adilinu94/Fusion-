@@ -6,11 +6,11 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.navigation.NavHostController
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.navigation.NavType
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -30,6 +30,7 @@ import org.robolectric.annotation.Config
 class NavHostBackstackTest {
     @get:Rule
     val compose = createComposeRule()
+
     /** Aufgerufene Stub-Screens (Reihenfolge = Navigationshistorie). */
     private val visited = mutableListOf<String>()
 
@@ -77,7 +78,9 @@ class NavHostBackstackTest {
 
     @Test
     fun `unterseite poppt zurueck auf den aufrufenden Tab`() {
-        val navHolder = java.util.concurrent.atomic.AtomicReference<NavHostController>()
+        val navHolder =
+            java.util.concurrent.atomic
+                .AtomicReference<NavHostController>()
         compose.setContent {
             val navController = rememberNavController()
             navHolder.set(navController)
@@ -94,13 +97,18 @@ class NavHostBackstackTest {
         }
         compose.waitForIdle()
         compose.runOnIdle {
-            assertEquals(TopLevelDestination.MUSIC.route, requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route)
+            assertEquals(
+                TopLevelDestination.MUSIC.route,
+                requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route,
+            )
         }
     }
 
     @Test
     fun `kalibrierungsargumente kommen am ziel an`() {
-        val navHolder = java.util.concurrent.atomic.AtomicReference<NavHostController>()
+        val navHolder =
+            java.util.concurrent.atomic
+                .AtomicReference<NavHostController>()
         compose.setContent {
             val navController = rememberNavController()
             navHolder.set(navController)
@@ -121,7 +129,9 @@ class NavHostBackstackTest {
 
     @Test
     fun `now-playing ist single-top und kein top-level-ziel`() {
-        val navHolder = java.util.concurrent.atomic.AtomicReference<NavHostController>()
+        val navHolder =
+            java.util.concurrent.atomic
+                .AtomicReference<NavHostController>()
         compose.setContent {
             val navController = rememberNavController()
             navHolder.set(navController)
@@ -137,7 +147,8 @@ class NavHostBackstackTest {
             assertEquals(ROUTE_NOW_PLAYING, requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route)
             // Genau EIN Now-Playing-Eintrag im Backstack (launchSingleTop).
             val count =
-                requireNotNull(navHolder.get()).currentBackStack.value
+                requireNotNull(navHolder.get())
+                    .currentBackStack.value
                     .count { it.destination.route == ROUTE_NOW_PLAYING }
             assertEquals(1, count)
             assertTrue(ROUTE_NOW_PLAYING !in TopLevelDestination.entries.map { it.route })
@@ -146,7 +157,9 @@ class NavHostBackstackTest {
 
     @Test
     fun `navigateTopLevel schliesst unterseiten und restauriert den tab`() {
-        val navHolder = java.util.concurrent.atomic.AtomicReference<NavHostController>()
+        val navHolder =
+            java.util.concurrent.atomic
+                .AtomicReference<NavHostController>()
         compose.setContent {
             val navController = rememberNavController()
             navHolder.set(navController)
@@ -165,7 +178,10 @@ class NavHostBackstackTest {
         }
         compose.waitForIdle()
         compose.runOnIdle {
-            assertEquals(TopLevelDestination.SETTINGS.route, requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route)
+            assertEquals(
+                TopLevelDestination.SETTINGS.route,
+                requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route,
+            )
             // Timer ist weg (popUpTo Start), Settings liegt auf dem Start-Tab.
             val routes =
                 requireNotNull(navHolder.get()).currentBackStack.value.map { it.destination.route }

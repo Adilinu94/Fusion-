@@ -5,8 +5,8 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
-import com.dropsync.domain.workout.SetSummaries
 import com.dropsync.domain.workout.SetLogHaptics
+import com.dropsync.domain.workout.SetSummaries
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.runTest

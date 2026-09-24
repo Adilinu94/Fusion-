@@ -63,7 +63,10 @@ class PlaybackServiceCommandsTest {
             if (mediaStoreId == knownSong.mediaStoreId) {
                 AppResult.Success(knownSong)
             } else {
-                AppResult.Failure(com.dropsync.core.common.AppError.Unknown(debugMessage = null))
+                AppResult.Failure(
+                    com.dropsync.core.common.AppError
+                        .Unknown(debugMessage = null),
+                )
             }
 
         override val songs = flowOf(emptyList<Song>())
@@ -72,7 +75,8 @@ class PlaybackServiceCommandsTest {
 
         override suspend fun refreshLibrary(force: Boolean) =
             AppResult.Success(
-                com.dropsync.domain.library.LibraryScanResult(false, 0, 0, 0),
+                com.dropsync.domain.library
+                    .LibraryScanResult(false, 0, 0, 0),
             )
 
         override suspend fun markUnavailable(mediaStoreId: Long) = AppResult.Success(Unit)
@@ -82,11 +86,13 @@ class PlaybackServiceCommandsTest {
             cueText: String,
         ) = AppResult.Success(0)
 
-        override fun observeCueTracks(songId: Long) =
-            flowOf(emptyList<com.dropsync.domain.library.CueVirtualTrack>())
+        override fun observeCueTracks(songId: Long) = flowOf(emptyList<com.dropsync.domain.library.CueVirtualTrack>())
 
         override suspend fun scanFolder(treeUri: String) =
-            AppResult.Success(com.dropsync.domain.library.FolderScanResult(0, 0, 0, 0))
+            AppResult.Success(
+                com.dropsync.domain.library
+                    .FolderScanResult(0, 0, 0, 0),
+            )
 
         override val scannedFiles =
             flowOf(emptyList<com.dropsync.domain.library.ScannedFile>())
@@ -138,7 +144,10 @@ class PlaybackServiceCommandsTest {
         // Session-Builder braucht einen gueltigen Player; `onCustomCommand`
         // liest ihn im Dispatch-Pfad nicht.
         val context = ApplicationProvider.getApplicationContext<Context>()
-        val exoPlayer = androidx.media3.exoplayer.ExoPlayer.Builder(context).build()
+        val exoPlayer =
+            androidx.media3.exoplayer.ExoPlayer
+                .Builder(context)
+                .build()
         player = exoPlayer
         session = MediaSession.Builder(context, exoPlayer).setCallback(cb).build()
         return cb
@@ -149,13 +158,20 @@ class PlaybackServiceCommandsTest {
         // interfaceVersion, trusted, connectionHints, packageNameVerified).
         MediaSession.ControllerInfo.createTestOnlyControllerInfo(
             packageName,
-            /* uid = */ 10_123,
-            /* pid = */ 1,
-            /* libVersion = */ 1,
-            /* interfaceVersion = */ 1,
-            /* trusted = */ false,
-            /* connectionHints = */ Bundle.EMPTY,
-            /* packageNameVerified = */ false,
+            // uid =
+            10_123,
+            // pid =
+            1,
+            // libVersion =
+            1,
+            // interfaceVersion =
+            1,
+            // trusted =
+            false,
+            // connectionHints =
+            Bundle.EMPTY,
+            // packageNameVerified =
+            false,
         )
 
     private fun dispatch(
@@ -163,104 +179,113 @@ class PlaybackServiceCommandsTest {
         action: String,
         args: Bundle = Bundle.EMPTY,
     ): SessionResult =
-        cb.onCustomCommand(
-            session!!,
-            controller("com.dropsync"),
-            SessionCommand(action, Bundle.EMPTY),
-            args,
-        ).let { future -> future.get() }
-
-    @Test
-    fun `PLAY_SONG_AT meldet Erfolg nur nach echter Ausfuehrung`() = runTest {
-        var executed = false
-        val cb =
-            callback(
-                onPlaySongAt = { _, _ ->
-                    executed = true
-                    true
-                },
-            )
-        val args =
-            Bundle().apply {
-                putLong(PlaybackCommands.ARG_SONG_ID, 7L)
-                putLong(PlaybackCommands.ARG_START_POSITION_MS, 42_000L)
-            }
-        val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
-        assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
-        assertTrue(executed)
-    }
-
-    @Test
-    fun `PLAY_SONG_AT mit fehlendem Song meldet ERROR_UNKNOWN statt Erfolg`() = runTest {
-        val cb = callback(onPlaySongAt = { _, _ -> false })
-        val args = Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, 404L) }
-        val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
-        assertEquals(SessionResult.RESULT_ERROR_UNKNOWN, result.resultCode)
-    }
-
-    @Test
-    fun `PLAY_SONG_AT mit ungueltiger ID meldet BAD_VALUE`() = runTest {
-        val cb = callback()
-        val args = Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, -1L) }
-        val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
-        assertEquals(SessionError.ERROR_BAD_VALUE, result.resultCode)
-    }
-
-    @Test
-    fun `Custom-Kommandos sind fremden Paketen verweigert`() = runTest {
-        val cb = callback()
-        val future =
-            cb.onCustomCommand(
+        cb
+            .onCustomCommand(
                 session!!,
-                controller("com.example.other"),
-                SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY),
-                Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, 7L) },
-            )
-        assertEquals(SessionError.ERROR_PERMISSION_DENIED, future.get().resultCode)
-    }
+                controller("com.dropsync"),
+                SessionCommand(action, Bundle.EMPTY),
+                args,
+            ).let { future -> future.get() }
 
     @Test
-    fun `ARM_LANDING reicht die Argumente durch und meldet Fehlschlag ehrlich`() = runTest {
-        var received: List<Long>? = null
-        val cb =
-            callback(
-                onArmLanding = { songId, position, delay, fade ->
-                    received = listOf(songId, position, delay, fade)
-                    false
-                },
-            )
-        val args =
-            Bundle().apply {
-                putLong(PlaybackCommands.ARG_SONG_ID, 7L)
-                putLong(PlaybackCommands.ARG_START_POSITION_MS, 1000L)
-                putLong(PlaybackCommands.ARG_DELAY_MS, 2000L)
-                putLong(PlaybackCommands.ARG_FADE_MS, 3000L)
-            }
-        val result = dispatch(cb, PlaybackCommands.ACTION_ARM_LANDING, args)
-        assertEquals(listOf(7L, 1000L, 2000L, 3000L), received)
-        assertEquals(SessionResult.RESULT_ERROR_UNKNOWN, result.resultCode)
-    }
+    fun `PLAY_SONG_AT meldet Erfolg nur nach echter Ausfuehrung`() =
+        runTest {
+            var executed = false
+            val cb =
+                callback(
+                    onPlaySongAt = { _, _ ->
+                        executed = true
+                        true
+                    },
+                )
+            val args =
+                Bundle().apply {
+                    putLong(PlaybackCommands.ARG_SONG_ID, 7L)
+                    putLong(PlaybackCommands.ARG_START_POSITION_MS, 42_000L)
+                }
+            val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
+            assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
+            assertTrue(executed)
+        }
 
     @Test
-    fun `CANCEL_LANDING antwortet Erfolg und ruft ab`() = runTest {
-        var cancelled = false
-        val cb = callback(onCancelLanding = { cancelled = true })
-        val result = dispatch(cb, PlaybackCommands.ACTION_CANCEL_LANDING)
-        assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
-        assertTrue(cancelled)
-    }
+    fun `PLAY_SONG_AT mit fehlendem Song meldet ERROR_UNKNOWN statt Erfolg`() =
+        runTest {
+            val cb = callback(onPlaySongAt = { _, _ -> false })
+            val args = Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, 404L) }
+            val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
+            assertEquals(SessionError.ERROR_UNKNOWN, result.resultCode)
+        }
+
+    @Test
+    fun `PLAY_SONG_AT mit ungueltiger ID meldet BAD_VALUE`() =
+        runTest {
+            val cb = callback()
+            val args = Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, -1L) }
+            val result = dispatch(cb, PlaybackCommands.ACTION_PLAY_SONG_AT, args)
+            assertEquals(SessionError.ERROR_BAD_VALUE, result.resultCode)
+        }
+
+    @Test
+    fun `Custom-Kommandos sind fremden Paketen verweigert`() =
+        runTest {
+            val cb = callback()
+            val future =
+                cb.onCustomCommand(
+                    session!!,
+                    controller("com.example.other"),
+                    SessionCommand(PlaybackCommands.ACTION_PLAY_SONG_AT, Bundle.EMPTY),
+                    Bundle().apply { putLong(PlaybackCommands.ARG_SONG_ID, 7L) },
+                )
+            assertEquals(SessionError.ERROR_PERMISSION_DENIED, future.get().resultCode)
+        }
+
+    @Test
+    fun `ARM_LANDING reicht die Argumente durch und meldet Fehlschlag ehrlich`() =
+        runTest {
+            var received: List<Long>? = null
+            val cb =
+                callback(
+                    onArmLanding = { songId, position, delay, fade ->
+                        received = listOf(songId, position, delay, fade)
+                        false
+                    },
+                )
+            val args =
+                Bundle().apply {
+                    putLong(PlaybackCommands.ARG_SONG_ID, 7L)
+                    putLong(PlaybackCommands.ARG_START_POSITION_MS, 1000L)
+                    putLong(PlaybackCommands.ARG_DELAY_MS, 2000L)
+                    putLong(PlaybackCommands.ARG_FADE_MS, 3000L)
+                }
+            val result = dispatch(cb, PlaybackCommands.ACTION_ARM_LANDING, args)
+            assertEquals(listOf(7L, 1000L, 2000L, 3000L), received)
+            assertEquals(SessionError.ERROR_UNKNOWN, result.resultCode)
+        }
+
+    @Test
+    fun `CANCEL_LANDING antwortet Erfolg und ruft ab`() =
+        runTest {
+            var cancelled = false
+            val cb = callback(onCancelLanding = { cancelled = true })
+            val result = dispatch(cb, PlaybackCommands.ACTION_CANCEL_LANDING)
+            assertEquals(SessionResult.RESULT_SUCCESS, result.resultCode)
+            assertTrue(cancelled)
+        }
 
     @Test
     fun `onConnect bewirbt alle vier Custom-Kommandos nur fuer die eigene App`() {
         val own = SessionConnectionPolicy.sessionCommands(isOwn = true)
         val other = SessionConnectionPolicy.sessionCommands(isOwn = false)
-        for (action in
-            listOf(
-                PlaybackCommands.ACTION_PLAY_SONG_AT,
-                PlaybackCommands.ACTION_SET_SCRUBBING_MODE,
-                PlaybackCommands.ACTION_ARM_LANDING,
-                PlaybackCommands.ACTION_CANCEL_LANDING,
-            )) {
+        for (
+        action in
+        listOf(
+            PlaybackCommands.ACTION_PLAY_SONG_AT,
+            PlaybackCommands.ACTION_SET_SCRUBBING_MODE,
+            PlaybackCommands.ACTION_ARM_LANDING,
+            PlaybackCommands.ACTION_CANCEL_LANDING,
+        )
+        ) {
             val command = SessionCommand(action, Bundle.EMPTY)
             assertTrue("$action fehlt beim eigenen Paket", own.contains(command))
             org.junit.Assert.assertFalse("$action leakt an Dritte", other.contains(command))

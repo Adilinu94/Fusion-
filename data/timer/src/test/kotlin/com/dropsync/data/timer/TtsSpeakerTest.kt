@@ -1,13 +1,13 @@
 package com.dropsync.data.timer
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import org.robolectric.annotation.Config
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Shadows
+import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowTextToSpeech
 
 /**
@@ -20,7 +20,10 @@ import org.robolectric.shadows.ShadowTextToSpeech
 class TtsSpeakerTest {
     private val finished = mutableListOf<String>()
     private val speaker =
-        TtsSpeaker(androidx.test.core.app.ApplicationProvider.getApplicationContext()) { finished += it }
+        TtsSpeaker(
+            androidx.test.core.app.ApplicationProvider
+                .getApplicationContext(),
+        ) { finished += it }
 
     private fun initShadow(
         locale: java.util.Locale,

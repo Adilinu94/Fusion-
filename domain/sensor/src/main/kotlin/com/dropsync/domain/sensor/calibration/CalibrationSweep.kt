@@ -167,7 +167,10 @@ internal fun candidateSignals(
 }
 
 /** Baseline/sigma per candidate signal from the rest edges (1 s each side). */
-internal fun signalMeta(signals: Map<ChosenSignal, DoubleArray>, sampleRateHz: Double): Map<ChosenSignal, Pair<Double, Double>> {
+internal fun signalMeta(
+    signals: Map<ChosenSignal, DoubleArray>,
+    sampleRateHz: Double,
+): Map<ChosenSignal, Pair<Double, Double>> {
     val nRest = sampleRateHz.toInt()
     return signals.mapValues { (_, sig) ->
         val restSamples =

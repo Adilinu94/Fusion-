@@ -21,9 +21,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -104,6 +104,7 @@ private fun QueueRow(
 ) {
     // 7.2/8: Rueckmeldung beim Umsortieren/Entfernen wie beim Satz-Logging.
     val haptics = LocalHapticFeedback.current
+
     fun moveHaptic(action: () -> Unit) {
         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
         action()

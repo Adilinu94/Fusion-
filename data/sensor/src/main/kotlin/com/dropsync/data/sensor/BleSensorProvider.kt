@@ -789,11 +789,12 @@ internal enum class GattOperationType {
  */
 internal class BleGattClient(
     private val transport: GattTransport = AndroidGattTransport(),
-    private val scope: CoroutineScope = CoroutineScope(
-        kotlinx.coroutines.CoroutineName("BleGattClient") +
-            kotlinx.coroutines.SupervisorJob() +
-            kotlinx.coroutines.Dispatchers.Default,
-    ),
+    private val scope: CoroutineScope =
+        CoroutineScope(
+            kotlinx.coroutines.CoroutineName("BleGattClient") +
+                kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.Dispatchers.Default,
+        ),
 ) {
     var onEvent: (GattEvent) -> Unit = {}
 
@@ -815,7 +816,9 @@ internal class BleGattClient(
             onTimeout = { type ->
                 when (type) {
                     GattOperationType.READ -> pendingRead.getAndSet(null)?.cont?.resume(null)
+
                     GattOperationType.WRITE -> pendingWrite.getAndSet(null)?.cont?.resume(false)
+
                     GattOperationType.MTU,
                     GattOperationType.DISCOVER,
                     GattOperationType.DESCRIPTOR,

@@ -130,11 +130,12 @@ internal fun LibraryHomeScreen(
                         // hartcodierten Werts, der bei anderen Sprachen bricht.
                         offset =
                             DpOffset(
-                                x = -with(LocalDensity.current) {
-                                    stringResource(R.string.library_select_folders)
-                                        .textWidthDp()
-                                        .coerceAtLeast(136.dp)
-                                },
+                                x =
+                                    -with(LocalDensity.current) {
+                                        stringResource(R.string.library_select_folders)
+                                            .textWidthDp()
+                                            .coerceAtLeast(136.dp)
+                                    },
                                 y = 0.dp,
                             ),
                     ) {
@@ -637,10 +638,11 @@ private const val LIGHT_TINT_SCALE: Float = 0.72f
 internal fun String.textWidthDp(): Dp {
     val measurer = rememberTextMeasurer()
     val widthPx =
-        measurer.measure(
-            text = this,
-            style = MaterialTheme.typography.bodyMedium,
-        ).size.width
+        measurer
+            .measure(
+                text = this,
+                style = MaterialTheme.typography.bodyMedium,
+            ).size.width
     return with(LocalDensity.current) { kotlin.math.ceil(widthPx.toDp().value).dp }
 }
 

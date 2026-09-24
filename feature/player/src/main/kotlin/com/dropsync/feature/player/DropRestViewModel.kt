@@ -141,7 +141,10 @@ class DropRestViewModel
                                 markerPositionMs = gate.markerPositionMs,
                             )
                     ) {
-                        is AppResult.Success -> result.value
+                        is AppResult.Success -> {
+                            result.value
+                        }
+
                         is AppResult.Failure -> {
                             _startFailed.tryEmit(Unit)
                             return@launch

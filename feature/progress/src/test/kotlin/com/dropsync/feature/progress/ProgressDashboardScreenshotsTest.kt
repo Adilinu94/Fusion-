@@ -15,12 +15,12 @@ import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.PrRecord
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
 import com.github.takahirom.roborazzi.captureRoboImage
-import java.util.Calendar
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.util.Calendar
 
 /**
  * Paket 5 (Befund 7.1.5): Das Bento-Dashboard (Verlauf-Tab) ist der zweite

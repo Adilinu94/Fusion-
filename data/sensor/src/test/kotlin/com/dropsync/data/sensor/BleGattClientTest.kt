@@ -1,10 +1,10 @@
 package com.dropsync.data.sensor
 
+import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothGattService
-import android.bluetooth.BluetoothDevice
 import android.content.Context
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -341,7 +341,10 @@ class BleGattClientTest {
             advanceUntilIdle()
             assertFalse(failed.await())
 
-            assertEquals(listOf(byteArrayOf(1), byteArrayOf(2)).map { it.toList() }, transport.writtenValues.map { it.toList() })
+            assertEquals(
+                listOf(byteArrayOf(1), byteArrayOf(2)).map { it.toList() },
+                transport.writtenValues.map { it.toList() },
+            )
         }
 
     @Test

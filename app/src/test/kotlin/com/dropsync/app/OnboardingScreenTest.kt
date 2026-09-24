@@ -14,6 +14,7 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.annotation.Config
+
 /**
  * Paket 5 / Bericht 2.4: Compose-Tests fuer das First-Run-Onboarding
  * ([OnboardingScreen]) auf Robolectric. Geprueft werden die Vertraege aus

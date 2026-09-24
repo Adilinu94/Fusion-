@@ -21,13 +21,14 @@ private val catalog =
 private val catalogLibs = catalog.named("libs")
 
 android {
-    namespace = project.path
-        .removePrefix(":")
-        .replace(":", ".")
-        .let { segments ->
-            // data/audio -> com.dropsync.data.audio (Gruppe + Pfadsegmente).
-            "com.dropsync.$segments"
-        }
+    namespace =
+        project.path
+            .removePrefix(":")
+            .replace(":", ".")
+            .let { segments ->
+                // data/audio -> com.dropsync.data.audio (Gruppe + Pfadsegmente).
+                "com.dropsync.$segments"
+            }
     compileSdk =
         catalogLibs
             .findVersion("compileSdk")

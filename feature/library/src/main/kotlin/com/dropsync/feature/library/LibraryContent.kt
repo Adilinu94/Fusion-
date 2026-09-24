@@ -25,8 +25,8 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
@@ -42,6 +42,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
@@ -212,7 +213,7 @@ internal fun LibraryContent(
         }
     }
 
-        Column(modifier = modifier.fillMaxSize()) {
+    Column(modifier = modifier.fillMaxSize()) {
         if (scanFailed) {
             Surface(color = MaterialTheme.colorScheme.errorContainer) {
                 Text(
@@ -361,25 +362,33 @@ private fun LibraryNoticeSnackbars(
     viewModel: LibraryViewModel,
     snackbarHostState: SnackbarHostState,
 ) {
+    // Lint LocalContextGetResourceValueCall: getString ueber
+    // LocalContext.current ist nicht configuration-aware. Der Umweg ueber
+    // createConfigurationContext mit der aktuellen Configuration haelt die
+    // Werte frisch (die Composition liest LocalConfiguration und startet
+    // den Effect neu, wenn sie sich aendert).
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
+    val resourceContext =
+        remember(configuration) { context.createConfigurationContext(configuration) }
     // UI-Befund 4.2.2: uebersprungene Duplikate sichtbar machen statt still.
-    LaunchedEffect(viewModel) {
+    LaunchedEffect(viewModel, resourceContext) {
         viewModel.duplicateSkips.collect { skipped ->
             snackbarHostState.showSnackbar(
-                context.getString(R.string.library_playlist_duplicates_skipped, skipped),
+                resourceContext.getString(R.string.library_playlist_duplicates_skipped, skipped),
             )
         }
     }
 
     // UI-Befund 4.2.4: Ergebnis des SAF-Ordnerscans (null = Fehler).
     val scanFailedText = stringResource(R.string.library_scan_saf_failed)
-    LaunchedEffect(viewModel) {
+    LaunchedEffect(viewModel, resourceContext) {
         viewModel.folderScanResult.collect { result ->
             val message =
                 if (result == null) {
                     scanFailedText
                 } else {
-                    context.getString(
+                    resourceContext.getString(
                         R.string.library_scan_saf_done_detail,
                         result.audioFiles,
                         result.cueSheets,
@@ -392,13 +401,13 @@ private fun LibraryNoticeSnackbars(
 
     // UI-Befund 4.2.4: Ergebnis des M3U-Imports (null = Fehler).
     val m3uFailedText = stringResource(R.string.library_m3u_import_failed)
-    LaunchedEffect(viewModel) {
+    LaunchedEffect(viewModel, resourceContext) {
         viewModel.m3uImportResult.collect { result ->
             val message =
                 if (result == null) {
                     m3uFailedText
                 } else {
-                    context.getString(
+                    resourceContext.getString(
                         R.string.library_m3u_import_done_detail,
                         result.importedCount,
                         result.unresolved,

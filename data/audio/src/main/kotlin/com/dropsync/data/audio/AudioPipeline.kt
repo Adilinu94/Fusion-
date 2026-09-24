@@ -55,183 +55,183 @@ class AudioPipeline(
     deviceMonitor: OutputDeviceMonitor,
     rampDispatcher: CoroutineDispatcher = Dispatchers.Default,
 ) {
-        /**
-         * Rampen-Dispatcher (Analyse-Befund 4.9): der Ticker der
-         * Rest-Duck-Rampen laeuft hier; Tests uebergeben den
-         * Test-Dispatcher, damit die 20-ms-Schritte mit der virtuellen
-         * Uhr synchron laufen. Hilt nutzt den @Inject-Sekundaer-
-         * konstruktor mit dem Default.
-         */
-        private val scope = CoroutineScope(SupervisorJob() + rampDispatcher)
+    /**
+     * Rampen-Dispatcher (Analyse-Befund 4.9): der Ticker der
+     * Rest-Duck-Rampen laeuft hier; Tests uebergeben den
+     * Test-Dispatcher, damit die 20-ms-Schritte mit der virtuellen
+     * Uhr synchron laufen. Hilt nutzt den @Inject-Sekundaer-
+     * konstruktor mit dem Default.
+     */
+    private val scope = CoroutineScope(SupervisorJob() + rampDispatcher)
 
-        private val masterProcessor = MasterDspProcessor()
+    private val masterProcessor = MasterDspProcessor()
 
-        private val mutableDspActive = MutableStateFlow(false)
-        val dspActive: StateFlow<Boolean> = mutableDspActive.asStateFlow()
+    private val mutableDspActive = MutableStateFlow(false)
+    val dspActive: StateFlow<Boolean> = mutableDspActive.asStateFlow()
 
-        private val mutableConfig = MutableStateFlow(DspConfig.sanitized(DspConfig()))
+    private val mutableConfig = MutableStateFlow(DspConfig.sanitized(DspConfig()))
 
-        /** Zuletzt angewandte (bereinigte) Konfiguration, u. a. fuer Crossfade. */
-        val currentConfig: StateFlow<DspConfig> = mutableConfig.asStateFlow()
+    /** Zuletzt angewandte (bereinigte) Konfiguration, u. a. fuer Crossfade. */
+    val currentConfig: StateFlow<DspConfig> = mutableConfig.asStateFlow()
 
-        private val mutableSourceFormat = MutableStateFlow<SourceFormatInfo?>(null)
-        private val mutableOutputFormat = MutableStateFlow<OutputFormatInfo?>(null)
+    private val mutableSourceFormat = MutableStateFlow<SourceFormatInfo?>(null)
+    private val mutableOutputFormat = MutableStateFlow<OutputFormatInfo?>(null)
 
-        /** Live-Audioinformationen; null solange keine Quelle bekannt ist. */
-        val audioInfo: Flow<AudioInfo?> =
-            combine(
-                mutableSourceFormat,
-                mutableOutputFormat,
-                deviceMonitor.device,
-                mutableDspActive,
-            ) { source, output, device, dspActive ->
-                if (source == null) {
-                    null
-                } else {
-                    AudioInfo(
-                        codecMimeType = source.codecMimeType,
-                        bitrateBps = source.bitrateBps,
-                        sourceSampleRateHz = source.sampleRateHz,
-                        sourceChannelCount = source.channelCount,
-                        sourceBitDepth = source.bitDepth,
-                        outputSampleRateHz = output?.sampleRateHz,
-                        outputEncoding = output?.encodingName,
-                        floatOutput = output?.isFloat == true,
-                        dspActive = dspActive,
-                        outputDevice = device.kind,
-                        outputDeviceName = device.name,
+    /** Live-Audioinformationen; null solange keine Quelle bekannt ist. */
+    val audioInfo: Flow<AudioInfo?> =
+        combine(
+            mutableSourceFormat,
+            mutableOutputFormat,
+            deviceMonitor.device,
+            mutableDspActive,
+        ) { source, output, device, dspActive ->
+            if (source == null) {
+                null
+            } else {
+                AudioInfo(
+                    codecMimeType = source.codecMimeType,
+                    bitrateBps = source.bitrateBps,
+                    sourceSampleRateHz = source.sampleRateHz,
+                    sourceChannelCount = source.channelCount,
+                    sourceBitDepth = source.bitDepth,
+                    outputSampleRateHz = output?.sampleRateHz,
+                    outputEncoding = output?.encodingName,
+                    floatOutput = output?.isFloat == true,
+                    dspActive = dspActive,
+                    outputDevice = device.kind,
+                    outputDeviceName = device.name,
+                )
+            }
+        }
+
+    init {
+        scope.launch {
+            settingsStore.config.collect { apply(it) }
+        }
+    }
+
+    /** Prozessorkette fuer den DefaultAudioSink (Reihenfolge ADR-0005). */
+    fun audioProcessors(): Array<AudioProcessor> = arrayOf(masterProcessor)
+
+    /**
+     * ReplayGain-Zugang (Befund 2.10): der Service setzt pro
+     * Titelwechsel den Normalisierungsgain; null deaktiviert.
+     */
+    fun setReplayGainDb(db: Double?) {
+        masterProcessor.setReplayGainDb(db)
+    }
+
+    private val mutableDuckingGain = MutableStateFlow(1.0)
+
+    /** Aktueller Cue-Ducking-Gain am Preamp-Knoten (1.0 = kein Ducking). */
+    val duckingGain: StateFlow<Double> = mutableDuckingGain.asStateFlow()
+
+    /**
+     * Cue-Ducking auf dem Preamp-Knoten (Plan Phase 1.5): wirkt in der
+     * 64-Bit-Kette vor Preamp/DVC und kollidiert daher weder mit der
+     * Nutzerlautstaerke noch mit der digitalen Lautstaerke (DVC).
+     */
+    fun setDuckingGain(gain: Double) {
+        val sanitized = gain.coerceIn(0.0, 1.0)
+        mutableDuckingGain.value = sanitized
+        masterProcessor.setDuckingGain(sanitized)
+    }
+
+    // Phase 7: Rest-Ducking (dB -> Gain) mit linearer Rampe. Der
+    // Ticker (100 ms) setzt den Zielwert im Audiothread; der
+    // MasterDspProcessor kombiniert ihn per min() mit dem Cue-Ducking.
+    //
+    // B-AUD-3: Zwei schnell folgende setRestDuckDb-Aufrufe laufen auf
+    // verschiedenen Threads - der Aufrufer liest restDuckCurrent, die
+    // gekuendigte Rampe schreibt es noch aus Dispatchers.Default. Ohne
+    // Synchronisation ist der gelesene Startwert nicht definiert.
+    // AtomicReference statt @Volatile, weil der Wert nicht nur sichtbar,
+    // sondern beim Lesen-und-Weiterschreiben konsistent sein muss.
+    private val restDuckMutex = Mutex()
+    private var restDuckJob: Job? = null
+    private val restDuckCurrent = AtomicReference(1.0)
+
+    /** Ducking der Pausenmusik in dB (Phase 7); 0 = aus. */
+    fun setRestDuckDb(db: Double) {
+        val sanitized = db.coerceIn(REST_DUCK_MIN_DB, REST_DUCK_MAX_DB)
+        val target = if (sanitized >= 0.0) 1.0 else AudioMath.dbToLinear(sanitized)
+        val previous = restDuckJob
+        restDuckJob =
+            scope.launch {
+                // Erst warten, bis die vorige Rampe wirklich beendet ist:
+                // sonst ueberschreiben sich zwei Rampen gegenseitig und
+                // der Endwert haengt vom Scheduling ab.
+                previous?.cancelAndJoin()
+                restDuckMutex.withLock {
+                    rampDuck(
+                        from = restDuckCurrent.get(),
+                        target = target,
+                        attack = sanitized < 0.0,
                     )
                 }
             }
+    }
 
-        init {
-            scope.launch {
-                settingsStore.config.collect { apply(it) }
+    private suspend fun rampDuck(
+        from: Double,
+        target: Double,
+        attack: Boolean,
+    ) {
+        val stepMs = 20L
+        val steps = if (attack) 2 else 8
+        for (i in 1..steps) {
+            val t = i.toDouble() / steps
+            val value = from + (target - from) * t
+            restDuckCurrent.set(value)
+            masterProcessor.setRestDuckingGain(value)
+            kotlinx.coroutines.delay(stepMs)
+        }
+        restDuckCurrent.set(target)
+        masterProcessor.setRestDuckingGain(target)
+    }
+
+    fun onSourceFormatChanged(info: SourceFormatInfo) {
+        mutableSourceFormat.value = info
+    }
+
+    fun onAudioTrackInitialized(info: OutputFormatInfo) {
+        mutableOutputFormat.value = info
+    }
+
+    /** Wiedergabe beendet oder Player freigegeben. */
+    fun onPlaybackReleased() {
+        mutableSourceFormat.value = null
+        mutableOutputFormat.value = null
+    }
+
+    private fun apply(config: DspConfig) {
+        val sanitized = DspConfig.sanitized(config)
+        mutableConfig.value = sanitized
+        // MusicFX aktiv: interne Kette stumm, sonst Doppel-EQ (Phase 4).
+        // Bit-Perfect (ADR-0009): DSP-Kette komplett umgangen.
+        val effective =
+            if (sanitized.useSystemEffects || sanitized.bitPerfectEnabled) {
+                sanitized.copy(enabled = false)
+            } else {
+                sanitized
             }
-        }
+        masterProcessor.submitConfig(effective)
+        mutableDspActive.value = effective.enabled && !isNeutral(effective)
+    }
 
-        /** Prozessorkette fuer den DefaultAudioSink (Reihenfolge ADR-0005). */
-        fun audioProcessors(): Array<AudioProcessor> = arrayOf(masterProcessor)
+    /** true, wenn keine klangliche Stufe eingreift. */
+    private fun isNeutral(config: DspConfig): Boolean =
+        config.preampDb == 0.0 &&
+            !config.eq.enabled &&
+            config.bassGainDb == 0.0 &&
+            config.trebleGainDb == 0.0 &&
+            config.stereoWidthPercent == StereoMatrix.NEUTRAL_WIDTH_PERCENT &&
+            !config.reverb.enabled &&
+            config.resampler.targetRateHz == null &&
+            config.ditherMode == DitherMode.TPDF &&
+            !config.dvcEnabled
 
-        /**
-         * ReplayGain-Zugang (Befund 2.10): der Service setzt pro
-         * Titelwechsel den Normalisierungsgain; null deaktiviert.
-         */
-        fun setReplayGainDb(db: Double?) {
-            masterProcessor.setReplayGainDb(db)
-        }
-
-        private val mutableDuckingGain = MutableStateFlow(1.0)
-
-        /** Aktueller Cue-Ducking-Gain am Preamp-Knoten (1.0 = kein Ducking). */
-        val duckingGain: StateFlow<Double> = mutableDuckingGain.asStateFlow()
-
-        /**
-         * Cue-Ducking auf dem Preamp-Knoten (Plan Phase 1.5): wirkt in der
-         * 64-Bit-Kette vor Preamp/DVC und kollidiert daher weder mit der
-         * Nutzerlautstaerke noch mit der digitalen Lautstaerke (DVC).
-         */
-        fun setDuckingGain(gain: Double) {
-            val sanitized = gain.coerceIn(0.0, 1.0)
-            mutableDuckingGain.value = sanitized
-            masterProcessor.setDuckingGain(sanitized)
-        }
-
-        // Phase 7: Rest-Ducking (dB -> Gain) mit linearer Rampe. Der
-        // Ticker (100 ms) setzt den Zielwert im Audiothread; der
-        // MasterDspProcessor kombiniert ihn per min() mit dem Cue-Ducking.
-        //
-        // B-AUD-3: Zwei schnell folgende setRestDuckDb-Aufrufe laufen auf
-        // verschiedenen Threads - der Aufrufer liest restDuckCurrent, die
-        // gekuendigte Rampe schreibt es noch aus Dispatchers.Default. Ohne
-        // Synchronisation ist der gelesene Startwert nicht definiert.
-        // AtomicReference statt @Volatile, weil der Wert nicht nur sichtbar,
-        // sondern beim Lesen-und-Weiterschreiben konsistent sein muss.
-        private val restDuckMutex = Mutex()
-        private var restDuckJob: Job? = null
-        private val restDuckCurrent = AtomicReference(1.0)
-
-        /** Ducking der Pausenmusik in dB (Phase 7); 0 = aus. */
-        fun setRestDuckDb(db: Double) {
-            val sanitized = db.coerceIn(REST_DUCK_MIN_DB, REST_DUCK_MAX_DB)
-            val target = if (sanitized >= 0.0) 1.0 else AudioMath.dbToLinear(sanitized)
-            val previous = restDuckJob
-            restDuckJob =
-                scope.launch {
-                    // Erst warten, bis die vorige Rampe wirklich beendet ist:
-                    // sonst ueberschreiben sich zwei Rampen gegenseitig und
-                    // der Endwert haengt vom Scheduling ab.
-                    previous?.cancelAndJoin()
-                    restDuckMutex.withLock {
-                        rampDuck(
-                            from = restDuckCurrent.get(),
-                            target = target,
-                            attack = sanitized < 0.0,
-                        )
-                    }
-                }
-        }
-
-        private suspend fun rampDuck(
-            from: Double,
-            target: Double,
-            attack: Boolean,
-        ) {
-            val stepMs = 20L
-            val steps = if (attack) 2 else 8
-            for (i in 1..steps) {
-                val t = i.toDouble() / steps
-                val value = from + (target - from) * t
-                restDuckCurrent.set(value)
-                masterProcessor.setRestDuckingGain(value)
-                kotlinx.coroutines.delay(stepMs)
-            }
-            restDuckCurrent.set(target)
-            masterProcessor.setRestDuckingGain(target)
-        }
-
-        fun onSourceFormatChanged(info: SourceFormatInfo) {
-            mutableSourceFormat.value = info
-        }
-
-        fun onAudioTrackInitialized(info: OutputFormatInfo) {
-            mutableOutputFormat.value = info
-        }
-
-        /** Wiedergabe beendet oder Player freigegeben. */
-        fun onPlaybackReleased() {
-            mutableSourceFormat.value = null
-            mutableOutputFormat.value = null
-        }
-
-        private fun apply(config: DspConfig) {
-            val sanitized = DspConfig.sanitized(config)
-            mutableConfig.value = sanitized
-            // MusicFX aktiv: interne Kette stumm, sonst Doppel-EQ (Phase 4).
-            // Bit-Perfect (ADR-0009): DSP-Kette komplett umgangen.
-            val effective =
-                if (sanitized.useSystemEffects || sanitized.bitPerfectEnabled) {
-                    sanitized.copy(enabled = false)
-                } else {
-                    sanitized
-                }
-            masterProcessor.submitConfig(effective)
-            mutableDspActive.value = effective.enabled && !isNeutral(effective)
-        }
-
-        /** true, wenn keine klangliche Stufe eingreift. */
-        private fun isNeutral(config: DspConfig): Boolean =
-            config.preampDb == 0.0 &&
-                !config.eq.enabled &&
-                config.bassGainDb == 0.0 &&
-                config.trebleGainDb == 0.0 &&
-                config.stereoWidthPercent == StereoMatrix.NEUTRAL_WIDTH_PERCENT &&
-                !config.reverb.enabled &&
-                config.resampler.targetRateHz == null &&
-                config.ditherMode == DitherMode.TPDF &&
-                !config.dvcEnabled
-
-        companion object {
+    companion object {
         private const val REST_DUCK_MIN_DB = -12.0
         private const val REST_DUCK_MAX_DB = 0.0
     }
@@ -242,8 +242,8 @@ class AudioPipeline(
         settingsStore: DspSettingsStore,
         deviceMonitor: OutputDeviceMonitor,
     ) : this(
-            settingsStore = settingsStore,
-            deviceMonitor = deviceMonitor,
-            rampDispatcher = Dispatchers.Default,
-        )
+        settingsStore = settingsStore,
+        deviceMonitor = deviceMonitor,
+        rampDispatcher = Dispatchers.Default,
+    )
 }

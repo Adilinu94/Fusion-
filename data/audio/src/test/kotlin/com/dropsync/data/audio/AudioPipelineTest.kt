@@ -107,82 +107,86 @@ class AudioPipelineTest {
     }
 
     @Test
-    fun `source und output format erscheinen in der audio info`() = runTest(dispatcher) {
-        val pipeline = pipeline()
-        pipeline.onSourceFormatChanged(
-            SourceFormatInfo(
-                codecMimeType = "audio/flac",
-                bitrateBps = 983_040,
-                sampleRateHz = 96_000,
-                channelCount = 2,
-                bitDepth = 24,
-            ),
-        )
-        pipeline.onAudioTrackInitialized(
-            OutputFormatInfo(
-                sampleRateHz = 192_000,
-                encodingName = "PCM_FLOAT",
-                isFloat = true,
-            ),
-        )
-        val info =
-            withTimeout(5_000) {
-                pipeline.audioInfo.first { it != null }
-            }
-        assertNotNull(info)
-        assertEquals("audio/flac", info!!.codecMimeType)
-        assertEquals(96_000, info.sourceSampleRateHz)
-        assertEquals(192_000, info.outputSampleRateHz)
-        assertTrue(info.floatOutput)
-        assertEquals(OutputDeviceKind.SPEAKER, info.outputDevice)
-    }
+    fun `source und output format erscheinen in der audio info`() =
+        runTest(dispatcher) {
+            val pipeline = pipeline()
+            pipeline.onSourceFormatChanged(
+                SourceFormatInfo(
+                    codecMimeType = "audio/flac",
+                    bitrateBps = 983_040,
+                    sampleRateHz = 96_000,
+                    channelCount = 2,
+                    bitDepth = 24,
+                ),
+            )
+            pipeline.onAudioTrackInitialized(
+                OutputFormatInfo(
+                    sampleRateHz = 192_000,
+                    encodingName = "PCM_FLOAT",
+                    isFloat = true,
+                ),
+            )
+            val info =
+                withTimeout(5_000) {
+                    pipeline.audioInfo.first { it != null }
+                }
+            assertNotNull(info)
+            assertEquals("audio/flac", info!!.codecMimeType)
+            assertEquals(96_000, info.sourceSampleRateHz)
+            assertEquals(192_000, info.outputSampleRateHz)
+            assertTrue(info.floatOutput)
+            assertEquals(OutputDeviceKind.SPEAKER, info.outputDevice)
+        }
 
     @Test
-    fun `ohne source format bleibt die audio info null`() = runTest(dispatcher) {
-        val pipeline = pipeline()
-        pipeline.onAudioTrackInitialized(
-            OutputFormatInfo(sampleRateHz = 48_000, encodingName = "PCM_16", isFloat = false),
-        )
-        assertEquals(null, pipeline.audioInfo.first())
-    }
+    fun `ohne source format bleibt die audio info null`() =
+        runTest(dispatcher) {
+            val pipeline = pipeline()
+            pipeline.onAudioTrackInitialized(
+                OutputFormatInfo(sampleRateHz = 48_000, encodingName = "PCM_16", isFloat = false),
+            )
+            assertEquals(null, pipeline.audioInfo.first())
+        }
 
     @Test
-    fun `playback released setzt die formats zurueck`() = runTest(dispatcher) {
-        val pipeline = pipeline()
-        pipeline.onSourceFormatChanged(
-            SourceFormatInfo("audio/mpeg", 320_000, 44_100, 2, 16),
-        )
-        pipeline.onAudioTrackInitialized(
-            OutputFormatInfo(44_100, "PCM_16", isFloat = false),
-        )
-        pipeline.onPlaybackReleased()
-        assertEquals(null, pipeline.audioInfo.first())
-    }
+    fun `playback released setzt die formats zurueck`() =
+        runTest(dispatcher) {
+            val pipeline = pipeline()
+            pipeline.onSourceFormatChanged(
+                SourceFormatInfo("audio/mpeg", 320_000, 44_100, 2, 16),
+            )
+            pipeline.onAudioTrackInitialized(
+                OutputFormatInfo(44_100, "PCM_16", isFloat = false),
+            )
+            pipeline.onPlaybackReleased()
+            assertEquals(null, pipeline.audioInfo.first())
+        }
 
     @Test
-    fun `konkurrierende rest duck rampen enden beim letzten zielwert`() = runTest(dispatcher) {
-        val pipeline = pipeline()
-        val processor = pipeline.audioProcessors().single() as MasterDspProcessor
-        val format = AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_FLOAT)
-        processor.configure(format)
-        processor.flush()
+    fun `konkurrierende rest duck rampen enden beim letzten zielwert`() =
+        runTest(dispatcher) {
+            val pipeline = pipeline()
+            val processor = pipeline.audioProcessors().single() as MasterDspProcessor
+            val format = AudioProcessor.AudioFormat(48_000, 1, C.ENCODING_PCM_FLOAT)
+            processor.configure(format)
+            processor.flush()
 
-        // Zwei Rampen dicht hintereinander auf verschiedenen Coroutines:
-        // die zweite (Mutex + cancelAndJoin) wartet, bis die erste
-        // wirklich beendet ist. Der Endzustand ist der Zielwert des
-        // zweiten Aufrufs (-3 dB -> linear), nicht ein Scheduling-Zufall.
-        val rampA = async { pipeline.setRestDuckDb(-12.0) }
-        val rampB = async { pipeline.setRestDuckDb(-3.0) }
-        rampA.await()
-        rampB.await()
-        // Scheduler drainen: init-Collect plus beide Rampen (2 + 8 Schritte
-        // mit je 20 ms delay); mit virtueller Zeit sofort durchlaufbar.
-        repeat(200) { dispatcher.scheduler.advanceTimeBy(100) }
-        dispatcher.scheduler.runCurrent()
+            // Zwei Rampen dicht hintereinander auf verschiedenen Coroutines:
+            // die zweite (Mutex + cancelAndJoin) wartet, bis die erste
+            // wirklich beendet ist. Der Endzustand ist der Zielwert des
+            // zweiten Aufrufs (-3 dB -> linear), nicht ein Scheduling-Zufall.
+            val rampA = async { pipeline.setRestDuckDb(-12.0) }
+            val rampB = async { pipeline.setRestDuckDb(-3.0) }
+            rampA.await()
+            rampB.await()
+            // Scheduler drainen: init-Collect plus beide Rampen (2 + 8 Schritte
+            // mit je 20 ms delay); mit virtueller Zeit sofort durchlaufbar.
+            repeat(200) { dispatcher.scheduler.advanceTimeBy(100) }
+            dispatcher.scheduler.runCurrent()
 
-        processor.queueInput(floatBuffer(0.8f))
-        val out = readFloatBuffer(processor.output)
-        val expected = (0.8f * AudioMath.dbToLinear(-3.0)).toFloat()
-        assertEquals(expected, out[0], 1e-4f)
-    }
+            processor.queueInput(floatBuffer(0.8f))
+            val out = readFloatBuffer(processor.output)
+            val expected = (0.8f * AudioMath.dbToLinear(-3.0)).toFloat()
+            assertEquals(expected, out[0], 1e-4f)
+        }
 }

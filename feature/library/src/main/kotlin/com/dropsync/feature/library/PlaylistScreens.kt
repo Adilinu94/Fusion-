@@ -36,10 +36,10 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dropsync.core.designsystem.component.FlowRepTopBar
@@ -338,7 +338,8 @@ internal fun AddToPlaylistDialog(
             Column(
                 // Fontscale-Adaption (7.2): Kappe skaliert mit der Schrift.
                 modifier =
-                    Modifier.fillMaxWidth()
+                    Modifier
+                        .fillMaxWidth()
                         .heightIn(max = 360.dp * LocalDensity.current.fontScale)
                         .verticalScroll(rememberScrollState()),
             ) {

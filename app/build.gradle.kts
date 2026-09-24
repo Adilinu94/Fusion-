@@ -31,7 +31,9 @@ android {
             libs.versions.app.version.code
                 .get()
                 .toInt()
-        versionName = libs.versions.app.version.name.get()
+        versionName =
+            libs.versions.app.version.name
+                .get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

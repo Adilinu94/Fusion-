@@ -446,12 +446,12 @@ class LibraryViewModel
         ) {
             val ids = pool.filter { it.mediaStoreId in _selectedIds.value }.map { it.mediaStoreId }
             viewModelScope.launch {
-                browseRepository.addToPlaylist(playlistId, ids)
+                browseRepository
+                    .addToPlaylist(playlistId, ids)
                     .onSuccess { added ->
                         val skipped = ids.size - added
                         if (skipped > 0) _duplicateSkips.tryEmit(skipped)
-                    }
-                    .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
+                    }.onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
             }
             clearSelection()
         }
@@ -516,7 +516,8 @@ class LibraryViewModel
 
         private suspend fun runSearch(query: String): List<Song> {
             var result = emptyList<Song>()
-            browseRepository.search(query)
+            browseRepository
+                .search(query)
                 .onSuccess { result = it }
                 .onFailure { _playlistNotice.tryEmit(PlaylistNotice.SEARCH_FAILED) }
             return result
@@ -541,7 +542,8 @@ class LibraryViewModel
         fun toggleFavorite(songId: Long) {
             val makeFavorite = songId !in favoriteIds.value
             viewModelScope.launch {
-                browseRepository.setFavorite(songId, makeFavorite)
+                browseRepository
+                    .setFavorite(songId, makeFavorite)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.FAVORITE_FAILED) }
             }
         }
@@ -639,7 +641,8 @@ class LibraryViewModel
             if (index !in list.indices) return
             viewModelScope.launch {
                 browseRepository.recordPlayback(list[index].mediaStoreId)
-                playbackRepository.setQueue(list, index, playWhenReady = true)
+                playbackRepository
+                    .setQueue(list, index, playWhenReady = true)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.PLAY_FAILED) }
             }
         }
@@ -664,7 +667,8 @@ class LibraryViewModel
                         list.shuffled()
                     }
                 browseRepository.recordPlayback(ordered.first().mediaStoreId)
-                playbackRepository.setQueue(ordered, 0, playWhenReady = true)
+                playbackRepository
+                    .setQueue(ordered, 0, playWhenReady = true)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.PLAY_FAILED) }
             }
         }
@@ -710,7 +714,8 @@ class LibraryViewModel
             val trimmed = name.trim()
             if (trimmed.isEmpty()) return
             viewModelScope.launch {
-                browseRepository.createPlaylist(trimmed)
+                browseRepository
+                    .createPlaylist(trimmed)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CREATE_FAILED) }
             }
         }
@@ -723,12 +728,13 @@ class LibraryViewModel
             val trimmed = name.trim()
             if (trimmed.isEmpty()) return
             viewModelScope.launch {
-                browseRepository.createPlaylist(trimmed)
+                browseRepository
+                    .createPlaylist(trimmed)
                     .onSuccess { id ->
-                        browseRepository.addToPlaylist(id, listOf(song.mediaStoreId))
+                        browseRepository
+                            .addToPlaylist(id, listOf(song.mediaStoreId))
                             .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
-                    }
-                    .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CREATE_FAILED) }
+                    }.onFailure { _playlistNotice.tryEmit(PlaylistNotice.CREATE_FAILED) }
             }
         }
 
@@ -740,7 +746,8 @@ class LibraryViewModel
             val trimmed = name.trim()
             if (trimmed.isEmpty()) return
             viewModelScope.launch {
-                browseRepository.renamePlaylist(playlistId, trimmed)
+                browseRepository
+                    .renamePlaylist(playlistId, trimmed)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.RENAME_FAILED) }
             }
         }
@@ -758,7 +765,8 @@ class LibraryViewModel
             // B4: Stand fuer Undo merken (Name, Songs, Label).
             val info = playlists.value.find { it.id == playlistId }
             val songIds = browseRepository.songsOfPlaylist(playlistId).first().map { it.mediaStoreId }
-            browseRepository.deletePlaylist(playlistId)
+            browseRepository
+                .deletePlaylist(playlistId)
                 .onSuccess { lastDeletedPlaylist = info?.let { DeletedPlaylist(it.name, songIds, it.label) } }
                 .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
         }
@@ -774,16 +782,18 @@ class LibraryViewModel
             val deleted = lastDeletedPlaylist ?: return
             lastDeletedPlaylist = null
             viewModelScope.launch {
-                browseRepository.createPlaylist(deleted.name)
+                browseRepository
+                    .createPlaylist(deleted.name)
                     .onSuccess { id ->
                         if (deleted.songIds.isNotEmpty()) {
-                            browseRepository.addToPlaylist(id, deleted.songIds)
+                            browseRepository
+                                .addToPlaylist(id, deleted.songIds)
                                 .onFailure { _playlistNotice.tryEmit(PlaylistNotice.RESTORE_FAILED) }
                         }
-                        browseRepository.setPlaylistLabel(id, deleted.label)
+                        browseRepository
+                            .setPlaylistLabel(id, deleted.label)
                             .onFailure { _playlistNotice.tryEmit(PlaylistNotice.RESTORE_FAILED) }
-                    }
-                    .onFailure { _playlistNotice.tryEmit(PlaylistNotice.RESTORE_FAILED) }
+                    }.onFailure { _playlistNotice.tryEmit(PlaylistNotice.RESTORE_FAILED) }
             }
         }
 
@@ -793,11 +803,11 @@ class LibraryViewModel
             song: Song,
         ) {
             viewModelScope.launch {
-                browseRepository.addToPlaylist(playlistId, listOf(song.mediaStoreId))
+                browseRepository
+                    .addToPlaylist(playlistId, listOf(song.mediaStoreId))
                     .onSuccess { added ->
                         if (added == 0) _duplicateSkips.tryEmit(1)
-                    }
-                    .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
+                    }.onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
             }
         }
 
@@ -809,7 +819,8 @@ class LibraryViewModel
         ) {
             lastRemovedPlaylistEntry = RemovedPlaylistEntry(playlistId, songId, position)
             viewModelScope.launch {
-                browseRepository.removeFromPlaylist(playlistId, position)
+                browseRepository
+                    .removeFromPlaylist(playlistId, position)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
             }
         }
@@ -837,7 +848,8 @@ class LibraryViewModel
                 }
                 val target = removed.position.coerceAtMost(sizeBefore)
                 if (target < sizeBefore) {
-                    browseRepository.moveInPlaylist(removed.playlistId, sizeBefore, target)
+                    browseRepository
+                        .moveInPlaylist(removed.playlistId, sizeBefore, target)
                         .onFailure { _playlistNotice.tryEmit(PlaylistNotice.RESTORE_FAILED) }
                 }
             }
@@ -850,7 +862,8 @@ class LibraryViewModel
             toPosition: Int,
         ) {
             viewModelScope.launch {
-                browseRepository.moveInPlaylist(playlistId, fromPosition, toPosition)
+                browseRepository
+                    .moveInPlaylist(playlistId, fromPosition, toPosition)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
             }
         }
@@ -861,7 +874,8 @@ class LibraryViewModel
             label: PlaylistLabel?,
         ) {
             viewModelScope.launch {
-                browseRepository.setPlaylistLabel(playlistId, label)
+                browseRepository
+                    .setPlaylistLabel(playlistId, label)
                     .onFailure { _playlistNotice.tryEmit(PlaylistNotice.CHANGE_FAILED) }
             }
         }

@@ -427,12 +427,6 @@ class PlaybackService : MediaLibraryService() {
      * und Position aus dem PlayerStateStore wieder her.
      */
     @OptIn(UnstableApi::class)
-    /**
-     * Testbar gehaltener Session-Callback (Befund 8.2): die
-     * Custom-Command-Logik ist der Vertragskern zwischen App und Service
-     * und wird deshalb in [PlaybackServiceCommandsTest] ohne echten
-     * ExoPlayer ausgefuehrt. `internal` nur fuer `:data:playback`-Tests.
-     */
     internal class LibrarySessionCallback(
         private val scope: CoroutineScope,
         private val stateStore: PlayerStateStore,
@@ -491,8 +485,11 @@ class PlaybackService : MediaLibraryService() {
                     // Rufer ihn von Erfolg unterscheiden kann.
                     return scope.future {
                         val played = onPlaySongAt(songId, startPositionMs)
+                        // SessionResult nimmt fuer Fehler die SessionError-
+                        // Codes; RESULT_ERROR_UNKNOWN ist dort nicht
+                        // deklariert (Lint WrongConstant).
                         SessionResult(
-                            if (played) SessionResult.RESULT_SUCCESS else SessionResult.RESULT_ERROR_UNKNOWN,
+                            if (played) SessionResult.RESULT_SUCCESS else SessionError.ERROR_UNKNOWN,
                         )
                     }
                 }
@@ -519,7 +516,7 @@ class PlaybackService : MediaLibraryService() {
                     return scope.future {
                         val armed = onArmLanding(songId, startPositionMs, delayMs, fadeMs)
                         SessionResult(
-                            if (armed) SessionResult.RESULT_SUCCESS else SessionResult.RESULT_ERROR_UNKNOWN,
+                            if (armed) SessionResult.RESULT_SUCCESS else SessionError.ERROR_UNKNOWN,
                         )
                     }
                 }
