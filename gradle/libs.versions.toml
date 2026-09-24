@@ -6,12 +6,12 @@
 
 [versions]
 # Build-Toolchain
-agp = "9.3.1"
-kotlin = "2.4.10"
+agp = "9.4.1"
+kotlin = "2.4.20"
 # KSP seit 2.3.0 eigenstaendig versioniert ("loosely tied", google/ksp#2660):
 # die 2.3.x-Reihe laeuft mit Kotlin 2.4.x; kein Versions-Matching mehr noetig.
-ksp = "2.3.11"
-spotless = "8.8.0"
+ksp = "2.3.12"
+spotless = "8.10.2"
 ktlint = "1.8.0"
 # Detekt 2.0.0-alpha.6 ist explizit gegen Kotlin 2.4.10 / AGP 9.3.1 /
 # Gradle 9.6 gebaut (Release-Notes 2026-08-04); die stabile 1.x unterstuetzt
@@ -34,10 +34,10 @@ activityCompose = "1.13.0"
 # Paket 4.16: 2026.08.00 verifiziert (Google-Maven-Metadaten 2026-09-14):
 # Compose 1.12.0, material3 1.4.0 (stabil). M3 Expressive (1.5.0) existiert
 # weiterhin nur als Alpha (alpha28) und bleibt deshalb aussen vor.
-composeBom = "2026.08.00"
-navigationCompose = "2.9.8"
-room = "2.8.4"
-media3 = "1.11.0"
+composeBom = "2026.09.00"
+navigationCompose = "2.10.1"
+room = "2.8.5"
+media3 = "1.11.1"
 workManager = "2.11.2"
 datastore = "1.2.1"
 hiltNavigationCompose = "1.4.0"
@@ -61,7 +61,7 @@ kotlinxSerialization = "1.11.0"
 # Tests
 junit4 = "4.13.2"
 turbine = "1.2.1"
-robolectric = "4.16.1"
+robolectric = "4.17"
 androidxTestJunit = "1.3.0"
 androidxTestRunner = "1.7.0"
 espresso = "3.7.0"
