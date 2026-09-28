@@ -87,6 +87,14 @@ class LibraryBrowseRepositoryTest {
         album = album,
         genre = genre,
         isAvailable = true,
+        // 2026-09-27 (Befund 6.9): die gefalteten Spalten. Der Test
+        // baut die Entity **direkt**, nicht ueber `Mappers.toEntity` —
+        // ohne diese drei Zeilen waeren sie `NULL` und `searchFolded`
+        // wuerde nichts finden, was als Fehler der Migration aussieht
+        // und keiner ist.
+        titleFolded = foldForSearch(title),
+        artistFolded = foldForSearch(artist),
+        albumFolded = foldForSearch(album),
     )
 
     @Test
@@ -234,6 +242,8 @@ class LibraryBrowseRepositoryTest {
                     song(2, "Yesterday", "The Beatles", "Help"),
                 ),
             )
+            // Der FTS-Index wird beim Scan gepflegt, nicht beim Schreiben.
+            db.libraryBrowseDao().rebuildSearchIndex()
 
             val byTitle = (repository.search("bohem") as AppResult.Success).value
             assertEquals(listOf(1L), byTitle.map { it.mediaStoreId })
@@ -242,6 +252,163 @@ class LibraryBrowseRepositoryTest {
             assertEquals(listOf(1L), byArtist.map { it.mediaStoreId })
 
             assertTrue((repository.search("   ") as AppResult.Success).value.isEmpty())
+        }
+
+    /**
+     * 2026-09-27, Befund 6.9: FTS4 verknuepft Token per UND. "queen
+     * metallica" lieferte null Treffer, obwohl beide Begriffe in der
+     * Bibliothek vorkommen. Der ODER-Fallback macht die Suche wieder
+     * brauchbar, ohne die praezise UND-Semantik aufzugeben.
+     */
+    @Test
+    fun `mehrwortsuche findet auch bei UND-leeremitte per ODER-treffer`() =
+        runTest {
+            db.songDao().upsertAll(
+                listOf(
+                    song(1, "Bohemian Rhapsody", "Queen", "A Night at the Opera"),
+                    song(2, "Enter Sandman", "Metallica", "Black Album"),
+                ),
+            )
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            // Der Aufrufer probiert erst UND (praezise) und faellt dann auf
+            // ODER zurueck. Beide Wege sehen hier dieselbe Eingabe, das
+            // Ergebnis ist der Fallback.
+            val hits = (repository.search("queen metallica") as AppResult.Success).value
+            assertTrue(
+                "ODER-Fallback lieferte nichts: $hits",
+                hits.isNotEmpty(),
+            )
+            assertEquals(setOf(1L, 2L), hits.map { it.mediaStoreId }.toSet())
+        }
+
+    /**
+     * Gegenprobe zum ODER-Fallback: bei einem Treffer im **praezisen**
+     * Weg wird nicht verbreitert. Wer "queen bohemian" sucht, will den
+     * einen Treffer, nicht alle Queen-Titel.
+     */
+    @Test
+    fun `praezise treffer werden nicht verbreitert`() =
+        runTest {
+            db.songDao().upsertAll(
+                listOf(
+                    song(1, "Bohemian Rhapsody", "Queen", "A Night at the Opera"),
+                    song(2, "We Will Rock You", "Queen", "News of the World"),
+                ),
+            )
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("queen bohemian") as AppResult.Success).value
+            assertEquals(
+                "Der praezise Weg lieferte mehr als den exakten Treffer",
+                listOf(1L),
+                hits.map { it.mediaStoreId },
+            )
+        }
+
+    /**
+     * 2026-09-27, Befund 6.9: FTS4 und `LIKE` vergleichen **Bytes**,
+     * "Beyonce" findet "Beyoncé" nicht. Migration 17 fuehrt darum
+     * `title_folded` — die normalisierte Form des Titels.
+     *
+     * Der Test **faellt ohne die Spalte um**: `searchFolded` kann dann
+     * nichts finden, weil die Spalte `NULL` ist. Genau das war vorher
+     * als Luecke dokumentiert (`diakritika im titel sind eine
+     * dokumentierte luecke`).
+     */
+    @Test
+    fun `diakritika werden ueber die gefaltete spalte gefunden`() =
+        runTest {
+            db.songDao().upsertAll(listOf(song(1, "Beyoncé", "Destiny's Child", "Listen")))
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("beyonce") as AppResult.Success).value
+            assertTrue(
+                "Der Diakritika-Fallback hat nicht gegriffen: $hits",
+                hits.any { it.mediaStoreId == 1L },
+            )
+        }
+
+    /**
+     * Gegenprobe: die **umgekehrte** Richtung muss genauso funktionieren.
+     * Eingabe "Beyoncé" (mit Akzent, etwa von einem iPhone-Tastatur-Layout),
+     * gespeicherter Titel ohne. Das ist der haeufigere Fall, weil ein
+     * deutscher Nutzer ohne Akzent tippt, ein importierter Tag aber welche
+     * haben kann.
+     */
+    @Test
+    fun `umgekehrte richtung findet ebenfalls`() =
+        runTest {
+            db.songDao().upsertAll(listOf(song(1, "Beyoncé", "Destiny's Child", "Listen")))
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("Beyoncé") as AppResult.Success).value
+            assertTrue(
+                "Auch die umgekehrte Richtung muss greifen: $hits",
+                hits.any { it.mediaStoreId == 1L },
+            )
+        }
+
+    /**
+     * Die Kleinschreibung: "born to be wild" findet "Born To Be Wild".
+     * Vor der gefalteten Spalte war das **nicht** der Fall — `LIKE` ohne
+     * `COLLATE NOCASE` vergleicht case-sensitiv. Die gefaltete Spalte ist
+     * kleingeschrieben, die Eingabe wird es auch.
+     */
+    @Test
+    fun `gross-klein-schreibung wird ignoriert`() =
+        runTest {
+            db.songDao().upsertAll(listOf(song(1, "Born To Be Wild", "Steppenwolf", "Blitz")))
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("born to be") as AppResult.Success).value
+            assertTrue(
+                "Kleinschreibung muss denselben Titel finden: $hits",
+                hits.any { it.mediaStoreId == 1L },
+            )
+        }
+
+    /**
+     * Gegenprobe: mit **richtigem** Diakritika greift bereits FTS, der
+     * LIKE-Fallback wird gar nicht gebraucht. Das beweist, dass der
+     * Fallback additiv wirkt und nicht den Normalweg ersetzt.
+     */
+    @Test
+    fun `richtige diakritika finden ueber den schnellen fts-weg`() =
+        runTest {
+            db.songDao().upsertAll(listOf(song(1, "Beyoncé", "Destiny's Child", "Listen")))
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("Beyoncé") as AppResult.Success).value
+            assertEquals(
+                "Der FTS-Weg hat nicht getroffen, der Fallback wurde noetig",
+                listOf(1L),
+                hits.map { it.mediaStoreId },
+            )
+        }
+
+    /**
+     * 2026-09-27, Befund 6.9: ohne `ESCAPE` wuerde "%" als Muster
+     * gelten und **jeden** Titel treffen. Der Test prueft, dass eine
+     * Prozent-Eingabe als Text gesucht wird.
+     */
+    @Test
+    fun `like-muster escaped sonderzeichen`() =
+        runTest {
+            db.songDao().upsertAll(
+                listOf(
+                    song(1, "100% Pure Love", "X", "Al"),
+                    song(2, "Whatever", "X", "Al"),
+                ),
+            )
+            db.libraryBrowseDao().rebuildSearchIndex()
+
+            val hits = (repository.search("100%") as AppResult.Success).value
+            assertEquals(
+                "Die Prozent-Eingabe traf einen Titel ohne Prozentzeichen",
+                listOf(1L),
+                hits.map { it.mediaStoreId },
+            )
         }
 
     @Test
@@ -270,6 +437,61 @@ class LibraryBrowseRepositoryTest {
             assertEquals(
                 listOf(1L, 2L),
                 repository.songsOfPlaylist(result.playlistId).first().map { it.mediaStoreId },
+            )
+        }
+
+    /**
+     * 2026-09-27, Befund 4.7: der M3U-Import pruefte nicht gegen
+     * bestehende Eintraege und baute keine Duplikate ab. Zwei Zeilen auf
+     * dieselbe Datei ergaben zwei Zeilen mit derselben `songId`, und ein
+     * zweiter Import derselben M3U verdoppelte die gesamte Playlist.
+     */
+    @Test
+    fun `m3u import legt keinen song doppelt an`() =
+        runTest {
+            db.songDao().upsertAll(listOf(song(1, "Song One", "X", "Al")))
+            val m3u =
+                """
+                #EXTM3U
+                #EXTINF:200,X - Song One
+                Music/Song One.flac
+                #EXTINF:200,X - Song One (zweiter Pfad)
+                Other/Song One.flac
+                """.trimIndent()
+
+            val result = (repository.importM3uPlaylist("Doppelt", m3u) as AppResult.Success).value
+            assertEquals("Die Meldung zaehlte zwei, obwohl einer eingefuegt wurde", 1, result.importedCount)
+            assertEquals(
+                listOf(1L),
+                repository.songsOfPlaylist(result.playlistId).first().map { it.mediaStoreId },
+            )
+        }
+
+    /** Zweimal-Import derselben Datei darf nichts duplizieren. */
+    @Test
+    fun `zweiter m3u import derselben datei aendert die playlist nicht`() =
+        runTest {
+            db.songDao().upsertAll(
+                listOf(
+                    song(1, "Song One", "X", "Al"),
+                    song(2, "Song Two", "X", "Al"),
+                ),
+            )
+            val m3u =
+                """
+                #EXTM3U
+                Song One.flac
+                Song Two.flac
+                """.trimIndent()
+
+            val first = (repository.importM3uPlaylist("Zweimal", m3u) as AppResult.Success).value
+            assertEquals(2, first.importedCount)
+
+            val second = (repository.importM3uPlaylist("Zweimal", m3u) as AppResult.Success).value
+            assertEquals(
+                "Der zweite Import hat Eintraege erneut angelegt",
+                listOf(1L, 2L),
+                repository.songsOfPlaylist(second.playlistId).first().map { it.mediaStoreId },
             )
         }
 
@@ -411,6 +633,12 @@ private class RecordingPlayStatDao(
     }
 
     override fun observeAll(): Flow<List<PlayStatEntity>> = flowOf(stats.values.toList())
+
+    /** 2026-09-27 (Befund 6.7): Reconciliation, fuer den Fake nicht relevant. */
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int = 0
 }
 
 /** D5/A2: Zaehlt Batch-Insert und Einzel-Updates der Playlist-Eintraege. */
@@ -479,6 +707,12 @@ private class RecordingPlaylistDao : PlaylistDao {
     override suspend fun maxPosition(playlistId: Long): Int = unsupported()
 
     override fun observeSongsOfPlaylist(playlistId: Long): Flow<List<SongEntity>> = flowOf(emptyList())
+
+    /** 2026-09-27 (Befund 6.7): Reconciliation, fuer den Fake nicht relevant. */
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int = 0
 
     private fun unsupported(): Nothing = error("in diesem Test nicht benutzt")
 }

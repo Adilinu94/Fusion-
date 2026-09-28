@@ -326,6 +326,140 @@ val MIGRATION_14_15 =
         }
     }
 
+/**
+ * v15 -> v16 (2026-09-27): Sortier-Indizes, Playlist-Uniqueness, Musikbezug
+ * im Satz-Log.
+ *
+ * **Additiv und index-only**, mit einer Ausnahme: `flat_sets` bekommt drei
+ * nullable Spalten. Die sind bewusst additiv, damit ein Bestandsdatensatz
+ * ohne Medienbezug gueltig bleibt.
+ *
+ * 1. **Sortier-Indizes auf `play_stats`, `favorites`, `playlists`**
+ *    (Befund 6.8). Die drei Tabellen hatten keinen Index, obwohl genau
+ *    diese Spalten die Sortierspalten der Browse-Abfragen sind:
+ *    `ORDER BY last_played_at_epoch_ms`, `ORDER BY play_count`,
+ *    `ORDER BY created_at_epoch_ms`, `WHERE label`. Das war die einzige
+ *    Stelle, an der die eigene Regel der Datei ("jede Browse-Query
+ *    braucht einen Index") nicht angewandt wurde.
+ *
+ * 2. **UNIQUE (playlist_id, song_id) auf `playlist_items`**
+ *    (Befund 4.7/1.18). Der Duplikatschutz gehoerte ins Schema, nicht in
+ *    den Aufrufer: der M3U-Import ist der zweite Schreibpfad und pruefte
+ *    nie gegen bestehende Eintraege. Der Aufrufer-Fix bleibt, weil die
+ *    Constraint sonst eine Exception wirft statt stillzuschweigen.
+ *
+ *    **Vor dem Anlegen werden vorhandene Duplikate entfernt** — sonst
+ *    schlaegt `CREATE UNIQUE INDEX` bei einer echten Bibliothek fehl und
+ *    die App startet nicht (Befund 4.8). Die Bereinigung behaelt jeweils
+ *    den **ersten** Eintrag (niedrigste `id`, also die frueheste
+ *    Position) und gibt die `position` der entfernten Zeilen frei, damit
+ *    die restliche Reihenfolge lueckenlos bleibt.
+ *
+ * 3. **Musikbezug in `flat_sets`** (Befund 11.3/13.4). `song_id`,
+ *    `playback_position_ms` und `marker_id` als nullable Spalten. Sie
+ *    schliessen die groesste offene Luecke der Verzahnung: der
+ *    vorhandene `PlaybackSnapshotEntity` war toter Code, und
+ *    `feature/progress` konnte nicht zeigen, welche Musik zu einem Satz
+ *    gehörte.
+ *
+ *    **Bewusst ohne Fremdschluessel:** der Titel und der Marker koennen
+ *    verschwinden, die Satz-Historie soll das ueberleben.
+ */
+val MIGRATION_15_16 =
+    object : Migration(15, 16) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            // --- 1. Sortier-Indizes ---------------------------------------
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_play_stats_last_played_at_epoch_ms` " +
+                    "ON `play_stats` (`last_played_at_epoch_ms`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_play_stats_play_count` " +
+                    "ON `play_stats` (`play_count`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_favorites_created_at_epoch_ms` " +
+                    "ON `favorites` (`created_at_epoch_ms`)",
+            )
+            db.execSQL(
+                "CREATE INDEX IF NOT EXISTS `index_playlists_label` " +
+                    "ON `playlists` (`label`)",
+            )
+
+            // --- 2. Playlist-Duplikate bereinigen -----------------------------
+            // "Erstes Vorkommen je (playlist_id, song_id) behalten, alle
+            // weiteren loeschen." `MIN(id)` als Gruppenschluessel,
+            // SQLite-verstaendlich und ohne Fensterfunktion (die erst ab
+            // SQLite 3.25 verfuegbar waere, also aelter als minSdk 26
+            // auf manchen Geraeten).
+            //
+            // Warum `MIN(id)` und nicht `MIN(position)`: die `id` ist der
+            // frueheste **Einfuegezeitpunkt**, und bei manuell verschobenen
+            // Eintraegen entspricht das der Absicht des Nutzers. Die
+            // Position wird ohnehin neu nummeriert (Schritt 3 unten).
+            db.execSQL(
+                "DELETE FROM `playlist_items` WHERE `id` NOT IN " +
+                    "(SELECT MIN(`id`) FROM `playlist_items` " +
+                    "GROUP BY `playlist_id`, `song_id`)",
+            )
+            db.execSQL(
+                "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                    "`index_playlist_items_playlist_id_song_id` " +
+                    "ON `playlist_items` (`playlist_id`, `song_id`)",
+            )
+
+            // --- 3. Musikbezug im Satz-Log ----------------------------------
+            db.execSQL("ALTER TABLE `flat_sets` ADD COLUMN `song_id` INTEGER DEFAULT NULL")
+            db.execSQL("ALTER TABLE `flat_sets` ADD COLUMN `playback_position_ms` INTEGER DEFAULT NULL")
+            db.execSQL("ALTER TABLE `flat_sets` ADD COLUMN `marker_id` INTEGER DEFAULT NULL")
+        }
+    }
+
+/**
+ * v16 -> v17 (2026-09-27): normalisierte Suchspalten (Befund 6.9).
+ *
+ * **Das Problem, das keine Abfrage loesen kann:** FTS4 und `LIKE`
+ * vergleichen **Bytes**. „Beyonce" findet „Beyoncé" nicht, und
+ * `LIKE '%beyonce%'` findet es auch nicht, weil der **gespeicherte**
+ * Titel die Diakritika traegt. Eine Abfrage kann den Titel nicht
+ * umfalten, ohne die ganze Tabelle zu durchsuchen — das war in
+ * Abschnitt 20.4 als offene Luecke dokumentiert.
+ *
+ * **Die Loesung ist die andere Haelfte:** die vergleichbare Form liegt
+ * in der Tabelle. `title_folded`, `artist_folded` und `album_folded`
+ * tragen den Text ohne Diakritika und in Kleinschreibung
+ * (`Mappers.foldForSearch`), und `searchFolded` normalisiert die
+ * **Eingabe** genauso.
+ *
+ * **Additiv und nullable:** bestehende Zeilen bekommen `NULL`, und der
+ * Fallback-Scan fuellt sie beim naechsten Bibliotheks-Scan nach. Das
+ * ist Absicht — die Normalisierung braucht Kotlin (`Normalizer`),
+ * und `ALTER TABLE ADD COLUMN` kann in SQLite keinen Kotlin-Ausdruck
+ * aufrufen. Ein `UPDATE songs SET title_folded = ...` aus der App
+ * beim Start waere die Alternative, aber sie braucht einen eigenen
+ * Durchlauf und damit Zustand.
+ *
+ * **Konsequenz bis zum ersten Scan:** Titel, die vor dem Update
+ * geschrieben wurden, sind in `title_folded` noch `NULL` und werden
+ * von `searchFolded` nicht gefunden. FTS4 und der ODER-Fallback
+ * laufen davor und decken sie ab — die Suche ist also nie schlechter
+ * als vorher, nur die Diakritika-Suche greift erst nach dem Scan.
+ * Deshalb steht im KDoc der Abfrage auch kein "Migration 16" mehr,
+ * sondern 17.
+ *
+ * **Kein Index:** `LIKE '%…%'` mit fuehrendem Wildzeichen kann keinen
+ * B-Tree-Index nutzen, egal auf welcher Spalte. Ein Index waere reine
+ * Speicher-Verschwendung mit Schreibkosten.
+ */
+val MIGRATION_16_17 =
+    object : Migration(16, 17) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `songs` ADD COLUMN `title_folded` TEXT DEFAULT NULL")
+            db.execSQL("ALTER TABLE `songs` ADD COLUMN `artist_folded` TEXT DEFAULT NULL")
+            db.execSQL("ALTER TABLE `songs` ADD COLUMN `album_folded` TEXT DEFAULT NULL")
+        }
+    }
+
 /** Vollstaendige Migrationskette der Datenbank (Reihenfolge egal). */
 val DROPSYNC_MIGRATIONS: Array<Migration> =
     arrayOf(
@@ -343,4 +477,6 @@ val DROPSYNC_MIGRATIONS: Array<Migration> =
         MIGRATION_12_13,
         MIGRATION_13_14,
         MIGRATION_14_15,
+        MIGRATION_15_16,
+        MIGRATION_16_17,
     )

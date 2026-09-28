@@ -3,6 +3,7 @@ package com.dropsync.core.testing
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.MusicContext
 import com.dropsync.domain.workout.SetSummaries
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOf
@@ -35,6 +36,7 @@ class FakeFlatSetRepository : FlatSetRepository {
         exerciseId: Long,
         weightMilliKg: Long,
         reps: Int,
+        musicContext: MusicContext,
     ): AppResult<Long> {
         val set =
             FlatSet(
@@ -43,6 +45,12 @@ class FakeFlatSetRepository : FlatSetRepository {
                 weightMilliKg = weightMilliKg,
                 reps = reps,
                 loggedAtEpochMs = 0L,
+                // Der Fake bildet den Musikbezug ab (Befund 13.4), damit
+                // Tests ueber den Satz-Log auch die Verzaehnung pruefen
+                // koennen, ohne eine echte DB zu brauchen.
+                songId = musicContext.songId,
+                playbackPositionMs = musicContext.playbackPositionMs,
+                markerId = musicContext.markerId,
             )
         logged += set
         return AppResult.Success(set.id)

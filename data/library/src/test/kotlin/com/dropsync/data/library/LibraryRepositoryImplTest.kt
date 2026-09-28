@@ -2,6 +2,7 @@ package com.dropsync.data.library
 
 import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
+import com.dropsync.core.database.dao.SongDao
 import com.dropsync.core.model.Song
 import com.dropsync.core.testing.TestDispatcherProvider
 import kotlinx.coroutines.test.runTest
@@ -30,6 +31,15 @@ class LibraryRepositoryImplTest {
             folderFilter = folderFilter,
             trackAnalysisRepository = trackAnalysis,
             browseDao = FakeLibraryBrowseDao(),
+            // 2026-09-27 (Befund 6.7): Reconciliation. Die Fakes sind hier
+            // No-Ops — die Heuristik selbst wird in `SongReconcilerTest`
+            // geprueft, das Umhaengen in `FolderScanAndCueTest`.
+            markerDao = FakeMarkerDao(),
+            favoriteDao = FakeFavoriteDao(),
+            playStatDao = FakePlayStatDao(),
+            playlistDao = FakePlaylistDao(),
+            flatSetDao = FakeFlatSetDao(),
+            trackAnalysisDao = FakeTrackAnalysisDao(),
         )
 
     private fun song(
@@ -115,6 +125,58 @@ class LibraryRepositoryImplTest {
             repository.refreshLibrary(force = false)
 
             assertEquals("a".repeat(64), songDao.rows.getValue(1).knownSha256)
+        }
+
+    /**
+     * 2026-09-27, Befund 4.2: `NOT IN (:presentIds)` bindet einen Parameter je
+     * ID. Oberhalb des SQLite-Variablenlimits (999 bis SQLite 3.32, API
+     * 26/27 liefern aeltere Builds) scheiterte der Scan und damit die ganze
+     * Bibliothek.
+     *
+     * Der Test deckt die Zerlegung ab und prueft zugleich, dass sie
+     * **semantisch korrekt** bleibt: alle vorhandenen Songs muessen am Ende
+     * verfuegbar sein, nicht nur der letzte Block.
+     */
+    @Test
+    fun `scan mit mehr songs als das sqlite variablenlimit erhaelt alle als verfuegbar`() =
+        runTest {
+            val songCount = SongDao.BIND_CHUNK_SIZE * 3 + 17
+            gateway.audio = (1L..songCount.toLong()).map { song(it) }
+            gateway.generation = "v1:1"
+
+            val result = repository.refreshLibrary(force = false)
+            assertTrue(result is AppResult.Success)
+
+            // Jeder Song muss verfuegbar sein. Ohne Chunking wuerde der
+            // Scan entweder scheitern oder (falsch) alles als fehlend
+            // markieren, was die letzten Bloecke betrifft.
+            val unavailable = songDao.rows.filterValues { !it.isAvailable }.keys
+            assertTrue(
+                "Es duerfen keine Songs als fehlend markiert werden, war: ${unavailable.size}",
+                unavailable.isEmpty(),
+            )
+            assertEquals(songCount, songDao.rows.size)
+        }
+
+    /**
+     * 2026-09-27: leerer Scan darf nicht an `NOT IN ()` scheitern. Der
+     * Aufrufer nutzt dafuer [SongDao.markAllUnavailable].
+     */
+    @Test
+    fun `leerer scan markiert alles als nicht verfuegbar ohne fehler`() =
+        runTest {
+            gateway.audio = listOf(song(1), song(2))
+            gateway.generation = "v1:1"
+            repository.refreshLibrary(force = false)
+
+            gateway.audio = emptyList()
+            gateway.generation = "v1:2"
+            val result = repository.refreshLibrary(force = false)
+
+            assertTrue(result is AppResult.Success)
+            assertTrue(songDao.rows.values.none { it.isAvailable })
+            // Die Zeilen bleiben erhalten (Schritt 4.4), nur der Status kippt.
+            assertEquals(2, songDao.rows.size)
         }
 
     @Test

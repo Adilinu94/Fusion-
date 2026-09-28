@@ -17,6 +17,7 @@ import com.dropsync.domain.library.Album
 import com.dropsync.domain.library.Artist
 import com.dropsync.domain.library.LibraryFolder
 import com.dropsync.domain.playback.PersistedPlayerState
+import com.dropsync.domain.playback.PersistedQueueEntry
 import com.dropsync.domain.playback.RepeatMode
 import com.google.common.util.concurrent.MoreExecutors
 import kotlinx.coroutines.CoroutineScope
@@ -249,7 +250,11 @@ class PlaybackServiceBrowseTest {
         runTest {
             val state =
                 PersistedPlayerState(
-                    queueSongIds = listOf(7L, 8L),
+                    queueEntries =
+                        listOf(
+                            PersistedQueueEntry(mediaId = "7", songId = 7L),
+                            PersistedQueueEntry(mediaId = "8", songId = 8L),
+                        ),
                     currentSongId = 8L,
                     positionMs = 42_000L,
                     shuffleEnabled = false,

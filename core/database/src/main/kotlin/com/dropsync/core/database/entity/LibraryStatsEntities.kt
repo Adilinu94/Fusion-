@@ -10,6 +10,15 @@ import androidx.room.PrimaryKey
 /**
  * Wiedergabestatistik je Song (Plan Phase 6). Getrennt von der
  * songs-Tabelle, damit ein Rescan die Zaehler nie zuruecksetzt.
+ *
+ * **Indizes (2026-09-27, Befund 6.8):** die Tabelle hatte **keinen** Index,
+ * obwohl genau zwei Queries ueber sie sortieren:
+ * `observeRecentlyPlayed` (`ORDER BY last_played_at_epoch_ms DESC LIMIT`)
+ * und `observeMostPlayed` (`ORDER BY play_count DESC LIMIT`). Beide sind
+ * INNER JOINs auf `songs`, also musste SQLite die Join-Reihenfolge in
+ * einen Temp-B-Tree sortieren — bei 5.000 Titeln und 2.000 gespielten
+ * messbar, und die eigene Regel der Datei ("jede Browse-Query braucht
+ * einen Index") wurde hier nicht angewandt.
  */
 @Entity(
     tableName = "play_stats",
@@ -20,6 +29,10 @@ import androidx.room.PrimaryKey
             childColumns = ["song_id"],
             onDelete = ForeignKey.CASCADE,
         ),
+    ],
+    indices = [
+        Index(value = ["last_played_at_epoch_ms"]),
+        Index(value = ["play_count"]),
     ],
 )
 data class PlayStatEntity(
@@ -35,6 +48,10 @@ data class PlayStatEntity(
 /**
  * Favoritenmarkierung (Plan Phase 6). Reine Zuordnung ueber die
  * MediaStore-ID; das Vorhandensein der Zeile bedeutet "favorisiert".
+ *
+ * **Index (2026-09-27, Befund 6.8):** `observeFavorites` sortiert
+ * `ORDER BY created_at_epoch_ms DESC` — bei 100 Favoriten egal, bei 2.000
+ * ein Sortierdurchgang pro Beobachtung.
  */
 @Entity(
     tableName = "favorites",
@@ -46,6 +63,7 @@ data class PlayStatEntity(
             onDelete = ForeignKey.CASCADE,
         ),
     ],
+    indices = [Index(value = ["created_at_epoch_ms"])],
 )
 data class FavoriteEntity(
     @PrimaryKey
@@ -55,10 +73,20 @@ data class FavoriteEntity(
     val createdAtEpochMs: Long,
 )
 
-/** Nutzerplaylist (Plan Phase 6); auch Ziel des M3U-Imports. */
+/**
+ * Nutzerplaylist (Plan Phase 6); auch Ziel des M3U-Imports.
+ *
+ * **Index (2026-09-27, Befund 6.8):** `observePlaylistsByLabel` und
+ * `getSongsForLabelOnce` filtern nach `label`. Bei < 100 Playlists
+ * vernachlaessigbar, aber der Index kostet nichts und die Abfrage
+ * laeuft bei jedem DropSync-Start.
+ */
 @Entity(
     tableName = "playlists",
-    indices = [Index(value = ["name"], unique = true)],
+    indices = [
+        Index(value = ["name"], unique = true),
+        Index(value = ["label"]),
+    ],
 )
 data class PlaylistEntity(
     @PrimaryKey(autoGenerate = true)
@@ -100,6 +128,18 @@ data class PlaylistEntity(
         // EXPLAIN-Nachweis im Migrationstest, v14 -> v15.
         Index(value = ["playlist_id", "position"]),
         Index(value = ["song_id"]),
+        // 2026-09-27, Befund 4.7/1.18: der Duplikatschutz gehoerte in
+        // das **Schema**, nicht in den Aufrufer. Vorher pruefte nur
+        // `addToPlaylist` gegen bestehende Eintraege, und der M3U-Import
+        // (der zweite Schreibpfad) gar nicht — derselbe Song zweimal in
+        // einer Playlist war also jederzeit moeglich, mit zwei Zeilen und
+        // zwei Positionen.
+        //
+        // Der Aufrufer-Fix (4.7) bleibt zusaetzlich, weil die
+        // UNIQUE-Constraint sonst eine SQLiteException wirft statt
+        // stillzuschweigen. Das Schema ist die Grenze, der Aufrufer die
+        // Hoeflichkeit.
+        Index(value = ["playlist_id", "song_id"], unique = true),
     ],
 )
 data class PlaylistItemEntity(

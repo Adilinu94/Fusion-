@@ -12,11 +12,11 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 |---|---|---|---|---|---|
 | Kotlin (stdlib, Gradle-Plugins) | 2.4.10 | Apache-2.0 | Sprache, Compiler, Compose-/Serialization-Plugin | https://github.com/JetBrains/kotlin | FREIGEGEBEN |
 | Android Gradle Plugin | 9.3.1 | Apache-2.0 | Build-Toolchain | https://developer.android.com/build | FREIGEGEBEN |
-| KSP | 2.3.10 | Apache-2.0 | Annotation-Processing (Room, Hilt) | https://github.com/google/ksp | FREIGEGEBEN |
+| KSP | 2.3.11 | Apache-2.0 | Annotation-Processing (Room, Hilt) | https://github.com/google/ksp | FREIGEGEBEN |
 | androidx.core:core-ktx | 1.19.0 | Apache-2.0 | Android-Basis-APIs | https://developer.android.com/jetpack/androidx | FREIGEGEBEN |
 | androidx.lifecycle (runtime, viewmodel-compose, runtime-compose) | 2.11.0 | Apache-2.0 | Lifecycle/ViewModel | https://developer.android.com/jetpack/androidx | FREIGEGEBEN |
 | androidx.activity:activity-compose | 1.13.0 | Apache-2.0 | Compose-Host-Activity | https://developer.android.com/jetpack/androidx | FREIGEGEBEN |
-| androidx.compose (BOM) | 2026.06.01 | Apache-2.0 | Deklarative UI, Material 3, Window Size Classes | https://developer.android.com/jetpack/compose | FREIGEGEBEN |
+| androidx.compose (BOM) | 2026.08.00 | Apache-2.0 | Deklarative UI, Material 3, Window Size Classes | https://developer.android.com/jetpack/compose | FREIGEGEBEN |
 | androidx.navigation:navigation-compose | 2.9.8 | Apache-2.0 | Navigation | https://developer.android.com/jetpack/androidx | FREIGEGEBEN |
 | androidx.room (runtime, ktx, compiler, testing) | 2.8.4 | Apache-2.0 | Lokale Datenbank | https://developer.android.com/jetpack/androidx/releases/room | FREIGEGEBEN |
 | androidx.media3 (exoplayer, session, common, test-utils) | 1.11.0 | Apache-2.0 | Lokale Musikwiedergabe | https://developer.android.com/media/media3 | FREIGEGEBEN |
@@ -38,6 +38,16 @@ Status-Werte: `FREIGEGEBEN` (Lizenz geprueft, kompatibel), `OFFEN` (in Pruefung)
 | androidx.benchmark (Macrobenchmark) | 1.5.0-alpha01 | Apache-2.0 | Startup-Messung + Baseline-Profile-Generierung, nur :benchmarks-Modul (keine Distribution in der App) | https://developer.android.com/jetpack/androidx/releases/benchmark | FREIGEGEBEN |
 | FFmpeg (libavcodec, libavformat, libavutil) | 6.1+ | LGPL-2.1-or-later | Audiodecoder-Extension (ALAC/AIFF/WMA/APE/TAK/TTA/DSD), dynamisch gelinkt, aus androidx/media gebaut (ADR-0006) | https://ffmpeg.org | OFFEN |
 | Poppins (Schriftfamilie) | static (wght) | OFL-1.1 | Marken-Typografie, gebuendelte TTF in `:core:designsystem` (`res/font`) | https://github.com/google/fonts/tree/main/ofl/poppins | FREIGEGEBEN |
+| Google Truth | 1.4.4 | Apache-2.0 | Test-Assertions, ausschliesslich in `:training-core` (Git-Submodul mit eigener CI) | https://github.com/google/truth | FREIGEGEBEN |
+
+## Test-Abhaengigkeiten des Submoduls
+
+`:training-core` ist ein Git-Submodul mit eigener CI und bringt zwei
+Abhaengigkeiten mit, die bewusst **nicht** ueber den zentralen Versionskatalog
+laufen (`training-core/build.gradle.kts:34-35`, hartkodiert): `junit:junit:4.13.2`
+und `com.google.truth:truth:1.4.4`. Sie sind hier gelistet, weil das
+Lizenzinventar sonst unvollstaendig waere. Beide sind Apache-2.0 bzw. EPL-1.0
+und damit fuer die App-Auslieferung irrelevant (Test-Scope, kein APK-Inhalt).
 
 ## Poppins (SIL OFL 1.1)
 

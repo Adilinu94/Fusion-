@@ -121,6 +121,16 @@ class AudioPipeline(
         masterProcessor.setReplayGainDb(db)
     }
 
+    /**
+     * True-Peak des laufenden Titels (linear, 0..1+), aus der
+     * Track-Analyse. Begrenzt den ReplayGain so, dass das Ergebnis unter
+     * [MasterDspProcessor.CEILING_DB] bleibt — 2026-09-27, Befund 4.4.
+     * `null` hebt die Begrenzung auf (Titel ohne Analyse).
+     */
+    fun setTruePeak(linear: Double?) {
+        masterProcessor.setTruePeak(linear)
+    }
+
     private val mutableDuckingGain = MutableStateFlow(1.0)
 
     /** Aktueller Cue-Ducking-Gain am Preamp-Knoten (1.0 = kein Ducking). */

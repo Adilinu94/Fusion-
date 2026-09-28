@@ -32,7 +32,7 @@
     <string name="settings_mix_toggle_title">Automatische Übergänge</string>
     <string name="settings_mix_toggle_desc">Titel ineinander überblenden statt hart zu wechseln. Alben und CUE-Titel bleiben immer lückenlos.</string>
     <string name="settings_mix_bit_perfect_hint">Nicht verfügbar, solange Bit-Perfect-Ausgabe aktiv ist.</string>
-    <string name="settings_mix_no_effect">Derzeit ohne Wirkung. Übergänge laufen als harter Wechsel. Stil und Dauer bleiben gespeichert und greifen, sobald der Konsument existiert.</string>
+    <string name="settings_mix_no_effect">Derzeit ohne Wirkung. Übergänge zwischen Titeln laufen als harter Wechsel. Die Dauer wird bei der Drop-Landung als Ausblendung vor dem Wechsel verwendet, der Stil noch nicht. Beide bleiben gespeichert.</string>
     <string name="settings_mix_preset_title">Übergangsstil</string>
     <string name="settings_mix_preset_fade">Fade</string>
     <string name="settings_mix_preset_rise">Rise</string>
@@ -47,6 +47,10 @@
     <string name="settings_mix_preset_melt_desc">Der nächste Titel setzt früh ein; beide verschmelzen lange.</string>
     <string name="settings_mix_preset_slam_desc">Harter Schnitt in der Mitte des Übergangs, wie ein DJ-Cut.</string>
     <string name="settings_mix_duration">Übergangsdauer: %1$d s</string>
+    <!-- 2026-09-27 (Befund 6.7): der Regler ist ausgegraut. Ohne diese
+         Beschreibung liest TalkBack den Wert vor, ohne zu sagen, dass er
+         sich nicht ändern lässt — was wie ein Bedienfehler klingt. -->
+    <string name="a11y_mix_duration">Übergangsdauer %1$d Sekunden, derzeit nicht änderbar</string>
     <string name="settings_audio_entry">Audio &amp; DSP</string>
     <string name="settings_audio_entry_desc">Equalizer, Effekte, Resampler, Bit-Perfect und Ausgabeprofile</string>
     <!-- B2: Timer-Einstieg in den Einstellungen. -->
@@ -96,6 +100,10 @@
     <string name="settings_get_ready_title">Get-Ready-Countdown</string>
     <string name="settings_get_ready_desc">Spielt vor dem Start eines Pausen-Timers einen kurzen 3-2-1-Vorlauf (Haptik + Ton).</string>
     <string name="settings_get_ready_seconds">Vorlauf: %1$d s</string>
+    <!-- 2026-09-27 (Befund 6.8): stateDescription am Slider. TalkBack
+         sagt sonst nur "5" statt "5 Sekunden Vorlauf" — eine Zahl
+         ohne Aussage, wenn man die Beschriftung nicht sieht. -->
+    <string name="a11y_get_ready_seconds">%1$d Sekunden Vorlauf</string>
     <string name="settings_presets_title">Pausen-Schnellwahl</string>
     <string name="settings_presets_desc">Wähle, welche Dauern als Chips im Pausen-Dialog erscheinen.</string>
     <string name="settings_seconds_format">%1$d s</string>

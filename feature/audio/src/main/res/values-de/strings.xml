@@ -78,7 +78,7 @@
     <string name="audio_crossfade_title">Crossfade</string>
     <string name="audio_crossfade_seconds">Dauer</string>
     <string name="audio_crossfade_desc">0 = aus. Nie bei Gapless-Alben oder im Bit-Perfect-Modus.</string>
-    <string name="audio_crossfade_no_effect">Derzeit ohne Wirkung. Übergänge laufen als harter Wechsel. Die Dauer bleibt gespeichert und greift, sobald der Konsument existiert.</string>
+    <string name="audio_crossfade_no_effect">Derzeit ohne Wirkung. Übergänge zwischen Titeln laufen als harter Wechsel. Die Dauer wird bei der Drop-Landung als Ausblendung vor dem Wechsel verwendet und bleibt gespeichert.</string>
 
     <!-- MusicFX / Systemeffekte -->
     <string name="audio_musicfx_title">Systemeffekte (MusicFX)</string>

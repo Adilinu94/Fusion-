@@ -45,6 +45,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -53,6 +54,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
@@ -204,6 +206,23 @@ fun TrainScreen(
     // Eingabe-Karten nicht ueber die ganze Breite laufen (die Sektionen
     // bringen selbst 16 dp mit).
     val wide = rememberWindowWidthSizeClass().isWide
+
+    // 2026-09-27 (Befund 12.3, UI-Hebel 2): der Bildschirm ging mitten
+    // im Training aus. Beim Gewicht-Einstellen hat der Nutzer beide
+    // Haende voll (Stange, Teller) und liegt 90 Sekunden in der Pause —
+    // nach 30 s ohne Eingabe dimmt Android den Bildschirm, und nach
+    // 60 s ist er aus. Der Nutzer muss dann mit nassen Haenden
+    // entsperren, **waehrend er auf der Liege liegt**.
+    //
+    // Nur im Train-Tab und nur solange der Bildschirm sichtbar ist:
+    // `DisposableEffect` raeumt beim Verlassen garantiert auf, damit
+    // kein anderer Screen den Bildschirm offen haelt.
+    val view = LocalView.current
+    DisposableEffect(Unit) {
+        view.keepScreenOn = true
+        onDispose { view.keepScreenOn = false }
+    }
+
     Column(
         modifier =
             modifier
@@ -288,6 +307,10 @@ fun TrainScreen(
                     weightKg = weightInput,
                     lastWeightKg = lastSet?.let { it.weightMilliKg / 1_000_000.0 },
                     reps = repsInput,
+                    // 2026-09-27 (UI-Hebel 1): der letzte Reps-Stand als
+                    // Platzhalter, genau wie beim Gewicht. Der Nutzer
+                    // tippt sonst bei jedem Satz dieselbe Zahl neu.
+                    lastReps = lastSet?.reps,
                     repsSource = repsSource,
                     setPhase = setPhase,
                     countdownSeconds = countdownSeconds,
@@ -635,6 +658,7 @@ private fun PlausibilityHintRow(hint: PlausibilityHint) {
 private fun RepInput(
     reps: String,
     onRepsChange: (String) -> Unit,
+    lastReps: Int? = null,
 ) {
     val decrementDescription = stringResource(R.string.a11y_reps_decrement)
     val incrementDescription = stringResource(R.string.a11y_reps_increment)
@@ -663,6 +687,21 @@ private fun RepInput(
             OutlinedTextField(
                 value = reps,
                 onValueChange = onRepsChange,
+                // 2026-09-27 (Befund 12.3, UI-Hebel 1): der Reps-Feld hatte
+                // **keinen** Platzhalter, das Gewicht hatte einen. Der Nutzer
+                // tippt bei jedem Satz dieselbe Zahl neu — bei fuenf Saetzen
+                // mit 90 s Pause sind das fuenf Tastatur-Oeffnungen pro
+                // Uebung, obwohl der Wert bekannt ist.
+                //
+                // Der Platzhalter ist der Weg, den das Gewichtfeld bereits
+                // geht (`train_weight_last`); er kostet nichts, verhindert
+                // aber den Schreibvorgang, und der Nutzer sieht vor dem
+                // Tippen, welchen Wert er bestaetigt.
+                placeholder = {
+                    lastReps?.let {
+                        Text(stringResource(R.string.train_reps_last, it), maxLines = 1)
+                    }
+                },
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 singleLine = true,
                 textStyle = MaterialTheme.typography.displayMedium.copy(textAlign = TextAlign.Center),
@@ -772,7 +811,18 @@ internal fun RestConsole(
                 }
                 // C3 (P-3/MP-9): Ducking der Pausenmusik am Ort — dieselbe
                 // DSP-Quelle wie die Einstellungen (kein zweiter Wert).
-                RestDuckRow(restDuckDb = restDuckDb, onSetRestDuckDb = onSetRestDuckDb)
+                //
+                // 2026-09-27 (Befund 6.11 / 12.3): **nur vor** der Pause.
+                // Mitten in der Pause standen sieben Chips mit hörbarem
+                // Effekt direkt unter dem Timer — die größte
+                // Fehlbedienungsgefahr auf dem Screen. Wer in der Pause
+                // den Ducking-Wert ändert, hört die Musik sofort anders,
+                // mitten in der Erholung. Und die Einstellung selbst hat
+                // dort nichts verloren: sie gehört zum Training, nicht zur
+                // laufenden Pause.
+                if (timerStatus != TimerStatus.RUNNING) {
+                    RestDuckRow(restDuckDb = restDuckDb, onSetRestDuckDb = onSetRestDuckDb)
+                }
             }
             if (showGoOverlay) {
                 GoOverlay(
@@ -1179,12 +1229,11 @@ internal fun TrainEventSnackbars(
     val learningSkippedUnreliable = stringResource(R.string.train_learning_skipped_unreliable)
     val learningSkippedNotReproducible =
         stringResource(R.string.train_learning_skipped_not_reproducible)
-    val reportCoreTemplate = stringResource(R.string.train_set_report)
-    val reportRejectedTemplate = stringResource(R.string.train_set_report_rejected)
-    val rejectionAccel = stringResource(R.string.train_rejection_accel)
-    val rejectionTemplate = stringResource(R.string.train_rejection_template)
-    val rejectionPhase = stringResource(R.string.train_rejection_phase)
-    val rejectionQuality = stringResource(R.string.train_rejection_quality)
+    // 2026-09-27 (UI-Hebel 3): nur noch die Aussetzer-Anzahl als Template.
+    // Rate, ZuPT und die Ablehnungs-Labels werden im Snackbar nicht mehr
+    // gebraucht — sie stehen im Diagnose-Panel. Die Resources bleiben
+    // erhalten, weil das Panel sie weiterhin liest.
+    val reportGapsTemplate = stringResource(R.string.train_set_report_gaps)
     LaunchedEffect(
         snackbarHostState,
         setSavedMessage,
@@ -1252,31 +1301,31 @@ internal fun TrainEventSnackbars(
         }
     }
     TrainErrorSnackbars(snackbarHostState = snackbarHostState, errorEvent = errorEvent)
+    // 2026-09-27 (Befund 12.3, UI-Hebel 3): der Snackbar-Report stand
+    // als "12 erkannt · Rate 51,3 Hz · 2 Aussetzer · 4 ZuPT · 3
+    // abgelehnt (Beschleunigung 2, Template 1)". Fuenf Snackbar-Quellen
+    // konkurrierten auf **einem** Host (Satz gespeichert + Undo,
+    // Learning-Event, Train-Fehler, DropSync-Skip, Set-Report); bei einem
+    // realistischen Satz-Tempo von 15 s wurde regelmaessig eine verdraengt —
+    // und die realistischste ausgerechnet der **Undo**-Knopf.
+    //
+    // Nur **Aussetzer** sind fuer einen Trainierenden handlungsrelevant
+    // (Paketverluefe = Luecken in der Messung). Rate, ZuPT und die
+    // Ablehnungsmechanismen sind Diagnose und stehen unveraendert im
+    // Diagnose-Panel (`SettingsScreen.kt`, `DiagnosticsLastSetSection`).
     LaunchedEffect(
         snackbarHostState,
-        reportCoreTemplate,
-        reportRejectedTemplate,
-        rejectionAccel,
-        rejectionTemplate,
-        rejectionPhase,
-        rejectionQuality,
+        reportGapsTemplate,
     ) {
         if (snackbarHostState == null) return@LaunchedEffect
-        val labels =
-            mapOf(
-                RepRejectionReason.ACCEL_VOTING to rejectionAccel,
-                RepRejectionReason.TEMPLATE_MATCH to rejectionTemplate,
-                RepRejectionReason.PHASE_VALIDATION to rejectionPhase,
-                RepRejectionReason.QUALITY to rejectionQuality,
-            )
         setReport.collect { report ->
-            snackbarHostState.showSnackbar(
-                message =
-                    SetReportText.format(report, reportCoreTemplate, reportRejectedTemplate) { reason ->
-                        labels.getValue(reason)
-                    },
-                duration = SnackbarDuration.Long,
-            )
+            val concise = SetReportText.formatConcise(report, reportGapsTemplate)
+            if (concise != null) {
+                snackbarHostState.showSnackbar(
+                    message = concise,
+                    duration = SnackbarDuration.Short,
+                )
+            }
         }
     }
 }
@@ -1296,6 +1345,14 @@ private fun TrainErrorSnackbars(
     val errorRestPrefSave = stringResource(R.string.train_error_rest_pref_save)
     val errorUndo = stringResource(R.string.train_error_undo)
     val errorHistory = stringResource(R.string.train_error_history)
+    // 2026-09-27, Befund 5.10: die drei Voraussetzungen fuer die
+    // Live-Zaehlung wurden mit stillem `return` geprueft. Jetzt sieht der
+    // Nutzer, **woran** es liegt, und kann handeln.
+    val errorNoChip = stringResource(R.string.train_error_count_no_chip)
+    val errorNotStreaming = stringResource(R.string.train_error_count_not_streaming)
+    val errorNoCalibration = stringResource(R.string.train_error_count_no_calibration)
+    // Befund 5.12: Satz gespeichert, aber die Pause startete nicht.
+    val errorRestStart = stringResource(R.string.train_error_rest_start_failed)
     LaunchedEffect(
         snackbarHostState,
         errorExerciseCreate,
@@ -1304,6 +1361,10 @@ private fun TrainErrorSnackbars(
         errorRestPrefSave,
         errorUndo,
         errorHistory,
+        errorNoChip,
+        errorNotStreaming,
+        errorNoCalibration,
+        errorRestStart,
     ) {
         if (snackbarHostState == null) return@LaunchedEffect
         errorEvent.collect { event ->
@@ -1315,6 +1376,10 @@ private fun TrainErrorSnackbars(
                     TrainErrorEvent.RestPrefSaveFailed -> errorRestPrefSave
                     TrainErrorEvent.UndoFailed -> errorUndo
                     TrainErrorEvent.HistoryLoadFailed -> errorHistory
+                    TrainErrorEvent.CountBlockedNoChip -> errorNoChip
+                    TrainErrorEvent.CountBlockedNotStreaming -> errorNotStreaming
+                    TrainErrorEvent.CountBlockedNoCalibration -> errorNoCalibration
+                    TrainErrorEvent.RestTimerStartFailed -> errorRestStart
                 }
             snackbarHostState.showSnackbar(message)
         }
@@ -1640,6 +1705,7 @@ internal fun SetEntryHero(
     weightKg: String,
     lastWeightKg: Double?,
     reps: String,
+    lastReps: Int? = null,
     repsSource: RepsSource,
     setPhase: ActiveSetPhase,
     countdownSeconds: Int,
@@ -1694,6 +1760,7 @@ internal fun SetEntryHero(
         Spacer(Modifier.height(28.dp))
         RepHeroSection(
             reps = reps,
+            lastReps = lastReps,
             repsSource = repsSource,
             setPhase = setPhase,
             countdownSeconds = countdownSeconds,
@@ -1705,9 +1772,20 @@ internal fun SetEntryHero(
             onStartSet = onStartSet,
             onStopSet = onStopSet,
         )
-        // Design 8.1: die Waveform sitzt direkt unter der Rep-Zahl — der
-        // Zaehler und sein Signal gehoeren zusammen.
-        if (streaming && waveform.isNotEmpty()) {
+        // 2026-09-27 (Befund 12.3, "Sensor-Waveform aus dem Satz-Hero
+        // entfernen"): die Waveform stand **immer** unter der Rep-Zahl, auch
+        // wenn gar nicht gezaehlt wurde.
+        //
+        // Warum das schadet: der Nutzer stellt Gewicht und Wiederholungen
+        // ein, liest dabei aber eine Linie, die sich langsam bewegt. Das ist
+        // eine bewegte Anzeige an der falschen Stelle — sie zieht den Blick
+        // auf etwas, das jetzt nichts bedeutet, und weg von der Eingabe.
+        //
+        // **Waehrend der Zaehlung** ist sie genau richtig: sie zeigt, dass
+        // der Sensor arbeitet, wo der letzte Rep lag, und ob das Signal
+        // ueberhaupt noch lebt. Das ist der einzige Zeitpunkt, zu dem sie
+        // eine Aussage hat.
+        if (streaming && waveform.isNotEmpty() && setPhase == ActiveSetPhase.COUNTING) {
             Spacer(Modifier.height(16.dp))
             SensorWaveform(samples = waveform, lastPeakMs = lastPeakMs)
         }
@@ -1782,6 +1860,7 @@ internal fun SetEntryHero(
 @Composable
 private fun RepHeroSection(
     reps: String,
+    lastReps: Int? = null,
     repsSource: RepsSource,
     setPhase: ActiveSetPhase,
     countdownSeconds: Int,
@@ -1816,12 +1895,29 @@ private fun RepHeroSection(
             }
 
             ActiveSetPhase.IDLE -> {
-                RepInput(reps = reps, onRepsChange = onRepsChange)
-                // Die Quelle erklaert die *aktuelle* Zahl; ohne Zahl und ohne
-                // Abriss gibt es nichts zu erklaeren.
-                if (reps.isNotEmpty() || repsSource == RepsSource.SensorDisconnected) {
-                    RepSourceLine(source = repsSource, streaming = streaming)
-                }
+                RepInput(
+                    reps = reps,
+                    onRepsChange = onRepsChange,
+                    lastReps = lastReps,
+                )
+                // 2026-09-27 (Befund 12.4, "Sensorabruss aktiv
+                // kommunizieren"): die Quelle erklaert die *aktuelle*
+                // Zahl. **Und sie erklaert den Abriss auch dann, wenn
+                // keine Zahl dasteht.**
+                //
+                // Vorher stand hier `reps.isNotEmpty() || Abriss` — was
+                // korrekt aussieht, aber am Anfang des Satzes greift die
+                // zweite Bedingung nie, weil `reps` dann leer ist. Der
+                // Nutzer verbindet den Chip, startet den Satz, der
+                // Chip reißt nach 40 Sekunden ab — und **90 Sekunden
+                // lang passiert nichts**. Die App zählt nicht, und sagt
+                // es nicht.
+                //
+                // Das ist der teuerste Fehlermodus der ganzen App: Der
+                // Nutzer hält 90 Sekunden lang Gewicht und Wiederholungen
+                // korrekt fest, und am Ende steht dort eine Zahl, die er
+                // nie kontrollieren konnte.
+                RepSourceLine(source = repsSource, streaming = streaming)
                 LiveCountStartRow(
                     streaming = streaming,
                     hasCalibration = hasCalibration,
@@ -1870,6 +1966,16 @@ private fun LiveCountHero(
  * Primaeraktion bleibt "Satz fertig". Fehlt die Kalibrierung, steht hier nur
  * der Grund; der Einstieg in den Wizard liegt direkt darueber an der
  * Uebungszeile (RC-8).
+ *
+ * 2026-09-27 (Produktentscheidung "Sensor optional"): `if (!streaming)
+ * return` war eine **stille** Rueckkehr — ohne verbundenen Chip fehlte
+ * die ganze Zeile, und der Nutzer konnte nicht unterscheiden zwischen
+ * "es gibt kein Auto-Zaehlen" und "das ist gerade nicht verfuegbar".
+ *
+ * Jetzt bleibt der Knopf sichtbar und **ausgegraut**, mit dem Grund. Das
+ * ist die ehrliche Form: die Funktion existiert, sie braucht nur den Chip.
+ * Wer keinen Chip hat, arbeitet mit den +/−-Knopfen weiter — das steht
+ * als eigener Hinweis darunter, statt versteckt zu werden.
  */
 @Composable
 private fun LiveCountStartRow(
@@ -1878,8 +1984,23 @@ private fun LiveCountStartRow(
     signalQuality: SignalQuality,
     onStartSet: () -> Unit,
 ) {
-    if (!streaming) return
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Kein Chip: kein Auto-Zaehlen. Der Grund steht da, damit die
+        // Funktion nicht einfach "verschwindet" — und der Hinweis auf die
+        // manuelle Eingabe, damit klar ist, dass es weitergeht.
+        if (!streaming) {
+            Text(
+                text = stringResource(R.string.live_count_reason_no_sensor),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                text = stringResource(R.string.live_count_manual_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            return@Column
+        }
         if (hasCalibration) {
             BrandButtonGhost(
                 text = stringResource(R.string.live_count_start),

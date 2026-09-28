@@ -698,7 +698,11 @@ Doku-Drift und ein Absicherungsrisiko gefunden, nicht fehlende Features.
   fehlende Keep-Regel). Der vermutete Reflection-Bedarf in
   `OutputDeviceMonitor` bestaetigte sich nicht und kann sich nicht bestaetigen:
   R8 schrumpft `android.*` nie. `proguard-rules.pro` haelt die Abgrenzung fest.
-  Offen: `signingConfig` (Releasevorbereitung, braucht Keystore).
+  Erledigt 2026-09-11 (B-SEC-2, Paket 1): `signingConfig` liest `keystore.properties`
+  oder die Env-Vars `RELEASE_STORE_FILE`/`RELEASE_STORE_PASSWORD`/`RELEASE_KEY_ALIAS`/
+  `RELEASE_KEY_PASSWORD` (`app/build.gradle.kts:56-80`). Ohne beides bleibt der Build
+  unsigned und laeuft durch. Offen bleibt nur die Einrichtung des Keystores selbst,
+  die nicht im Repo stattfindet.
   Nebenbefund: `DspRenderersFactory.kt:44` nutzt die in Media3 deprecated
   `setEnableAudioTrackPlaybackParams` — Kandidat fuers Media3-Update.
 

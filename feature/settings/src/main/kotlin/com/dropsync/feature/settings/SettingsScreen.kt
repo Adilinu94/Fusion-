@@ -49,8 +49,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -666,6 +668,7 @@ private fun WorkoutExtrasSection(
             },
         )
         if (getReadyEnabled) {
+            val getReadyDescription = stringResource(R.string.a11y_get_ready_seconds, getReadySeconds)
             Text(
                 text = stringResource(R.string.settings_get_ready_seconds, getReadySeconds),
                 style = MaterialTheme.typography.bodyMedium,
@@ -676,7 +679,22 @@ private fun WorkoutExtrasSection(
                 onValueChange = { onSetGetReady(true, it.roundToInt()) },
                 valueRange = 1f..10f,
                 steps = 8,
-                modifier = Modifier.padding(horizontal = 16.dp),
+                // 2026-09-27 (Befund 6.8): der Slider hatte **keine**
+                // `stateDescription`. TalkBack sagt bei einem Slider
+                // zwar den Wert, aber ohne Kontext — "5" statt "5
+                // Sekunden Vorlauf". Bei einem Regler, dessen Bedeutung
+                // man nicht sieht, ist das eine Zahl ohne Aussage.
+                //
+                // Der Text oberhalb wird mit `mergeDescendants` nicht
+                // automatisch mitgelesen, weil er kein Bestandteil des
+                // Sliders ist. Die Beschreibung muss deshalb **am
+                // Slider** haengen.
+                modifier =
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .semantics {
+                            stateDescription = getReadyDescription
+                        },
             )
         }
         Spacer(Modifier.height(8.dp))
@@ -884,6 +902,8 @@ private fun MixTransitionsSection(
                 modifier = Modifier.padding(horizontal = 16.dp),
             )
             Spacer(Modifier.height(8.dp))
+            val crossfadeDescription =
+                stringResource(R.string.a11y_mix_duration, crossfadeSeconds)
             Text(
                 text = stringResource(R.string.settings_mix_duration, crossfadeSeconds),
                 style = MaterialTheme.typography.bodyMedium,
@@ -894,8 +914,20 @@ private fun MixTransitionsSection(
                 onValueChange = { onSetSeconds(it.roundToInt()) },
                 valueRange = 1f..12f,
                 steps = 10,
-                modifier = Modifier.padding(horizontal = 16.dp),
                 // B-AUD-5 (Weg b): kein Konsument — Regler ausgegraut.
+                //
+                // 2026-09-27 (Befund 6.7): ausgegraute Schalter brauchen
+                // eine `stateDescription`, weil **ausgegraut für TalkBack
+                // wie "nicht vorhanden" klingt**. Der Wert wird ohne sie
+                // vorgelesen ("8 Sekunden") und der Nutzer weiß nicht, ob
+                // er ihn ändern kann. Die Beschreibung sagt beides.
+                modifier =
+                    Modifier
+                        .padding(horizontal = 16.dp)
+                        .semantics {
+                            stateDescription = crossfadeDescription
+                            disabled()
+                        },
                 enabled = false,
             )
         }

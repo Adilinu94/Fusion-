@@ -1,5 +1,6 @@
 package com.dropsync.data.library
 
+import android.util.Log
 import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
@@ -13,6 +14,7 @@ import com.dropsync.core.database.entity.FavoriteEntity
 import com.dropsync.core.database.entity.PlayStatEntity
 import com.dropsync.core.database.entity.PlaylistEntity
 import com.dropsync.core.database.entity.PlaylistItemEntity
+import com.dropsync.core.database.entity.SongEntity
 import com.dropsync.core.model.PlaylistLabel
 import com.dropsync.core.model.Song
 import com.dropsync.domain.library.Album
@@ -172,15 +174,132 @@ class LibraryBrowseRepositoryImpl(
                 // Der Volltextindex ist eine content-Tabelle ueber songs und
                 // wird beim Scan gepflegt (Befund 3.12: kein O(N)-Rebuild je
                 // Tastendruck mehr).
+                //
+                // 2026-09-27, Befund 6.9: Zwei Erweiterungen.
+                //
+                // 1. **ODER-Fallback.** FTS4 verknuepft Token per UND.
+                //    "queen metallica" liefert null Treffer, obwohl fast
+                //    immer einer der beiden Begriffe vorkommt. Der
+                //    Aufrufer probiert erst die praezise UND-Variante und
+                //    faellt dann auf die breite zurueck — die beste
+                //    Trefferliste ohne UND-Semantik aufzugeben.
+                //
+                // 2. **Diakritika-Fallback.** Der FTS4-Tokenizer
+                //    unterscheidet "Beyonce" von "Beyoncé". Ein Tippfehler
+                //    oder ein umgeschaltetes Tastaturlayout liefert dann
+                //    null Treffer fuer einen Titel, den es gibt. Der
+                //    LIKE-Fallback faengt genau das ab — er ist langsam,
+                //    laeuft aber nur, wenn FTS nichts gefunden hat.
                 val match = toFtsPrefixQuery(trimmed)
                 val hits = browseDao.search(match)
-                AppResult.success(hits.map { it.toDomain() })
+                if (hits.isNotEmpty()) {
+                    return@withContext AppResult.success(rankByRelevance(hits, trimmed))
+                }
+
+                val orQuery = toFtsOrQuery(trimmed)
+                val orHits = if (orQuery != null) browseDao.searchOr(orQuery) else emptyList()
+                if (orHits.isNotEmpty()) {
+                    return@withContext AppResult.success(rankByRelevance(orHits, trimmed))
+                }
+
+                val foldedHits = browseDao.searchFolded(toLikePattern(trimmed))
+                AppResult.success(rankByRelevance(foldedHits, trimmed))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                // 2026-09-27: `AppResult.failure` verliert die Ausnahme und
+                // damit die Ursache. Bei einer SQL-Syntaxfrage (FTS, LIKE)
+                // sieht man dann nur noch "DatabaseFailure" und muss raten.
+                // Der Originalfehler geht deshalb ins Log.
+                Log.e(TAG, "Volltextsuche fehlgeschlagen: $trimmed", e)
                 AppResult.failure(AppError.DatabaseFailure("search"))
             }
         }
+
+    /**
+     * Sortiert Treffer nach Relevanz, nicht alphabetisch (2026-09-27,
+     * Befund 6.9).
+     *
+     * **Warum nicht in SQL:** `bm25()` gehoert zu FTS5, die Tabelle
+     * `song_fts` ist FTS4 (`LibraryStatsEntities.kt:122`), und Androids
+     * SQLite kennt in diesem Modul kein `bm25`. Der Ersatz `matchinfo()`
+     * wird von Room/KSP gegen eine leere Datenbank validiert und
+     * scheitert schon zur Kompilierzeit (`no such table: matchinfo`).
+     *
+     * **Was hier gemacht wird:** gezaehlt, wie viele der Suchbegriffe im
+     * Titel, im Interpreten und im Album stehen. Der Titel zaehlt
+     * doppelt, weil er die staerkste Erwartung traegt. Das ist keine
+     * BM25-Gewichtung (die waere hier nicht verfuegbar), aber es
+     * unterscheidet genau das, was ein Nutzer unterscheidet: "genau
+     * dieser Titel" vor "irgendein Titel mit einem der Woerter".
+     *
+     * Sekundaer alphabetisch, damit die Reihenfolge stabil bleibt.
+     */
+    private fun rankByRelevance(
+        hits: List<SongEntity>,
+        query: String,
+    ): List<Song> {
+        val terms =
+            query
+                .split(Regex("\\s+"))
+                .map { it.replace(Regex("[^\\p{L}\\p{N}]"), "").lowercase() }
+                .filter { it.isNotEmpty() }
+        if (terms.isEmpty()) return hits.map { it.toDomain() }
+        return hits
+            .sortedWith(
+                compareByDescending<SongEntity> { row -> relevanceScore(row, terms) }
+                    .thenBy { it.title?.lowercase() ?: it.displayName.lowercase() },
+            ).map { it.toDomain() }
+    }
+
+    /** Anzahl der Suchbegriffe im Datensatz; Titel zaehlt doppelt. */
+    private fun relevanceScore(
+        row: SongEntity,
+        terms: List<String>,
+    ): Int {
+        val title = (row.title ?: row.displayName).lowercase()
+        val artist = row.artist?.lowercase().orEmpty()
+        val album = row.album?.lowercase().orEmpty()
+        return terms.sumOf { term ->
+            val inTitle = if (title.contains(term)) 2 else 0
+            val inArtist = if (artist.contains(term)) 1 else 0
+            val inAlbum = if (album.contains(term)) 1 else 0
+            inTitle + inArtist + inAlbum
+        }
+    }
+
+    /**
+     * Baut das LIKE-Muster fuer [browseDao.searchFolded] (2026-09-27,
+     * Befund 6.9).
+     *
+     * **Drei Schritte, alle noetig:**
+     *
+     * 1. **Normalisieren** (`foldForSearch`) — dieselbe Funktion, mit der
+     *    die Spalten beim Schreiben gefuellt werden. Das ist der ganze
+     *    Punkt: die Abfrage vergleicht zwei normalisierte Seiten direkt,
+     *    statt zu versuchen, den gespeicherten Titel zur Laufzeit
+     *    umzufalten.
+     * 2. **Escapen** — sonst wuerde "%" als Muster gelten und **jeden**
+     *    Titel treffen. Die Suche nach "100%" fände dann die ganze
+     *    Bibliothek.
+     * 3. **Wildcards** — `%` umschliessen, weil Teilstring und nicht
+     *    Praefix gesucht wird. "bohem" findet so "Bohemian Rhapsody".
+     */
+    private fun toLikePattern(raw: String): String {
+        // `foldForSearch` ist nullable, weil es auch Entity-Felder
+        // normalisiert, die null sein koennen. Hier ist die Eingabe von
+        // Natur aus nicht null (der Aufrufer hat `isEmpty()` geprueft),
+        // deshalb wird das Ergebnis hier per `orEmpty` geschlossen —
+        // eine leere Eingabe ergibt ein Muster "%%", das nichts findet
+        // und damit harmlos ist.
+        val escaped =
+            foldForSearch(raw)
+                .orEmpty()
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+        return "%$escaped%"
+    }
 
     override val playlists: Flow<List<Playlist>> =
         playlistDao.observePlaylists().map { rows -> rows.map { it.toDomain() } }
@@ -392,7 +511,17 @@ class LibraryBrowseRepositoryImpl(
                         .groupBy { it.displayName.lowercase() }
                 var skippedRemote = 0
                 var unresolved = 0
-                val matchedIds = ArrayList<Long>()
+                // 2026-09-27, Befund 4.7: die Liste sammelte **jede**
+                // aufgeloeste Zeile, ohne Duplikate abzubauen. Eine M3U mit
+                // zwei Zeilen auf dieselbe Datei (Album mit mehreren
+                // Titeln derselben CD, zwei verschiedene Pfade auf eine
+                // Datei) legte den Song doppelt an — und `position` lief
+                // weiter, es gab also zwei Zeilen mit derselben songId.
+                //
+                // Die Menge bleibt erhalten, die Reihenfolge ist die des
+                // Dokuments (Playlist-Reihenfolge ist fuer den Nutzer
+                // bedeutsam).
+                val matchedIds = LinkedHashSet<Long>()
                 for (entry in parsed.entries) {
                     if (entry.isRemote) {
                         skippedRemote++
@@ -419,10 +548,18 @@ class LibraryBrowseRepositoryImpl(
                                 ?: playlistDao.insertPlaylist(
                                     PlaylistEntity(name = trimmed, createdAtEpochMs = now()),
                                 )
+                        // Gegenlaeufig zu `addToPlaylist`: der Import
+                        // prueft bisher nicht gegen bestehende Eintraege.
+                        // Zweimal-Import derselben M3U ergab damit
+                        // doppelte Eintraege. Der Abgleich passiert hier in
+                        // derselben Transaktion wie das Einfuegen, damit
+                        // kein Zwischenstand sichtbar wird.
+                        val alreadyPresent = playlistDao.getSongIdsOnce(id).toSet()
+                        val toAdd = matchedIds.filterNot { it in alreadyPresent }
                         var position = playlistDao.maxPosition(id) + 1
-                        if (matchedIds.isNotEmpty()) {
+                        if (toAdd.isNotEmpty()) {
                             playlistDao.insertItems(
-                                matchedIds.map { songId ->
+                                toAdd.map { songId ->
                                     PlaylistItemEntity(
                                         playlistId = id,
                                         songId = songId,
@@ -436,6 +573,10 @@ class LibraryBrowseRepositoryImpl(
                 AppResult.success(
                     PlaylistImportResult(
                         playlistId = playlistId,
+                        // `importedCount` zaehlt die **tatsaechlich**
+                        // eingefuegten Titel, nicht die gefundenen. Sonst
+                        // meldet ein zweiter Import derselben Datei
+                        // "12 importiert", obwohl nichts passiert ist.
                         importedCount = matchedIds.size,
                         skippedRemote = skippedRemote,
                         unresolved = unresolved,
@@ -460,4 +601,27 @@ class LibraryBrowseRepositoryImpl(
                 if (cleaned.isEmpty()) null else "$cleaned*"
             }.joinToString(" ")
             .ifEmpty { "\"\"" }
+
+    /**
+     * Baut die **ODER**-Variante (2026-09-27, Befund 6.9): FTS4 verknuepft
+     * Token per UND, "queen metallica" liefert deshalb null Treffer.
+     *
+     * `null`, wenn weniger als zwei Token uebrig bleiben — dann ist die
+     * UND-Variante bereits identisch, und ein OR ergaebe nur Duplikate.
+     */
+    private fun toFtsOrQuery(raw: String): String? {
+        val tokens =
+            raw
+                .split(Regex("\\s+"))
+                .mapNotNull { token ->
+                    val cleaned = token.replace(Regex("[^\\p{L}\\p{N}]"), "")
+                    if (cleaned.isEmpty()) null else "$cleaned*"
+                }
+        return if (tokens.size >= 2) tokens.joinToString(" OR ") else null
+    }
+
+    private companion object {
+        /** Log-Tag der Bibliotheks-Datenschicht. */
+        const val TAG = "LibraryBrowse"
+    }
 }

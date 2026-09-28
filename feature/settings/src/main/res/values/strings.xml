@@ -32,7 +32,7 @@
     <string name="settings_mix_toggle_title">Automatic transitions</string>
     <string name="settings_mix_toggle_desc">Blend tracks into each other instead of cutting hard. Albums and CUE tracks always stay gapless.</string>
     <string name="settings_mix_bit_perfect_hint">Not available while bit-perfect output is active.</string>
-    <string name="settings_mix_no_effect">Currently without effect. Transitions play as a hard cut. Style and duration are kept and will apply once the consumer exists.</string>
+    <string name="settings_mix_no_effect">Currently without effect. Transitions between tracks play as a hard cut. The duration is used as a fade-out before the switch at a Drop landing; the style is not used yet. Both are kept.</string>
     <string name="settings_mix_preset_title">Transition style</string>
     <string name="settings_mix_preset_fade">Fade</string>
     <string name="settings_mix_preset_rise">Rise</string>
@@ -47,6 +47,10 @@
     <string name="settings_mix_preset_melt_desc">The next track enters early; both melt together for a long time.</string>
     <string name="settings_mix_preset_slam_desc">Hard cut in the middle of the transition, like a DJ cut.</string>
     <string name="settings_mix_duration">Transition length: %1$d s</string>
+    <!-- 2026-09-27 (Befund 6.7): the slider is greyed out. Without this
+         description TalkBack reads the value without saying that it
+         cannot be changed — which sounds like a broken control. -->
+    <string name="a11y_mix_duration">Transition length %1$d seconds, currently not adjustable</string>
     <string name="settings_audio_entry">Audio &amp; DSP</string>
     <string name="settings_audio_entry_desc">Equalizer, effects, resampler, bit-perfect and output profiles</string>
     <!-- B2: Timer-Einstieg in den Einstellungen. -->
@@ -96,6 +100,10 @@
     <string name="settings_get_ready_title">Get-ready countdown</string>
     <string name="settings_get_ready_desc">Plays a short 3-2-1 lead-in with haptics and sound before the break timer.</string>
     <string name="settings_get_ready_seconds">Lead-in: %1$d s</string>
+    <!-- 2026-09-27 (Befund 6.8): stateDescription on the slider. Without
+         it TalkBack says just "5" instead of "5 second lead-in" — a
+         number with no meaning when the label is not visible. -->
+    <string name="a11y_get_ready_seconds">%1$d second lead-in</string>
     <string name="settings_presets_title">Break quick picks</string>
     <string name="settings_presets_desc">Choose which durations appear as quick picks in the break dialog.</string>
     <string name="settings_seconds_format">%1$d s</string>

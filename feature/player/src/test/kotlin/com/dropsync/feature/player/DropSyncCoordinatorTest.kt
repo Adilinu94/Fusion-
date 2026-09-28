@@ -37,6 +37,7 @@ import com.dropsync.domain.library.ShuffleCandidate
 import com.dropsync.domain.playback.AudioRouteProfile
 import com.dropsync.domain.playback.DropLandingEvent
 import com.dropsync.domain.playback.PersistedPlayerState
+import com.dropsync.domain.playback.PersistedQueueEntry
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
@@ -761,7 +762,7 @@ class DropSyncCoordinatorTest {
             planStore.save(DropSyncPlanMarker(DropSyncPlanKind.AUTO_LANDING, "session-1"))
             playback.persistedState =
                 PersistedPlayerState(
-                    queueSongIds = listOf(10L),
+                    queueEntries = listOf(PersistedQueueEntry(mediaId = "10", songId = 10L)),
                     currentSongId = 10L,
                     positionMs = 5_000L,
                     shuffleEnabled = false,

@@ -159,7 +159,88 @@ class TrackAnalysisPriorityPathTest {
 
             val stored = requireNotNull(dao.getBySongId(1L))
             assertEquals(0, stored.bucketCount)
-            assertEquals(WaveformCodec.ANALYZER_VERSION, stored.analyzerVersion)
+            // 2026-09-27, Befund 4.9: hier stand die Erwartung
+            // `ANALYZER_VERSION`. Das markierte den Eintrag als *fertig
+            // analysiert und dauerhaft gescheitert* — `requestAnalysis`
+            // prueft genau diese Bedingung, startete also nie neu, und der
+            // Knopf "Erneut versuchen" im Now-Playing tat nichts. Version 0
+            // bedeutet "kein Ergebnis": der Cache ist ungueltig, der
+            // naechste Aufruf versucht es erneut (etwa nach der
+            // FFmpeg-Installation).
+            assertEquals(0, stored.analyzerVersion)
+        }
+
+    /**
+     * 2026-09-27, Befund 4.9: nach einem dauerhaften Fehler muss ein
+     * ausgeloester neuer Versuch **tatsaechlich** wieder laufen. Der
+     * Test oben prueft nur den Cache-Zustand; dieser prueft den Effekt.
+     */
+    @Test
+    fun `nach dauerhaftem fehler startet ein neuer versuch wieder`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+            analyzer.failWith = AppError.MediaUnavailable(mediaStoreId = 1L)
+
+            repo.requestAnalysis(song(1L))
+            advanceUntilIdle()
+            analyzer.completeAll()
+            advanceUntilIdle()
+            assertEquals(0, requireNotNull(dao.getBySongId(1L)).analyzerVersion)
+
+            // Zweiter Versuch, diesmal erfolgreich: der Analyser muss
+            // ueberhaupt aufgerufen werden, sonst passiert nichts.
+            val callsBefore = analyzer.calls.size
+            analyzer.failWith = null
+            repo.requestAnalysis(song(1L))
+            advanceUntilIdle()
+            assertEquals(
+                "Der zweite Versuch startete den Analyser nicht — " +
+                    "der Cache wurde als 'fertig' gewertet",
+                callsBefore + 1,
+                analyzer.calls.size,
+            )
+            assertEquals(1L, analyzer.calls.last().first)
+        }
+
+    /**
+     * 2026-09-27, Befund 4.12: `persistSuccess` stand ohne Schutz. Eine
+     * SQLiteException aus dem Schreibvorgang liess den Job sterben, und
+     * der Nutzer sah dauerhaft `Loading` — ohne Log und ohne UI-Reaktion.
+     *
+     * Der Test wirft aus dem DAO und prueft, dass der Lauf nicht stirbt.
+     */
+    @Test
+    fun `schreibfehler beendet den lauf nicht und bleibt stumm retry-faehig`() =
+        runTest {
+            val dispatcher = StandardTestDispatcher(testScheduler)
+            val repo = repository(CoroutineScope(SupervisorJob() + dispatcher))
+            dao.failUpsertWith = IllegalStateException("DB voll")
+            analyzer.failWith = null
+
+            repo.requestAnalysis(song(1L))
+            advanceUntilIdle()
+            analyzer.completeAll()
+            advanceUntilIdle()
+
+            // Kein Cache-Eintrag (der Schreiben scheiterte), aber der Job
+            // ist beendet statt abgestuerzt — und ein zweiter Versuch ist
+            // moeglich, sobald der Platz da ist.
+            assertEquals(
+                "Trotz Schreibfehler wurde ein Eintrag angelegt",
+                0,
+                dao.getBySongId(1L)?.let { 1 } ?: 0,
+            )
+
+            dao.failUpsertWith = null
+            val callsBefore = analyzer.calls.size
+            repo.requestAnalysis(song(1L))
+            advanceUntilIdle()
+            assertEquals(
+                "Der zweite Versuch startete nicht (Cache als fertig gewertet?)",
+                callsBefore + 1,
+                analyzer.calls.size,
+            )
         }
 
     @Test
@@ -377,7 +458,16 @@ private class FakePriorityDao : TrackAnalysisDao {
         rows.value = rows.value + (entity.songId to entity)
     }
 
-    override suspend fun upsert(entity: TrackAnalysisEntity) = put(entity)
+    /**
+     * 2026-09-27, Befund 4.12: simuliert einen Schreibfehler (DB voll).
+     * `null` = normales Verhalten.
+     */
+    var failUpsertWith: Exception? = null
+
+    override suspend fun upsert(entity: TrackAnalysisEntity) {
+        failUpsertWith?.let { throw it }
+        put(entity)
+    }
 
     override suspend fun updateMixMetadata(
         songId: Long,
@@ -412,7 +502,7 @@ private class FakePriorityDao : TrackAnalysisDao {
 
     override suspend fun getBySongId(songId: Long): TrackAnalysisEntity? = rows.value[songId]
 
-    override suspend fun getBySongIds(songIds: List<Long>): List<TrackAnalysisEntity> =
+    override suspend fun getBySongIdsChunk(songIds: List<Long>): List<TrackAnalysisEntity> =
         songIds.mapNotNull { rows.value[it] }
 
     override fun observeBySongId(songId: Long): Flow<TrackAnalysisEntity?> = rows.map { it[songId] }
@@ -420,6 +510,19 @@ private class FakePriorityDao : TrackAnalysisDao {
     override suspend fun deleteOlderThanVersion(minVersion: Int) {
         rows.value = rows.value.filterValues { it.analyzerVersion >= minVersion }
     }
+
+    /**
+     * 2026-09-27 (Befunde 6.7 und 6.18): Reconciliation und Aufraeumen
+     * gehoeren zum Interface. Der Fake bildet sie nicht nach — fuer diese
+     * Tests sind sie gegenstandslos, und der Pfad ist in
+     * `LibraryRepositoryImplTest` abgedeckt.
+     */
+    override suspend fun deleteOrphans(): Int = 0
+
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int = 0
 }
 
 private object FixedPriorityClock : Clock {

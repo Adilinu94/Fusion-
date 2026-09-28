@@ -64,6 +64,25 @@ class MasterDspProcessor : BaseAudioProcessor() {
     @Volatile
     private var replayGainDb: Double? = null
 
+    /**
+     * True-Peak des aktuellen Titels (0.0 = unbekannt). Begrenzt den
+     * ReplayGain so, dass das Ergebnis nicht ueber [CEILING_DB] kommt;
+     * 2026-09-27, Befund 4.4.
+     */
+    @Volatile
+    private var truePeakLinear: Double = 0.0
+
+    /**
+     * Anzahl ersetzter nicht-finiter Samples (Diagnose, 2026-09-27).
+     * Der Nutzer kann nichts gegen einen defekten Decoder tun, aber ohne
+     * dieses Signal bleibt ein stiller Datenverlust unauffindbar. Bewusst
+     * **ohne** Log-Aufruf: der Audiothread darf nicht loggen, und ein Log
+     * pro Block waere bei einem durchgehend defekten Stream tausende
+     * Eintraege pro Sekunde. Lesbar ueber
+     * [nonFiniteSamplesForTest].
+     */
+    private var nonFiniteSamples: Long = 0
+
     private var inputEncoding: PcmEncoding = PcmEncoding.PCM_16
     private var sampleRateHz = 0
     private var channelCount = 0
@@ -120,6 +139,17 @@ class MasterDspProcessor : BaseAudioProcessor() {
         replayGainDb = db
     }
 
+    /**
+     * True-Peak des aktuellen Titels (0..1+), aus der Track-Analyse.
+     * Wird fuer die Gain-Begrenzung in [applyReplayGain] gebraucht:
+     * ohne diesen Wert kann die Normalisierung ueber 0 dBFS hinaus
+     * anheben und der Soft-Limiter muss den ganzen Track
+     * weichzeichnen. 2026-09-27, Befund 4.4.
+     */
+    fun setTruePeak(linear: Double?) {
+        truePeakLinear = linear?.takeIf { it.isFinite() && it > 0.0 } ?: 0.0
+    }
+
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         inputEncoding =
             when (inputAudioFormat.encoding) {
@@ -162,6 +192,24 @@ class MasterDspProcessor : BaseAudioProcessor() {
         }
         val count = PcmCodec.decode(inputBuffer, inputEncoding, samples)
 
+        // 2026-09-27 (Befund 4.3): NaN-/Inf-Guard am Kettenkopf. Ohne ihn
+        // absorbiert ein einziger defekter Sample den Biquad-Zustand und
+        // die Kette liefert bis zum Titelende digitale Stille. Der Test
+        // `DspMathTest` hatte keinen NaN-Fall, `DspPerformanceTest`
+        // pruefte nur selbst erzeugtes Material.
+        //
+        // Der Durchlauf ist linear und allokationsfrei; im Normalfall
+        // kostet die Pruefung eine Vergleichsoperation je Sample.
+        var nonFinite = 0
+        for (i in 0 until count) {
+            val value = samples[i]
+            if (!value.isFinite()) {
+                samples[i] = 0.0
+                nonFinite++
+            }
+        }
+        nonFiniteSamples += nonFinite.toLong()
+
         // Preamp-Knoten: Ducking zuerst, damit es mit Preamp/DVC
         // multiplikativ bleibt und nie mit der Nutzerlautstaerke kollidiert.
         // Phase 7: Rest- und Cue-Ducking kombinieren ueber min() (der
@@ -186,7 +234,10 @@ class MasterDspProcessor : BaseAudioProcessor() {
         var outSamples = samples
         var outCount = count
         resampler?.let { activeResampler ->
-            val frames = count / channelCount
+            // 2026-09-27 (Befund 6.14): Division durch Null, falls der
+            // Decoder ein Format ohne Kanalangabe liefert. Media3 tut das
+            // nie, `onConfigure` akzeptiert die Zahl aber ungeprueft.
+            val frames = if (channelCount > 0) count / channelCount else 0
             val needed = (activeResampler.maxOutputFrames(frames) + 8) * channelCount
             if (resampled.size < needed) {
                 resampled = DoubleArray(needed)
@@ -227,6 +278,23 @@ class MasterDspProcessor : BaseAudioProcessor() {
      * aktuellen Titels, unabhaengig von `config.enabled` — wie das Ducking am
      * Preamp-Knoten. Ausgelagert, damit [queueInput] unter der
      * Komplexitaetsgrenze bleibt.
+     *
+     * **Begrenzung (2026-09-27, Befund 4.4):** `dbToLinear(-18 - lufs)` ist
+     * ungeklemmt. Ein Track, der das absolute Gate bei −70 LUFS gerade noch
+     * passiert, ergibt rechnerisch `gain = 10^(47/20) ≈ 224`. Der
+     * Soft-Limiter muss das abfangen, was den **ganzen** Track in die
+     * Saettigung faehrt. Drei Schranken:
+     *
+     * 1. ±[REPLAY_GAIN_MAX_DB] — Standard-ReplayGain-Regeln begrenzen auf
+     *    etwa ±12 dB; darueber ist es keine Normalisierung mehr, sondern
+     *    ein Pegelkorrektur-Fehler.
+     * 2. **True-Peak-Reserve** — `truePeakLinear` wird von der Analyse
+     *    geliefert (und war bis hierher berechnet, persistiert und
+     *    gelesen: nirgends). Der Gain wird so begrenzt, dass
+     *    `gain * truePeak <= CEILING`; das ist der Standard-ReplayGain-
+     *    Algorithmus und verhindert Clipping nach der Normalisierung.
+     * 3. **Nicht-finite Werte** — ein `NaN` im Cache wuerde sonst durch
+     *    `pow` zu `NaN` und damit jedes Sample zu `NaN` (Befund 4.3).
      */
     private fun applyReplayGain(
         data: DoubleArray,
@@ -234,7 +302,14 @@ class MasterDspProcessor : BaseAudioProcessor() {
     ) {
         if (!config.replayGainEnabled) return
         val db = replayGainDb ?: return
-        val gain = AudioMath.dbToLinear(db)
+        if (!db.isFinite()) return
+        var gain = AudioMath.dbToLinear(db.coerceIn(-REPLAY_GAIN_MAX_DB, REPLAY_GAIN_MAX_DB))
+        if (!gain.isFinite()) return
+        val peak = truePeakLinear
+        if (peak.isFinite() && peak > 0.0) {
+            val allowed = AudioMath.dbToLinear(CEILING_DB) / peak
+            if (allowed < gain) gain = allowed
+        }
         if (gain == 1.0) return
         for (i in 0 until count) {
             data[i] *= gain
@@ -414,6 +489,27 @@ class MasterDspProcessor : BaseAudioProcessor() {
         /** Eckfrequenzen der Klangregler (Plan Phase 2). */
         const val BASS_SHELF_HZ: Double = 100.0
         const val TREBLE_SHELF_HZ: Double = 8_000.0
+
+        /**
+         * Maximale ReplayGain-Korrektur in dB (Befund 4.4, 2026-09-27).
+         *
+         * Rechnung, die den Befund ausloest: `db = -18 - lufs`. Die
+         * Analyse setzt ihr absolutes Gate bei −70 LUFS, also
+         * `db = -18 - (-70) = +52 dB` und `gain = 10^(52/20) ≈ 398`. Der
+         * Soft-Limiter muss das abfangen, was den gesamten Track in die
+         * Saettigung faehrt. ±12 dB ist die uebliche ReplayGain-Schranke
+         * (FooBar2003, ReplayGain-Spezifikation) und laesst einem
+         * realistischen Mix-Sprung Raum, ohne einen Fehler zu ueberdecken.
+         */
+        const val REPLAY_GAIN_MAX_DB: Double = 12.0
+
+        /**
+         * Ziel-Deckel nach der Normalisierung, −1 dBFS. Etwas unter 0 dBFS,
+         * weil zwischen PCM-Peak und gehoertem True-Peak bis zu 1 dB
+         * liegen koennen und die App keinen True-Peak-Messer hat
+         * (Befund 10.7).
+         */
+        const val CEILING_DB: Double = -1.0
     }
 
     // --- Nur fuer Tests (B-AUD-1) ---------------------------------------
@@ -437,4 +533,12 @@ class MasterDspProcessor : BaseAudioProcessor() {
     internal fun activeBandCountForTest(): Int = activeBandCount
 
     internal fun ditherModeForTest(): DitherMode = dither.mode
+
+    /**
+     * Anzahl ersetzter nicht-finiter Samples (Diagnose, Befund 4.3).
+     * Ein `NaN` aus einem defekten Decoder wird ersetzt statt getoetet;
+     * ohne diese Zahl waere der Datenverlust unsichtbar. Nur fuer Tests
+     * und Diagnose lesbar.
+     */
+    internal fun nonFiniteSamplesForTest(): Long = nonFiniteSamples
 }

@@ -52,6 +52,7 @@ import com.dropsync.domain.workout.ExerciseInfo
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
 import com.dropsync.domain.workout.MuscleContribution
+import com.dropsync.domain.workout.MusicContext
 import com.dropsync.domain.workout.RestPref
 import com.dropsync.domain.workout.SetLogHaptics
 import com.dropsync.domain.workout.WorkoutRepository
@@ -60,6 +61,7 @@ import com.dropsync.feature.workout.shadow.ShadowDiffEvent
 import com.dropsync.feature.workout.shadow.ShadowSessionRecorder
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -106,6 +108,7 @@ enum class DropAutoBlockReason {
  * Phase 3: binds the shared TimerEngine — logging a set starts the rest
  * timer (foreground TimerService), finishing the exercise cancels it.
  */
+@OptIn(ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class TrainViewModel
     @Inject
@@ -413,6 +416,19 @@ class TrainViewModel
                 ) {
                     dropRestRequestBus.request()
                 }
+            } else {
+                // 2026-09-27, Befund 5.12: der Fehlerfall war unbehandelt.
+                // Der Satz ist zu diesem Zeitpunkt bereits gespeichert
+                // (Snackbar "Satz gespeichert" mit Undo), aber es startet
+                // keine Pause, keine Musik, und der Nutzer sah nichts. Er
+                // stand in der Train-Konsole und wunderte sich, warum der
+                // Timer nicht lief.
+                //
+                // Der Satz bleibt gespeichert — das Zurueckrollen waere
+                // schlimmer, weil der Satz real stattgefunden hat. Statt
+                // dessen wird der Grund gemeldet, damit der Nutzer weiss,
+                // dass er die Pause ueber die Notification starten muss.
+                errorEvents.trySend(TrainErrorEvent.RestTimerStartFailed)
             }
         }
 
@@ -488,15 +504,28 @@ class TrainViewModel
         }
 
         /**
-         * Gewicht um [deltaKg] schrittweise anpassen. Gerechnet wird in
-         * ganzen Millikilogramm — nie als Double-String-Arithmetik, sonst
-         * entstehen Artefakte wie "22.499999999999996" im Eingabefeld.
+         * Gewicht per Tastendruck aendern (2026-09-27, UI-Hebel 4).
+         *
+         * Gerechnet wird in ganzen Millikilogramm — nie als
+         * Double-String-Arithmetik, sonst entstehen Artefakte wie
+         * "22.499999999999996" im Eingabefeld.
+         *
+         * **Warum die Haptik hier und nicht in der UI:** die UI hat keinen
+         * Zugriff auf [SetLogHaptics], und sie sollte ihn auch nicht
+         * bekommen — dann muesste jeder Screen, der `adjustWeight` aufruft,
+         * die Haptik auch verdrahten. Das ViewModel ist die einzige
+         * Stelle, an der **beide** Aenderungen zusammenlaufen.
          */
         fun adjustWeight(deltaKg: Double) {
             val deltaMilliKg = (deltaKg * 1_000_000).roundToLong()
             val current = parseWeightMilliKg(_weightInput.value) ?: 0L
             val next = (current + deltaMilliKg).coerceAtLeast(0L)
             _weightInput.value = formatMilliKgForInput(next)
+            // 2026-09-27 (UI-Hebel 4): der Nutzer tippt 5–10× pro Satz
+            // Gewicht. Ohne Rueckmeldung ist nicht erkennbar, ob der
+            // Tastendruck ueberhaupt angekommen ist — bei 2,5-kg-Schritten
+            // summiert sich ein verschluckter Tastendruck schnell.
+            setLogHaptics.tap()
         }
 
         fun setReps(value: String) {
@@ -518,7 +547,14 @@ class TrainViewModel
             val repsEdited = _repsInputEdited.value
 
             viewModelScope.launch {
-                when (setLogController.logSet(exercise.id, weightMilliKg, reps)) {
+                // 2026-09-27, Befund 11.3/13.4: der Musikbezug wandert
+                // **jetzt** mit dem Satz. Vorher gab es dafuer
+                // `PlaybackSnapshotEntity`, dessen Schreibpfad
+                // (`completeCluster()`) der Produktivpfad nie aufruft —
+                // die Tabelle blieb leer, und `feature/progress` hatte
+                // null Playback-Referenzen.
+                val musicContext = currentMusicContext()
+                when (setLogController.logSet(exercise.id, weightMilliKg, reps, musicContext)) {
                     is AppResult.Success -> {
                         // Befund 5.2: ein gebuendelter Refetch (eine
                         // Transaktion) statt drei getrennten Roundtrips.
@@ -598,8 +634,12 @@ class TrainViewModel
         fun undoLastSet() {
             viewModelScope.launch {
                 when (val outcome = setLogController.undoLast()) {
+                    // 2026-09-27: `null -> Unit` war ein unbenutzter
+                    // Ausdruck. Der `else`-Zweig behandelt den Fall
+                    // bereits, und `AppResult.Failure != null` ist kein
+                    // eigener Typ — die Aufzaehlung war Rauschen.
                     null -> {
-                        Unit
+                        Log.d(SHADOW_TAG, "undo: nichts rueckgaengig zu machen")
                     }
 
                     is AppResult.Success -> {
@@ -607,6 +647,29 @@ class TrainViewModel
                         liveRepCount = (liveRepCount - undo.reps).coerceAtLeast(0)
                         repSourceTracker.onSetReset()
                         refreshSetSummaries(undo.exerciseId)
+                        // 2026-09-27, Befund 5.11: der Undo loeschte nur den
+                        // Satz. Die Pause lief weiter, der DropSync-Plan
+                        // lief weiter, der Work-Titel landete trotzdem. Der
+                        // Nutzer hatte den Satz zurueckgenommen, die Musik
+                        // glaubte ihm nicht — und die Pause lief in eine
+                        // Uebung hinein, die es nicht mehr gibt.
+                        //
+                        // Der Timer wird nur abgebrochen, wenn er
+                        // tatsaechlich fuer diesen Satz lief (Modus REST,
+                        // also die Pausenphase). Ein laufender
+                        // Get-Ready-Countdown oder ein manueller Timer
+                        // gehoeren dem Nutzer, nicht dem geloeschten Satz.
+                        if (timerEngine.state.value.status != TimerStatus.IDLE &&
+                            timerEngine.state.value.session
+                                ?.mode == TimerMode.REST
+                        ) {
+                            timerEngine.cancel(CancelReason.USER)
+                            timerEngine.reset()
+                        }
+                        // Der Musik-Plan wird ueber den Bus abgebrochen:
+                        // der Koordinator beendet Armierung, Queue-Uebernahme
+                        // und Ducking, ohne dass der Timer davon betroffen ist.
+                        dropRestRequestBus.cancelForUndo()
                     }
 
                     is AppResult.Failure -> {
@@ -680,7 +743,27 @@ class TrainViewModel
             }
 
             val diff = kotlin.math.abs(confirmedReps - trace.predictedReps)
-
+            // 2026-09-27, Befund 5.5: `noteValidatedSet` stand im `else`-Zweig
+            // und damit **nur** bei exakter Uebereinstimmung. Damit war der
+            // Lernpfad strukturell unfaehig, sich zu reparieren:
+            //
+            // 1. Der Kandidat, der genau den Problemfall behebt, entsteht
+            //    nur, wenn die alte Pipeline **falsch** gezaehlt hat.
+            // 2. Gespeichert wird er nur, wenn `diff != 0`.
+            // 3. Befoerdert wird er nur, wenn `diff == 0` — also von der
+            //    alten, falschen Pipeline, die er gerade ersetzt.
+            //
+            // Ein Kandidat, der den Zaehlfehler behebt, brauchte also
+            // einen weiteren, unabhaengigen Zaehlfehler, um promoted zu
+            // werden. Das ist keine Vorsicht, das ist eine Umkehrung des
+            // Lernziels.
+            //
+            // Der Refiner revalidiert den Kandidaten bereits durch die
+            // echte Pipeline mit identischen Schwellern
+            // (`CalibrationRefiner.revalidates`, `:97-124`) und liefert nur
+            // `null`, wenn der Kandidat den bestaetigten Zaehlstand **nicht**
+            // reproduziert. Ein nicht `null` gespeicherter Kandidat hat
+            // damit bereits bewiesen, dass er den Problemfall loest.
             if (trace.predictedReps != confirmedReps) {
                 // RC-6: Der Refiner rechnet (Brute-Force-Sweep) nicht auf dem
                 // Main-Thread; die Anzeige bleibt fluessig.
@@ -696,6 +779,11 @@ class TrainViewModel
                 when (calibrationProfileRepository.save(candidate)) {
                     is AppResult.Success -> {
                         Log.d(SHADOW_TAG, "learn: candidate revision=${candidate.revision}")
+                        // Befund 5.5: der Kandidat hat den bestaetigten
+                        // Zaehlstand reproduziert (`revalidates`), also ist
+                        // dieses Set fuer ihn ein **validiertes** Set. Ohne
+                        // diesen Aufruf koennte er nicht promoted werden.
+                        noteValidatedSet(trace)
                         learningEvents.trySend(ProfileLearningEvent.Refined(candidate.revision))
                     }
 
@@ -705,11 +793,7 @@ class TrainViewModel
                     }
                 }
             } else {
-                // Validierte Sets zaehlen fuer die Kandidaten-Promotion.
-                when (calibrationProfileRepository.noteValidatedSet(trace.exerciseId, trace.deviceId)) {
-                    is AppResult.Success -> Unit
-                    is AppResult.Failure -> Log.w(SHADOW_TAG, "learn: noteValidatedSet fehlgeschlagen")
-                }
+                noteValidatedSet(trace)
             }
 
             // Rollback-Regel: zwei schlechte validierte Sets in Folge -> zurueck.
@@ -727,6 +811,79 @@ class TrainViewModel
                     Log.d(SHADOW_TAG, "learn: rollback auf letzte gute Revision")
                 }
             }
+        }
+
+        /**
+         * Meldet ein validiertes Set fuer die Kandidaten-Promotion.
+         *
+         * 2026-09-27, Befund 5.5: als eigene Methode aus dem
+         * `if`/`else` herausgezogen, weil sie jetzt an **beiden** Stellen
+         * aufgerufen wird — bei exakter Uebereinstimmung und bei einem
+         * Kandidaten, der den Problemfall reproduziert.
+         *
+         * Fehlschlaege bleiben still wie vorher: der Kandidaten-Puffer
+         * verliert einen Eintrag, und der Lernpfad laeuft weiter. Das ist
+         * kein Fehler des Nutzerflusses, sondern ein Buchhaltungsproblem
+         * im Hintergrund.
+         */
+        private suspend fun noteValidatedSet(trace: SetTrace) {
+            when (calibrationProfileRepository.noteValidatedSet(trace.exerciseId, trace.deviceId)) {
+                is AppResult.Success -> Unit
+                is AppResult.Failure -> Log.w(SHADOW_TAG, "learn: noteValidatedSet fehlgeschlagen")
+            }
+        }
+
+        /**
+         * Musikbezug des aktuellen Satzes (2026-09-27, Befund 11.3/13.4).
+         *
+         * **Woher die Daten kommen:** aus dem [DropSyncStateSource]-Zustand,
+         * den der ViewModel bereits beobachtet. Das ist der einzige Weg vom
+         * Player in den Workout-Kontext, den die Modulregeln zulassen —
+         * `:feature:workout` darf `:domain:playback` nicht kennen
+         * (`ModuleDependencyRulesTest`, Regel 3.2/4).
+         *
+         * **Was das kostet und warum es hier trotzdem richtig ist:** der
+         * Zustand kennt den **Ziel**-Titel der Pause, nicht den laufenden.
+         * Das passt, weil der Satz am **Ende** der Pause geloggt wird — zu
+         * dem Zeitpunkt laeuft genau der Titel, auf den geplant wurde. Der
+         * Satz landet also auf dem Drop, das der Plan vorausgesehen hat.
+         * Das ist nicht die Position *waehrend* des Satzes, sondern die
+         * Position, auf die der Satz **zurueckgefuehrt** wurde — und
+         * genau diese Aussage ist fuer die Historie wertvoll.
+         *
+         * [DropSyncState.Landed] traegt den Plan mit (Befund 13.4), weil
+         * der Zustand zum Zeitpunkt des Loggens bereits auf `Landed`
+         * steht. Ohne das waere die Information genau dann weg.
+         */
+        private fun currentMusicContext(): MusicContext {
+            val plan =
+                when (val s = dropSyncState.value) {
+                    is DropSyncState.Planned -> {
+                        s
+                    }
+
+                    is DropSyncState.Armed -> {
+                        s.plan
+                    }
+
+                    is DropSyncState.Landed -> {
+                        s.plan ?: return MusicContext.NONE
+                    }
+
+                    else -> {
+                        return MusicContext.NONE
+                    }
+                }
+            return MusicContext.of(
+                songId = plan.songId,
+                // Die Trackposition ist hier **nicht** verfuegbar und wird
+                // auch nicht erfunden: der Zustand kennt die Zielposition
+                // im Titel (`markerId`), nicht die Position *waehrend* des
+                // Satzes. Eine falsche Position in der Historie waere
+                // schlimmer als keine.
+                positionMs = null,
+                activeMarkerId = plan.markerId,
+            )
         }
 
         /**
@@ -1053,9 +1210,17 @@ class TrainViewModel
             // C14 (T-14): Der Peak-Blitz haengt am echten Rep-Event der
             // Engine (dieselbe Quelle wie die Live-Zahl) statt an einer
             // Flanken-Heuristik, die auch bei Stoessen ohne Rep feuerte.
+            //
+            // 2026-09-27 (UI-Hebel 4): hier kommt die **Rep-Haptik** dazu.
+            // Das ist der wichtigste einzelne Moment der ganzen App: der
+            // Nutzer liegt auf der Bank, der Blick ist vom Handy weg, und
+            // er weiss nicht, ob die Wiederholung gezaehlt wurde. Ohne
+            // Rueckmeldung traut er der Zahl nicht und zaehlt von Hand
+            // mit — die App verliert damit genau ihren Zweck.
             viewModelScope.launch {
                 activeSetController.repEvents.collect { event ->
                     _lastPeakMs.value = event.timestampMs
+                    setLogHaptics.tap()
                 }
             }
             // RC-5/Design 8.1: Ein Abriss des laufenden Streams ist ein eigener
@@ -1074,12 +1239,33 @@ class TrainViewModel
          * streaming chip. A short countdown lets the user get into the start
          * position before the pipeline begins counting. Paket C: der
          * [ActiveSetController] uebernimmt Countdown, Engine und Puffer.
+         *
+         * 2026-09-27, Befund 5.10: die drei Voraussetzungen wurden mit
+         * stillem `return` geprueft. Der Nutzer tippte auf den Start-Knopf
+         * und es passierte nichts — kein Snackbar, kein Toast, kein
+         * Zustandswechsel. Besonders bitter, weil die App ohne Sensor
+         * vollstaendig nutzbar ist (Handeingabe): die Bedienung war nicht
+         * kaputt, sie war nur stumm.
+         *
+         * Jeder der drei Gruende hat eine **andere** Handlung und wird
+         * deshalb getrennt gemeldet.
          */
         fun startCountedSet() {
             if (setPhase.value != ActiveSetPhase.IDLE) return
-            val profile = activeProfile ?: return
-            if (sensorConnection.value != SensorConnectionState.STREAMING) return
-            val deviceId = connectedDeviceId.value ?: return
+            val profile = activeProfile
+            if (profile == null) {
+                errorEvents.trySend(TrainErrorEvent.CountBlockedNoCalibration)
+                return
+            }
+            if (sensorConnection.value != SensorConnectionState.STREAMING) {
+                errorEvents.trySend(TrainErrorEvent.CountBlockedNotStreaming)
+                return
+            }
+            val deviceId = connectedDeviceId.value
+            if (deviceId == null) {
+                errorEvents.trySend(TrainErrorEvent.CountBlockedNoChip)
+                return
+            }
             _countedZero.value = false
             // RC-5: ein neuer Zaehlversuch beginnt ohne Alt-Zaehlstand; die
             // Quelle zeigt waehrend der Zaehlung SENSOR.
@@ -1147,16 +1333,69 @@ class TrainViewModel
                     }.distinctUntilChanged()
                         .flatMapLatest { (exerciseId, deviceId) ->
                             flow {
+                                // Ein Kalibrierprofil ist immer an die
+                                // Geraete-ID gebunden. Ohne Chip gibt es
+                                // keine Auto-Kalibrierung; manuelle Saetze
+                                // bleiben davon unabhaengig speicherbar.
                                 if (exerciseId == null || deviceId == null) {
                                     activeProfile = null
                                     _hasCalibration.value = false
                                     emit(Unit)
                                     return@flow
                                 }
-                                val result = calibrationProfileRepository.load(exerciseId, deviceId)
+                                val result =
+                                    calibrationProfileRepository.load(exerciseId, deviceId)
                                 when (result) {
                                     is AppResult.Success -> {
-                                        activeProfile = result.value
+                                        // 2026-09-27, Befund 5.6:
+                                        // `SetAbortReason.CALIBRATION_CHANGED`
+                                        // war definiert, hatte aber **null
+                                        // Aufrufer**. Dadurch lief ein
+                                        // aktives Set weiter, wenn waehrenddessen
+                                        // ein anderes Profil geladen wurde
+                                        // (z. B. durch einen Rollback des
+                                        // Lernpfads oder eine Neukalibrierung).
+                                        //
+                                        // Die Folge war eine stille Divergenz:
+                                        // die Signalkette behielt die alte
+                                        // Achse und den alten Schwellwert,
+                                        // waehrend der Lernpfad bereits auf der
+                                        // neuen Revision lernte. Der naechste
+                                        // gespeicherte Satz gehoerte dann zu
+                                        // einem Profil, das nicht mehr aktiv
+                                        // war.
+                                        //
+                                        // Der Abbruch ist die ehrliche Antwort:
+                                        // ein Satz, der mit einer anderen
+                                        // Kalibrierung gezaehlt wurde, ist mit
+                                        // dem aktiven Profil nicht vergleichbar.
+                                        val loaded = result.value
+                                        val previousRevision = activeProfile?.revision
+                                        // 2026-09-27 (Detekt
+                                        // `ComplexCondition`): die vier
+                                        // Bedingungen sind zu einer
+                                        // Benennung zusammengefasst. Der
+                                        // Satz liest sich jetzt als das,
+                                        // was er bedeutet — "ein Satz laeuft
+                                        // und die Revision wechselt" — statt
+                                        // als vier Nebenbedingungen, von denen
+                                        // man beim Lesen pruefen muss, ob sie
+                                        // alle noetig sind.
+                                        val setLaeuft = setPhase.value != ActiveSetPhase.IDLE
+                                        val revisionWechselt =
+                                            previousRevision != null &&
+                                                loaded != null &&
+                                                previousRevision != loaded.revision
+                                        if (setLaeuft && revisionWechselt) {
+                                            Log.d(
+                                                SHADOW_TAG,
+                                                "learn: Profilwechsel " +
+                                                    "$previousRevision -> " +
+                                                    "${loaded.revision} waehrend eines Sets",
+                                            )
+                                            abortActiveSet(SetAbortReason.CALIBRATION_CHANGED)
+                                        }
+                                        activeProfile = loaded
                                         _hasCalibration.value = activeProfile != null
                                     }
 

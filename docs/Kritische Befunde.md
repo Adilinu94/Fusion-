@@ -1,5 +1,18 @@
-Kritische Befunde
+# Kritische Befunde
 
+> **ARCHIV. Nicht als aktuelle Fehlerliste verwenden.**
+>
+> Dieses Dokument ist das Review-Protokoll vom 2026-08-12 plus der daraus
+> abgeleitete Umbauplan. Es beschreibt einen **historischen** Zustand und ist
+> nur noch als Begründung für heutige Entscheidungen wertvoll.
+>
+> **Der aktuelle Stand steht in
+> [`plans/GESAMTANALYSE_UND_UMBAUPLAN_2026-09-27.md`](plans/GESAMTANALYSE_UND_UMBAUPLAN_2026-09-27.md)**
+> (11 parallele Code-Audits über alle 31 Module, jeder P0-Befund gegen den
+> Arbeitsbaum verifiziert). Die Befundtexte **unterhalb** dieser Zeile sind
+> History; wer sie als Aufgabenliste liest, arbeitet gegen Zustände, die es
+> nicht mehr gibt.
+>
 > **Ist-Stand-Nachtrag (2026-08-30).** Dieses Dokument ist das
 > Review-Protokoll vom 2026-08-12 plus der daraus abgeleitete Umbauplan. Der
 > Befundteil beschreibt einen **historischen** Zustand: die Mehrzahl der

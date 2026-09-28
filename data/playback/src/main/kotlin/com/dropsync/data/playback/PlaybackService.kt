@@ -32,9 +32,11 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.data.audio.AudioPipeline
+import com.dropsync.data.audio.BitPerfectGateway
 import com.dropsync.data.audio.DspRenderersFactory
 import com.dropsync.data.audio.OutputFormatInfo
 import com.dropsync.data.audio.SourceFormatInfo
+import com.dropsync.domain.audio.AudioMath
 import com.dropsync.domain.library.LibraryBrowseRepository
 import com.dropsync.domain.library.LibraryRepository
 import com.google.common.collect.ImmutableList
@@ -159,7 +161,7 @@ class PlaybackService : MediaLibraryService() {
                 // unterbrechen (Audit Fokus 1, Befund 3).
                 .setWakeMode(C.WAKE_MODE_LOCAL)
                 .build()
-        exoPlayer.addAnalyticsListener(AudioInfoListener(audioPipeline))
+        exoPlayer.addAnalyticsListener(AudioInfoListener(audioPipeline, bitPerfectGateway))
         player = exoPlayer
         // AudioClock (Design Phase 6): Player binden, damit der Rest
         // der App eine interpolierte hoerbare Position lesen kann.
@@ -221,17 +223,26 @@ class PlaybackService : MediaLibraryService() {
                     // danach nichts mehr (Pruefung unten).
                     replayGainJob?.cancel()
                     audioPipeline.setReplayGainDb(null)
+                    audioPipeline.setTruePeak(null)
                     val generation = ++replayGainGeneration
                     replayGainJob =
                         serviceScope.launch {
-                            val lufs =
+                            val analysis =
                                 trackAnalysisRepository
                                     .observeAnalysis(songId)
                                     .first()
-                                    ?.integratedLufs
                             if (generation != replayGainGeneration) return@launch
+                            val lufs = analysis?.integratedLufs
                             val gainDb = lufs?.let { ReplayGain.REFERENCE_LUFS - it.toDouble() }
                             audioPipeline.setReplayGainDb(gainDb)
+                            // 2026-09-27, Befund 4.4: der True-Peak begrenzt
+                            // den Gain auf [MasterDspProcessor.CEILING_DB].
+                            // `truePeakDb` wird von der Analyse geliefert;
+                            // aus dB wird linear gerechnet, weil der
+                            // Gain-Faktor direkt darauf wirkt.
+                            audioPipeline.setTruePeak(
+                                analysis?.truePeakDb?.let { AudioMath.dbToLinear(it.toDouble()) },
+                            )
                         }
                 }
             },
@@ -273,16 +284,34 @@ class PlaybackService : MediaLibraryService() {
                     } else {
                         bitPerfectGateway.clearPreferredMixerAttributes()
                     }
-                    // Service-Neustart, damit der Player mit dem richtigen
-                    // floatOutput neu gebaut wird.
-                    withContext(Dispatchers.Main) {
-                        val restart = Intent(this@PlaybackService, PlaybackService::class.java)
-                        stopService(restart)
-                        startService(restart)
-                    }
+                    // 2026-09-27, Befund 1.13/1.14: der Wechsel des
+                    // `floatOutput` braucht einen neuen Player, also einen
+                    // Service-Neustart. Das bisherige
+                    // `stopService()` + `startService()` aus dem laufenden
+                    // Vordergrunddienst heraus ist unter Android 12+ ein
+                    // **Crash-Pfad**: `startService()` darf aus dem
+                    // Hintergrund nicht starten, und wenn der Prozess
+                    // zwischenzeitlich in den Zustand "kein FGS mehr"
+                    // gefallen ist, wirft es
+                    // `ForegroundServiceStartNotAllowedException`.
+                    //
+                    // Der Neustart laeuft jetzt ueber `onDestroy`, wo der
+                    // Dienst ohnehin beendet wird: `restartRequested` merkt
+                    // sich nur die Absicht, `onDestroy` ruft `startService`
+                    // auf. `onDestroy` laeuft nicht im Hintergrund-
+                    // Verbot, weil der Dienst dort bereits lebt.
+                    restartRequested = true
+                    stopSelf()
                 }
         }
     }
+
+    /**
+     * Neustart-Absicht fuer den Bit-Perfect-Wechsel (Befund 1.14).
+     * Gesetzt im Config-Collector, ausgewertet in [onDestroy].
+     */
+    @Volatile
+    private var restartRequested = false
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaLibrarySession? = session
 
@@ -312,6 +341,16 @@ class PlaybackService : MediaLibraryService() {
         audioDeviceCallback = null
         dropLandingArmer.detach()
         audioClock.detach()
+        // 2026-09-27, Befund 1.13: die bevorzugten Mixer-Attribute sind
+        // **prozessuebergreifend**. Wurde der Dienst beendet, ohne sie
+        // freizugeben, blieb der USB-Ausgang der App auch nach dem
+        // Beenden auf den gesetzten Attributen — ein Zustandsleck, den
+        // keine andere App aufloest.
+        //
+        // Das ist bewusst vor `super.onDestroy()`: ab dort ist der
+        // Dienst formal beendet.
+        runCatching { bitPerfectGateway.clearPreferredMixerAttributes() }
+            .onFailure { Log.w(TAG, "Mixer-Attribute nicht freigebbar: ${it.message}") }
         // Genau einmal freigeben (Abnahme Schritt 5).
         session?.release()
         session = null
@@ -321,6 +360,19 @@ class PlaybackService : MediaLibraryService() {
         serviceScope.cancel()
         mainScope.cancel()
         super.onDestroy()
+
+        // 2026-09-27, Befund 1.14: Neustart fuer den Bit-Perfect-Wechsel
+        // hier statt im Config-Collector. `onDestroy` laeuft, solange der
+        // Dienst lebt, und `startService` von hier ist der zulaessige Weg
+        // — aus dem laufenden FGS heraus war es das nicht.
+        if (restartRequested) {
+            restartRequested = false
+            runCatching {
+                startService(Intent(this, PlaybackService::class.java))
+            }.onFailure {
+                Log.w(TAG, "Neustart nach Bit-Perfect-Wechsel nicht moeglich: ${it.message}")
+            }
+        }
     }
 
     /**
@@ -549,19 +601,50 @@ class PlaybackService : MediaLibraryService() {
                 val state =
                     stateStore.read()
                         ?: throw UnsupportedOperationException("Kein gespeicherter Wiedergabezustand")
-                val songs =
-                    state.queueSongIds.mapNotNull { id ->
-                        (libraryRepository.getSong(id) as? AppResult.Success)?.value
+                // 2026-09-27: die Queue wird ueber PersistedQueueEntry
+                // wiederhergestellt, nicht ueber eine Liste von Song-IDs.
+                // Dadurch bleiben virtuelle CUE-Tracks (`cue:<id>:<nr>`)
+                // erhalten: vorher fielen sie ueber `toLongOrNull()` weg und
+                // die Queue war nach Prozess-Tod unvollstaendig.
+                val items =
+                    state.queueEntries.mapNotNull { entry ->
+                        val songId = entry.songId ?: return@mapNotNull null
+                        val song =
+                            (libraryRepository.getSong(songId) as? AppResult.Success)
+                                ?.value
+                                ?: return@mapNotNull null
+                        // CUE-Track in der Queue: mediaId traegt die
+                        // Tracknummer, die Clipping-Konfiguration kommt aus
+                        // dem importierten CUE-Sheet. Fehlt der Track in der
+                        // Datenbank (z. B. Sheet neu importiert), faellt der
+                        // Eintrag auf die ganze Datei zurueck statt zu
+                        // verschwinden.
+                        val trackNumber = MediaItemFactory.cueTrackNumberOf(entry.mediaId)
+                        val cueTrack =
+                            if (trackNumber != null) {
+                                libraryRepository
+                                    .observeCueTracks(songId)
+                                    .first()
+                                    .firstOrNull { it.trackNumber == trackNumber }
+                            } else {
+                                null
+                            }
+                        if (cueTrack != null) {
+                            MediaItemFactory.fromCueTrack(song, cueTrack)
+                        } else {
+                            MediaItemFactory.fromSong(song)
+                        }
                     }
-                if (songs.isEmpty()) {
+                if (items.isEmpty()) {
                     throw UnsupportedOperationException("Queue nicht wiederherstellbar")
                 }
                 val startIndex =
-                    songs
-                        .indexOfFirst { it.mediaStoreId == state.currentSongId }
-                        .coerceAtLeast(0)
+                    items
+                        .indexOfFirst { item ->
+                            DataStorePlayerStateStore.songIdOf(item.mediaId) == state.currentSongId
+                        }.coerceAtLeast(0)
                 MediaSession.MediaItemsWithStartPosition(
-                    songs.map(MediaItemFactory::fromSong),
+                    items,
                     startIndex,
                     state.positionMs,
                 )
@@ -705,6 +788,7 @@ class PlaybackService : MediaLibraryService() {
     @OptIn(UnstableApi::class)
     private class AudioInfoListener(
         private val pipeline: AudioPipeline,
+        private val bitPerfectGateway: BitPerfectGateway,
     ) : AnalyticsListener {
         override fun onAudioInputFormatChanged(
             eventTime: AnalyticsListener.EventTime,
@@ -726,6 +810,12 @@ class PlaybackService : MediaLibraryService() {
             eventTime: AnalyticsListener.EventTime,
             audioTrackConfig: AudioSink.AudioTrackConfig,
         ) {
+            // 2026-09-27, Befund 17.2: die Bit-Perfect-Attribut-Auswahl
+            // braucht die **tatsaechliche** Ausgabequelle des laufenden
+            // Titels, nicht das erste Attribut der Geraeteliste. Hier wird
+            // der AudioTrack wirklich konfiguriert — das ist die
+            // verlaesslichste Quelle.
+            bitPerfectGateway.sourceSampleRateHz = audioTrackConfig.sampleRate
             pipeline.onAudioTrackInitialized(
                 OutputFormatInfo(
                     sampleRateHz = audioTrackConfig.sampleRate,

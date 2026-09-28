@@ -2,6 +2,7 @@ package com.dropsync.feature.workout
 
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.MusicContext
 import com.dropsync.domain.workout.SetLogHaptics
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
@@ -61,8 +62,9 @@ class SetLogController(
         exerciseId: Long,
         weightMilliKg: Long,
         reps: Int,
+        musicContext: MusicContext = MusicContext.NONE,
     ): AppResult<Long> {
-        val result = flatSetRepository.logSet(exerciseId, weightMilliKg, reps)
+        val result = flatSetRepository.logSet(exerciseId, weightMilliKg, reps, musicContext)
         when (result) {
             is AppResult.Success -> {
                 lastLogged = LoggedSet(setId = result.value, exerciseId = exerciseId, reps = reps)

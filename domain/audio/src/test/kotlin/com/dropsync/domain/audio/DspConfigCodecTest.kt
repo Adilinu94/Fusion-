@@ -33,9 +33,21 @@ class DspConfigCodecTest {
                 mixPreset = MixPreset.SLAM,
                 useSystemEffects = true,
                 bitPerfectEnabled = true,
+                // 2026-09-27, Befund 1.12: `replayGainEnabled` und
+                // `restDuckDb` fehlten im Test-Config. Sie stehen damit auf
+                // Default, und der Roundtrip verglich Default mit Default —
+                // der Test konnte den Fehler "Feld wird nicht kodiert"
+                // strukturell nicht finden. Genau das ist passiert:
+                // `replayGainEnabled` wurde nicht geschrieben, aber gelesen.
+                restDuckDb = -6.0,
+                replayGainEnabled = true,
             )
         val decoded = DspConfigCodec.decode(DspConfigCodec.encode(config))
         assertEquals(DspConfig.sanitized(config), decoded)
+        // Ausdruecklich, damit ein Wegfall hier als Testfehler auffaellt
+        // statt als "beide Seiten gleich".
+        assertTrue("replayGainEnabled ging verloren", decoded!!.replayGainEnabled)
+        assertEquals(-6.0, decoded.restDuckDb, 1e-9)
     }
 
     @Test

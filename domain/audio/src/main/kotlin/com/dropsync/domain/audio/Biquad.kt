@@ -140,13 +140,24 @@ class BiquadFilter(
      * wie [processInterleaved]. Bewusst separat statt als Schleife ueber
      * [processInterleaved]: der EQ-Hotpath soll keinen Aufruf-Overhead je
      * Sample bekommen.
+     *
+     * **Zustandsselbstheilung (2026-09-27, Befund 4.3):** einmal `NaN` im
+     * Verzoegerungsspeicher und der Filter ist fuer den **Rest des Tracks**
+     * tot — jeder weitere Sample erbt `NaN` aus `z1`. `onFlush` hilft
+     * nicht, weil es nur zwischen Blöcken feuert. Deshalb wird ein
+     * nicht-endlicher Ausgang als Signal fuer einen defekten Zustand
+     * behandelt: Zustand nullen, Ausgang auf 0.0. Kostet im Normalfall
+     * eine `isFinite()`-Pruefung pro Sample.
      */
     fun process(sample: Double): Double {
         val c = coefficients
         val output = c.b0 * sample + z1
         z1 = c.b1 * sample - c.a1 * output + z2
         z2 = c.b2 * sample - c.a2 * output
-        return output
+        if (output.isFinite() && z1.isFinite() && z2.isFinite()) return output
+        z1 = 0.0
+        z2 = 0.0
+        return 0.0
     }
 
     fun processInterleaved(
@@ -162,9 +173,11 @@ class BiquadFilter(
             val output = c.b0 * input + z1
             z1 = c.b1 * input - c.a1 * output + z2
             z2 = c.b2 * input - c.a2 * output
-            samples[i] = output
+            samples[i] = if (output.isFinite()) output else 0.0
             i += stride
         }
+        if (!z1.isFinite()) z1 = 0.0
+        if (!z2.isFinite()) z2 = 0.0
     }
 
     /** Frequenzgang in dB an [frequencyHz] (fuer Tests und UI-Kurven). */

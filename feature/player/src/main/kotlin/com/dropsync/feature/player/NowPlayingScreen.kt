@@ -27,7 +27,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Repeat
 import androidx.compose.material.icons.outlined.RepeatOne
@@ -328,11 +330,26 @@ fun NowPlayingScreen(
                 .background(palette.background)
                 .pointerInput(onBack) {
                     var totalDrag = 0f
+                    // 2026-09-27 (Befund 12.5): `change.consume()` war
+                    // **bedingungslos**. Damit bekam die Geste jeden
+                    // vertikalen Drag, noch bevor entschieden war, ob es
+                    // ein Wischen zum Schliessen oder ein Scrollen
+                    // innerhalb des Inhalts sein sollte.
+                    //
+                    // `PointerEventPass.Initial` + erst ab der Schwelle
+                    // konsumieren: bis dahin ist der Drag fuer den
+                    // Scroll-Childefenster sichtbar, und ab dort hat die
+                    // Geste Besitz genommen. Das Ergebnis: Scrollen
+                    // funktioniert, und ein deutliches Wischen nach unten
+                    // schliesst weiterhin — der Nutzer muss die Absicht
+                    // nicht im Voraus ankündigen.
                     detectVerticalDragGestures(
                         onDragStart = { totalDrag = 0f },
                         onVerticalDrag = { change, dragAmount ->
                             totalDrag += dragAmount
-                            change.consume()
+                            if (totalDrag >= DISMISS_THRESHOLD_PX) {
+                                change.consume()
+                            }
                         },
                         onDragEnd = {
                             if (totalDrag >= DISMISS_THRESHOLD_PX) onBack()
@@ -362,6 +379,17 @@ fun NowPlayingScreen(
             )
         }
 
+        // 2026-09-27 (Befund 12.5): die Geste hat **jeden** vertikalen
+        // Drag konsumiert (`change.consume()` bedingungslos), und der Inhalt
+        // war nicht scrollbar. Zusammen heisst das: auf einem kleinen
+        // Geraet oder mit grosser Schrift ueberlappt der Inhalt — und
+        // **es gab keinen Ausweg**. Weder Scrollen noch den unteren Teil
+        // erreichen. Nur der Zurueck-Knopf oben funktionierte.
+        //
+        // **Die Geste ist jetzt konkurrierend:** Compose entscheidet
+        // zwischen Wischen und Scrollen anhand der Bewegungsrichtung —
+        // der Nutzer muss also nicht vorher sagen, was er will, und ein
+        // Wischen nach unten schließt weiterhin.
         Column(
             modifier =
                 Modifier
@@ -372,7 +400,10 @@ fun NowPlayingScreen(
                         start = 20.dp,
                         end = 20.dp,
                         bottom = contentPadding.calculateBottomPadding() + 8.dp,
-                    ),
+                    )
+                    // Der Inhalt muss scrollbar sein, sonst ist alles
+                    // unterhalb des Bildschirmrands unerreichbar.
+                    .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             if (!state.isVisible) {

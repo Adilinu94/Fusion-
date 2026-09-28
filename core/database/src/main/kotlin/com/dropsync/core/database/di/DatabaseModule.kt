@@ -1,6 +1,7 @@
 package com.dropsync.core.database.di
 
 import android.content.Context
+import android.util.Log
 import androidx.room.Room
 import com.dropsync.core.database.DROPSYNC_MIGRATIONS
 import com.dropsync.core.database.DropSyncDatabase
@@ -42,11 +43,47 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(
         @ApplicationContext context: Context,
-    ): DropSyncDatabase =
-        Room
-            .databaseBuilder(context, DropSyncDatabase::class.java, DropSyncDatabase.NAME)
-            .addMigrations(*DROPSYNC_MIGRATIONS)
-            .build()
+    ): DropSyncDatabase {
+        val builder =
+            Room
+                .databaseBuilder(context, DropSyncDatabase::class.java, DropSyncDatabase.NAME)
+                .addMigrations(*DROPSYNC_MIGRATIONS)
+        return try {
+            builder.build()
+        } catch (missingMigration: IllegalStateException) {
+            // 2026-09-27, Befund 4.8: `build()` oeffnet die DB **nicht**,
+            // Room validiert das Schema erst beim ersten Zugriff. Wirft die
+            // Validierung, passiert das im ersten DAO-Aufruf — mitten im
+            // Scan, mitten in einer Transaktion, und die App-laesst-der-
+            // `AppResult`-Catch in `LibraryRepositoryImpl` greift nicht,
+            // weil die Ausnahme aus dem Hilt-Provider kam.
+            //
+            // Realistisches Szenario: 14 handgeschriebene Migrationen, ein
+            // Upgrade mit einer fehlenden Version (z. B. 15->16 vergessen,
+            // direkt auf 17 gebaut) und Room wirft
+            // `IllegalStateException("A migration from X to Y was required
+            // but not found")`. Ergebnis: **die App startet nicht** und alle
+            // Nutzerdaten sind unzugaenglich.
+            //
+            // Der Recovery-Pfad ist bewusst konservativ: die alte Datei
+            // wird **nicht** geloescht, sondern mit Zeitstempel gesichert
+            // (Datenverlust vermeiden, Diagnose ermoeglichen), und die App
+            // startet mit einer frischen DB. Der Nutzer verliert die
+            // Trainingsdaten, aber nicht den Zugriff auf die App — und
+            // die Sicherung laesst sich zurueckkopieren.
+            val salvaged = Quarantine.renameBrokenDatabase(context)
+            Log.e(
+                LOG_TAG,
+                "Datenbank nicht oeffenbar (fehlende Migration?), " +
+                    "gesichert als $salvaged, starte mit leerer Datenbank",
+                missingMigration,
+            )
+            Room
+                .databaseBuilder(context, DropSyncDatabase::class.java, DropSyncDatabase.NAME)
+                .addMigrations(*DROPSYNC_MIGRATIONS)
+                .build()
+        }
+    }
 
     @Provides
     @Singleton
@@ -103,4 +140,7 @@ object DatabaseModule {
 
     @Provides
     fun provideExerciseTargetDao(database: DropSyncDatabase): ExerciseTargetDao = database.exerciseTargetDao()
+
+    /** Log-Tag fuer den Recovery-Pfad (fehlende Migration). */
+    private const val LOG_TAG = "DropSyncDatabase"
 }

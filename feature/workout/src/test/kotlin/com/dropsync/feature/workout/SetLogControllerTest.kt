@@ -5,6 +5,7 @@ import com.dropsync.core.common.AppError
 import com.dropsync.core.common.AppResult
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.MusicContext
 import com.dropsync.domain.workout.SetLogHaptics
 import com.dropsync.domain.workout.SetSummaries
 import kotlinx.coroutines.flow.Flow
@@ -37,6 +38,54 @@ class SetLogControllerTest {
                 cancelAndIgnoreRemainingEvents()
             }
         }
+
+    /**
+     * 2026-09-27, Befund 13.4: der Controller reicht den Musikbezug
+     * **unveraendert** an das Repository durch.
+     *
+     * Das ist die Luecke, die `PlaybackSnapshotEntity` offenliess: sie
+     * existierte als eigene Tabelle, wurde aber ueber einen Pfad
+     * geschrieben, den der Produktivpfad nie nimmt. Ein Parameter, der
+     * den ganzen Weg bis in die Transaktion geht, kann das nicht mehr.
+     */
+    @Test
+    fun `logSet reicht den musikbezug unveraendert durch`() =
+        runTest {
+            val context =
+                MusicContext.of(
+                    songId = 4711L,
+                    positionMs = 42_000L,
+                    activeMarkerId = 88L,
+                )
+            controller.logSet(
+                exerciseId = 7L,
+                weightMilliKg = 100_000,
+                reps = 8,
+                musicContext = context,
+            )
+            assertEquals(context, repository.lastMusicContext)
+        }
+
+    /** Ohne Musikbezug bleibt der Default, es wird nichts erfunden. */
+    @Test
+    fun `logSet ohne musikbezug schreibt keinen bezug`() =
+        runTest {
+            controller.logSet(exerciseId = 7L, weightMilliKg = 100_000, reps = 8)
+            assertEquals(MusicContext.NONE, repository.lastMusicContext)
+        }
+
+    /**
+     * `MusicContext.of` mit `songId = null` ist immer leer: es gibt kein
+     * "Ziel ohne Titel". Das verhindert, dass ein Marker ohne zugehoerigen
+     * Song in der Historie landet.
+     */
+    @Test
+    fun `music context ohne song id ist leer`() {
+        assertEquals(
+            MusicContext.NONE,
+            MusicContext.of(songId = null, positionMs = 1_000L, activeMarkerId = 88L),
+        )
+    }
 
     @Test
     fun `log-fehler emittiert LogFailed und keine haptik`() =
@@ -135,6 +184,14 @@ class SetLogControllerTest {
         val deleted = mutableListOf<Long>()
         private var nextId = 42L
 
+        /**
+         * Der zuletzt durchgereichten Musikbezug (2026-09-27, Befund
+         * 13.4). Der Test prueft, dass der Controller ihn **unveraendert**
+         * weitergibt — er darf nichts daran anreichern oder verwerfen.
+         */
+        var lastMusicContext: MusicContext? = null
+            private set
+
         override fun observeSetsForExercise(exerciseId: Long): Flow<List<FlatSet>> = flowOf(emptyList())
 
         override fun observeAllSets(): Flow<List<FlatSet>> = flowOf(emptyList())
@@ -147,7 +204,9 @@ class SetLogControllerTest {
             exerciseId: Long,
             weightMilliKg: Long,
             reps: Int,
+            musicContext: MusicContext,
         ): AppResult<Long> {
+            lastMusicContext = musicContext
             val result = logResult
             if (result is AppResult.Success && result.value == 42L) {
                 // Zaehlt bei jedem Erfolg hoch (42, 43, ...), damit der
@@ -178,9 +237,14 @@ class SetLogControllerTest {
 
     private class RecordingHaptics : SetLogHaptics {
         var count = 0
+        var tapCount = 0
 
         override fun confirm() {
             count++
+        }
+
+        override fun tap() {
+            tapCount++
         }
     }
 }

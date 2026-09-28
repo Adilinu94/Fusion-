@@ -52,4 +52,47 @@ internal object SetReportText {
             }
         return core + " · " + String.format(Locale.ROOT, rejectedTemplate, report.totalRejections, reasons)
     }
+
+    /**
+     * Baut den **knappen** Report-Text fuer die Snackbar.
+     *
+     * **Was hier drin ist und was nicht (2026-09-27, Befund 12.3, UI-Hebel
+     * 3):** der volle Report stand als
+     *
+     * > "Satz beendet: 12 erkannt · Rate 51,3 Hz · 2 Aussetzer · 4 ZuPT ·
+     * > 3 abgelehnt (Beschleunigung 2, Template 1)"
+     *
+     * in einer Snackbar, die mit "Satz gespeichert" + Undo, dem
+     * Learning-Event, Train-Fehlern und dem DropSync-Skip um die
+     * Aufmerksamkeit konkurriert. Fuenf Quellen auf **einem** Host: bei
+     * fuenf Saetzen in 90 Sekunden (ein realistischer Satz-Durchschnitt
+     * bei 15 Saetzen) wird eine der Quellen verdraengt — und die
+     * realistischste ist ausgerechnet der **Undo**-Knopf.
+     *
+     * Von den Angaben ist fuer einen Trainierenden **eine**
+     * handlungsrelevant: **Aussetzer** (Paketverlueufe, also Luecken in
+     * der Messung). Der Rest ist Diagnose:
+     *
+     * - **Rate 51,3 Hz** — was ist das fuer jemanden, der Bankdruecken
+     *   macht? Nichts. Kein Normalnutzer weiss, was eine Abtastrate im
+     *   Kontext eines Satzes bedeutet.
+     * - **ZuPT** — ein Akronym ohne Expansion.
+     * - **abgelehnt (Beschleunigung, Template)** — reines ML-Interna. Gehoert
+     *   ins Diagnose-Panel, wo es bereits existiert
+     *   (`SettingsScreen.kt:1257-1301`, `DiagnosticsLastSetSection`).
+     *
+     * Der volle Report bleibt erhalten — [format] wird fuer das
+     * Diagnose-Panel weiterverwendet, und diese Funktion **ersetzt** ihn
+     * nur in der Snackbar.
+     *
+     * @return `null`, wenn es nichts zu sagen gibt. Dann zeigt die
+     *   Snackbar nur "Satz gespeichert" — kein Rauschen.
+     */
+    fun formatConcise(
+        report: SetDiagnostics,
+        gapsTemplate: String,
+    ): String? {
+        if (report.largeGapCount == 0) return null
+        return String.format(Locale.ROOT, gapsTemplate, report.largeGapCount)
+    }
 }

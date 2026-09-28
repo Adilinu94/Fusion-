@@ -65,6 +65,13 @@ class FakeSongDao : SongDao {
         emit()
     }
 
+    override suspend fun markAllUnavailable() {
+        for ((id, song) in rows) {
+            rows[id] = song.copy(isAvailable = false)
+        }
+        emit()
+    }
+
     override suspend fun setAvailability(
         mediaStoreId: Long,
         isAvailable: Boolean,
@@ -132,6 +139,28 @@ class FakeMarkerDao : MarkerDao {
     ) {
         markers[id]?.let { markers[id] = it.copy(label = label) }
         emit()
+    }
+
+    /**
+     * Reconciliation (2026-09-27, Befund 6.7): haengt die Links auf die
+     * neue MediaStore-ID um — bildet das `UPDATE` in der echten DB ab.
+     */
+    val reassignCalls: MutableList<Pair<Long, Long>> = mutableListOf()
+
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int {
+        reassignCalls += oldSongId to newSongId
+        var moved = 0
+        for ((id, link) in links.toMap()) {
+            if (link.songId == oldSongId) {
+                links[id] = link.copy(songId = newSongId)
+                moved++
+            }
+        }
+        if (moved > 0) emit()
+        return moved
     }
 
     override suspend fun insertLink(link: MarkerSongLinkEntity): Long {
@@ -376,6 +405,15 @@ class FakeLibraryBrowseDao : LibraryBrowseDao {
     override fun observeMostPlayed(limit: Int): Flow<List<SongEntity>> = flowOf(emptyList())
 
     override suspend fun search(query: String): List<SongEntity> = emptyList()
+
+    /**
+     * ODER- und LIKE-Fallback (2026-09-27, Befund 6.9). Der Fake gibt
+     * nichts zurueck — die Tests dieser Pfade laufen gegen die echte
+     * In-Memory-Datenbank, nicht gegen diesen Fake.
+     */
+    override suspend fun searchOr(query: String): List<SongEntity> = emptyList()
+
+    override suspend fun searchFolded(pattern: String): List<SongEntity> = emptyList()
 
     override suspend fun rebuildSearchIndex() {
         rebuildCount++

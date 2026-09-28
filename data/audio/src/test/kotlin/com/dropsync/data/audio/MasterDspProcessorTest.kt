@@ -322,4 +322,124 @@ class MasterDspProcessorTest {
         val peak = tail.maxOfOrNull { abs(it) } ?: 0f
         assertTrue("Nach flush darf kein Reverb-Rest klingen, Spitze war $peak", peak < 1e-6f)
     }
+
+    /**
+     * 2026-09-27, Befund 4.4: ReplayGain war ungeklemmt.
+     *
+     * Ausgangslage: `db = -18 - lufs`, die Analyse setzt ihr absolutes Gate
+     * bei −70 LUFS. Also `db = +52 dB` und `gain = 10^(52/20) ≈ 398`. Der
+     * Soft-Limiter muss das abfangen, was den **ganzen** Track in die
+     * Saettigung faehrt. Der Test fahren den Extremwert nach und prueft,
+     * dass die Kette den Track nicht zerstoert.
+     */
+    @Test
+    fun `replaygain wird auf plus 12 db begrenzt`() {
+        val processor = processor(DspConfig(replayGainEnabled = true))
+        processor.configure(
+            AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT),
+        )
+        // Der Wert, den ein Track am Gate-Rand liefert.
+        processor.setReplayGainDb(52.0)
+
+        val input = ByteBuffer.allocateDirect(2 * 4 * 64).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(2 * 64) { input.putFloat(0.5f) }
+        input.flip()
+        processor.queueInput(input)
+
+        val out = readFloats(processor.output)
+        assertTrue("Ausgabe muss endlich sein", out.all { it.isFinite() })
+        val peak = out.maxOfOrNull { abs(it) } ?: 0f
+        // 0,5 * 10^(12/20) = 0,996. Ohne Begrenzung waere es 0,5 * 398 = 199.
+        assertTrue("Gain wurde nicht begrenzt, Spitze war $peak", peak <= 1.0f)
+    }
+
+    /**
+     * True-Peak-Reserve (Befund 4.4): der Gain wird so begrenzt, dass
+     * `gain * truePeak <= -1 dBFS`. Ohne das hebt die Normalisierung einen
+     * bereits lauten Track ueber 0 dBFS.
+     */
+    @Test
+    fun `true peak begrenzt den replaygain auf das deckel`() {
+        val processor = processor(DspConfig(replayGainEnabled = true))
+        processor.configure(
+            AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT),
+        )
+        processor.setReplayGainDb(12.0)
+        // Track, dessen Spitze 0,5 bereits 0 dBFS entspricht: nach +12 dB
+        // waeren es 0 dBFS * 4 = +12 dBFS. Die Reserve muss auf −1 dBFS
+        // zuruecknehmen, also auf den Faktor 0,891/0,5 ≈ 1,78 (+5 dB).
+        processor.setTruePeak(0.5)
+
+        val input = ByteBuffer.allocateDirect(2 * 4 * 64).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(2 * 64) { input.putFloat(0.5f) }
+        input.flip()
+        processor.queueInput(input)
+
+        val out = readFloats(processor.output)
+        val peak = out.maxOfOrNull { abs(it) } ?: 0f
+        val ceiling = Math.pow(10.0, (-1.0 / 20.0)).toFloat()
+        assertTrue(
+            "Spitze $peak muss unter dem Deckel $ceiling bleiben",
+            peak <= ceiling + 0.01f,
+        )
+    }
+
+    /**
+     * 2026-09-27, Befund 4.3/4.4: ein `NaN` im Gain-Cache darf nicht das
+     * gesamte Sample-Array vergiften. `Double.pow(NaN)` ist `NaN`.
+     */
+    @Test
+    fun `replaygain mit NaN im cache bleibt still statt endlos NaN`() {
+        val processor = processor(DspConfig(replayGainEnabled = true))
+        processor.configure(
+            AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT),
+        )
+        processor.setReplayGainDb(Double.NaN)
+
+        val input = ByteBuffer.allocateDirect(2 * 4 * 32).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(2 * 32) { input.putFloat(0.5f) }
+        input.flip()
+        processor.queueInput(input)
+
+        val out = readFloats(processor.output)
+        assertTrue("NaN im Gain darf nicht durchschlagen", out.all { it.isFinite() })
+    }
+
+    /**
+     * 2026-09-27, Befund 4.3: ein `NaN` im dekodierten PCM darf die Kette
+     * nicht fuer den Rest des Blocks und des Titels zerstoeren. Ueber
+     * Float-Eingang reproduzierbar, weil `PcmCodec.decode` fuer Float
+     * keinen Clamp anwendet.
+     */
+    @Test
+    fun `defekter float sample wird ersetzt statt ueber die kette zu wandern`() {
+        val processor =
+            processor(
+                DspConfig(
+                    replayGainEnabled = true,
+                    eq =
+                        EqSettings(
+                            enabled = true,
+                            mode = EqMode.PARAMETRIC,
+                            bands = listOf(EqBand(1_000.0, 6.0, 1.0)),
+                        ),
+                ),
+            )
+        processor.configure(
+            AudioProcessor.AudioFormat(48_000, 2, C.ENCODING_PCM_FLOAT),
+        )
+        processor.setReplayGainDb(3.0)
+
+        val input = ByteBuffer.allocateDirect(2 * 4 * 32).order(ByteOrder.LITTLE_ENDIAN)
+        repeat(2 * 32) { index -> input.putFloat(if (index == 5) Float.NaN else 0.4f) }
+        input.flip()
+        processor.queueInput(input)
+
+        val out = readFloats(processor.output)
+        assertEquals(2 * 32, out.size)
+        assertTrue("NaN wanderte durch die Kette", out.all { it.isFinite() })
+        // Und der Ersatz wurde auch gezaehlt, damit der Datenverlust
+        // sichtbar bleibt statt still zu passieren.
+        assertEquals(1L, processor.nonFiniteSamplesForTest())
+    }
 }

@@ -13,4 +13,8 @@ class AndroidSetLogHaptics(
     override fun confirm() {
         haptics.tick()
     }
+
+    override fun tap() {
+        haptics.tap()
+    }
 }

@@ -211,3 +211,89 @@ class FreeverbTest {
         assertTrue("Nachhall fehlt, Energie war $energyLate", energyLate > 1e-6)
     }
 }
+
+/**
+ * Nicht-finite Werte in der DSP-Kette (2026-09-27, Befund 4.3).
+ *
+ * Ausgangslage: `Double.coerceIn` gibt bei `NaN` `NaN` zurueck, weil
+ * Kotlin mit `<` und `>` vergleicht und `NaN` mit beiden false ist. Ein
+ * defekter Stream lieferte deshalb bis zum Titelende digitale Stille
+ * (`roundToInt(NaN) == 0`), was als "Encoder kaputt" fehldiagnostiziert
+ * wurde. Im Biquad war es schlimmer: einmal `NaN` im Verzoegerungsspeicher
+ * und der Filter war fuer den Rest des Titels tot, weil jeder weitere
+ * Sample aus `z1` erbt.
+ */
+class NonFiniteGuardTest {
+    @Test
+    fun `clampSample macht NaN zu stille statt zu NaN`() {
+        assertEquals(0.0, AudioMath.clampSample(Double.NaN), 0.0)
+        assertEquals(1.0, AudioMath.clampSample(Double.POSITIVE_INFINITY), 0.0)
+        assertEquals(-1.0, AudioMath.clampSample(Double.NEGATIVE_INFINITY), 0.0)
+        assertEquals(0.5, AudioMath.clampSample(0.5), 0.0)
+    }
+
+    @Test
+    fun `softClip macht NaN zu stille`() {
+        assertEquals(0.0, AudioMath.softClip(Double.NaN), 0.0)
+        assertTrue(AudioMath.softClip(0.5).isFinite())
+    }
+
+    @Test
+    fun `sanitize ersetzt nicht-endliche werte`() {
+        assertEquals(0.0, AudioMath.sanitize(Double.NaN), 0.0)
+        assertEquals(0.0, AudioMath.sanitize(Double.POSITIVE_INFINITY), 0.0)
+        assertEquals(0.7, AudioMath.sanitize(0.7), 0.0)
+    }
+
+    @Test
+    fun `biquad heilt seinen zustand nach einem NaN-sample`() {
+        val filter =
+            BiquadFilter(
+                BiquadCoefficients.of(
+                    type = BiquadType.PEAK,
+                    frequencyHz = 1_000.0,
+                    sampleRateHz = 48_000.0,
+                    gainDb = 6.0,
+                    q = 1.0,
+                ),
+            )
+        // Normaler Betrieb: der Filter arbeitet.
+        val warmup = 128
+        for (i in 0 until warmup) {
+            filter.process(0.5)
+        }
+        assertTrue(filter.process(0.5).isFinite())
+
+        // Ein defekter Sample darf den Zustand nicht vergiften.
+        assertEquals(0.0, filter.process(Double.NaN), 0.0)
+
+        // Und der Filter muss danach wieder nutzbares Material liefern.
+        var finite = 0
+        for (i in 0 until 64) {
+            if (filter.process(0.5).isFinite()) finite++
+        }
+        assertEquals("Filter blieb nach NaN tot", 64, finite)
+    }
+
+    @Test
+    fun `interleaved-verarbeitung heilt ihren zustand nach NaN`() {
+        val filter =
+            BiquadFilter(
+                BiquadCoefficients.of(
+                    type = BiquadType.PEAK,
+                    frequencyHz = 1_000.0,
+                    sampleRateHz = 48_000.0,
+                    gainDb = 3.0,
+                    q = 1.0,
+                ),
+            )
+        val samples = DoubleArray(64) { 0.4 }
+        filter.processInterleaved(samples, samples.size, 0, 1)
+        assertTrue(samples.all { it.isFinite() })
+
+        // Ein NaN in der Mitte darf die Werte danach nicht zerstoeren.
+        samples[10] = Double.NaN
+        filter.processInterleaved(samples, samples.size, 0, 1)
+        assertTrue("Nach NaN kamen nicht-endliche Werte heraus", samples.all { it.isFinite() })
+    }
+}

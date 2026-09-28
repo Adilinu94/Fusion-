@@ -76,4 +76,14 @@ object MediaItemFactory {
         val uri = item.requestMetadata.mediaUri ?: return item
         return item.buildUpon().setUri(uri).build()
     }
+
+    /**
+     * Tracknummer aus einer CUE-mediaId (`cue:<songId>:<trackNr>`), oder
+     * `null` fuer eine regulaere mediaId. 2026-09-27: noetig fuer die
+     * Wiederherstellung der Queue, die jetzt die mediaId transportiert.
+     */
+    fun cueTrackNumberOf(mediaId: String): Int? {
+        if (!mediaId.startsWith(CUE_MEDIA_ID_PREFIX)) return null
+        return mediaId.substringAfterLast(':', "").toIntOrNull()
+    }
 }

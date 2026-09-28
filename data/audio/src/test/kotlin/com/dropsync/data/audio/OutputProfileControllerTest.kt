@@ -68,9 +68,17 @@ class OutputProfileControllerTest {
             job.cancelAndJoin()
         }
 
-    /** Echtzeit-Polling, weil DataStore auf echtem IO emittiert. */
+    /**
+     * Echtzeit-Polling, weil DataStore auf echtem IO emittiert.
+     *
+     * 2026-09-27 (Befund 7.11): das Timeout war 5 s. Auf einem
+     * 2-vCPU-CI-Runner mit parallelem Modul-Build reisst das gelegentlich,
+     * obwohl der Controller korrekt arbeitet — der Test wurde als flaky
+     * gemeldet. 20 s ist weiterhin weit unter der Gradle-Testzeitgrenze
+     * und laesst dem IO-Durchsatz auf langsamen Runnern Raum.
+     */
     private suspend fun awaitUntil(
-        timeoutMs: Long = 5_000,
+        timeoutMs: Long = 20_000,
         condition: suspend () -> Boolean,
     ) {
         val start = System.currentTimeMillis()

@@ -182,14 +182,34 @@ class TrackAnalysisRepositoryImpl(
     ) {
         when (val result = analyzer.analyze(song, AnalysisProfile.WAVEFORM_ONLY)) {
             is AppResult.Success -> {
-                persister.persistSuccess(
-                    songId = song.mediaStoreId,
-                    profile = AnalysisProfile.WAVEFORM_ONLY,
-                    analysis = result.value,
-                )
-                // Erst NACH dem Schreiben von Stufe 1 anstossen: der
-                // Metadatenlauf braucht die Zeile fuer sein UPDATE.
-                if (alsoNeedsMix) scheduler.scheduleMixMetadata(song.mediaStoreId)
+                // 2026-09-27, Befund 4.12: `persistSuccess` stand ohne
+                // Schutz. Eine SQLiteException aus dem Schreibvorgang (DB
+                // voll — bei 30.000 Markern, Trainingsjournal und 10.000
+                // Analysen realistisch) propagierte aus `runWaveformStage`
+                // in den `scope.launch`, der `SupervisorJob` fing sie, der
+                // Job starb — und **der Nutzer sah dauerhaft `Loading`**,
+                // weil `observeAnalysis` nie eine Zeile lieferte. Kein Log,
+                // keine UI-Reaktion, kein Retry.
+                //
+                // Der Schreibfehler ist jetzt ein normaler temporaerer
+                // Analysefehler: kein Cache-Eintrag, Log, und der naechste
+                // Aufruf versucht es erneut.
+                try {
+                    persister.persistSuccess(
+                        songId = song.mediaStoreId,
+                        profile = AnalysisProfile.WAVEFORM_ONLY,
+                        analysis = result.value,
+                    )
+                    // Erst NACH dem Schreiben von Stufe 1 anstossen: der
+                    // Metadatenlauf braucht die Zeile fuer sein UPDATE.
+                    if (alsoNeedsMix) scheduler.scheduleMixMetadata(song.mediaStoreId)
+                } catch (failure: Exception) {
+                    Log.e(
+                        LOG_TAG,
+                        "Analyse-Ergebnis nicht speicherbar: ${song.mediaStoreId}",
+                        failure,
+                    )
+                }
             }
 
             is AppResult.Failure -> {

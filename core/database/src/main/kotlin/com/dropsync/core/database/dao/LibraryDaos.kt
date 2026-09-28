@@ -44,15 +44,45 @@ interface SongDao {
      * Nicht mehr im MediaStore vorhandene Songs bleiben mit
      * isAvailable = false erhalten (Schritt 4.4); Historie und Marker
      * werden nie geloescht.
+     *
+     * **Chunking-Pflicht (2026-09-27):** die Abfrage erzeugt einen
+     * gebundenen Parameter je ID. `SQLITE_MAX_VARIABLE_NUMBER` ist 999 bis
+     * SQLite 3.32; API 26/27 liefern aeltere SQLite-Builds. Mit mehr als
+     * 999 Songs scheiterte der Scan und damit die gesamte Bibliothek.
+     * Aufrufer zerlegen die ID-Liste mit [BIND_CHUNK_SIZE] und rufen
+     * diese Methode je Block auf. **Dabei je Block erneut aufrufen, nicht
+     * die Gesamtliste uebergeben** — ein zweiter Aufruf markiert sonst
+     * alles aus den anderen Bloecken wieder als fehlend.
      */
     @Query("UPDATE songs SET is_available = 0 WHERE media_store_id NOT IN (:presentIds)")
     suspend fun markMissingAsUnavailable(presentIds: List<Long>)
+
+    /**
+     * Setzt **alle** Songs auf unavailable. Wird gebraucht, wenn der
+     * Scan keine einzige ID liefert — `NOT IN ()` ist kein gueltiges SQL
+     * und wuerde als Fehler enden, obwohl "nichts vorhanden" die korrekte
+     * Antwort ist.
+     */
+    @Query("UPDATE songs SET is_available = 0")
+    suspend fun markAllUnavailable()
 
     @Query("UPDATE songs SET is_available = :isAvailable WHERE media_store_id = :mediaStoreId")
     suspend fun setAvailability(
         mediaStoreId: Long,
         isAvailable: Boolean,
     )
+
+    companion object {
+        /**
+         * Blockgroesse fuer [markMissingAsUnavailable].
+         *
+         * 500 statt 999: SQLite reserviert Parameter fuer interne Zwecke
+         * (Subqueries, Trigger), und die Zahl ist seit SQLite 3.32 auf
+         * 32766 angehoben. 500 liegt darunter und traegt damit auf jedem
+         * unterstuetzten API-Level (minSdk 26).
+         */
+        const val BIND_CHUNK_SIZE: Int = 500
+    }
 }
 
 /**
@@ -101,6 +131,28 @@ interface MarkerDao {
 
     @Query("SELECT * FROM marker_song_links WHERE marker_id = :markerId")
     suspend fun getLinkForMarker(markerId: Long): MarkerSongLinkEntity?
+
+    /**
+     * Haengt alle Marker eines Titels auf eine neue MediaStore-ID um
+     * (2026-09-27, Befund 6.7).
+     *
+     * **Warum das noetig ist:** verschiebt der Nutzer eine Datei, vergibt
+     * der MediaStore eine neue `_id`. Ohne dieses Umhaengen bleiben die
+     * Marker auf der alten ID — und die DropSync-Funktion geht fuer den
+     * Titel verloren, **stumm**. Das ist der teuerste Einzelschaden der
+     * Verschiebung, weil die Landungspositionen das sind, was der
+     * Nutzer ueberhaupt gesetzt hat.
+     *
+     * `ON CONFLICT` ist bewusst **nicht** gesetzt: `marker_song_links`
+     * hat einen Primärschlüssel auf `marker_id`, ein Kollisionsfall kann
+     * also nicht auftreten — der Marker existiert bereits mit genau
+     * dieser Zeile.
+     */
+    @Query("UPDATE marker_song_links SET song_id = :newSongId WHERE song_id = :oldSongId")
+    suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int
 
     @Query(
         "SELECT m.* FROM song_markers m INNER JOIN marker_song_links l ON l.marker_id = m.id " +

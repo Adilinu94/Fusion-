@@ -10,6 +10,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.domain.playback.DropLandingEvent
 import com.dropsync.domain.playback.PersistedPlayerState
+import com.dropsync.domain.playback.PersistedQueueEntry
 import com.dropsync.domain.playback.PlaybackRepository
 import com.dropsync.domain.playback.PlaybackState
 import com.dropsync.domain.playback.QueueItem
@@ -197,6 +198,19 @@ class PlaybackRepositoryImpl(
     /**
      * Armierte Drop-Landung (MP-3): reicht an den Service weiter, der die
      * PlayerMessage auf der Audio-Uhr terminiert.
+     *
+     * 2026-09-27, Befund 4.5: der `controller != null`-Zweig war optional —
+     * ohne `MediaController` (etwa im Test- oder Fake-Setup, oder wenn
+     * `connection` einen direkten Player haelt) wurde der Block uebersprungen
+     * und trotzdem `AppResult.success(Unit)` zurueckgegeben. Der
+     * `DropSyncCoordinator` meldete daraufhin `Armed(audioPrepared = true)`
+     * und startete **keinen** Fallback-Job. Die Landung fand nie statt und
+     * wurde nie gemeldet — der Nutzer sah einen fertigen Plan und
+     * bekam nichts.
+     *
+     * Fehlt der Controller, ist das jetzt ein Fehler. Der Koordinator
+     * erkennt `isSuccess == false`, startet den Best-Effort-Pfad und der
+     * Nutzer sieht `Failed`/`BestEffort` mit Grund.
      */
     override suspend fun armLanding(
         song: Song,
@@ -208,27 +222,29 @@ class PlaybackRepositoryImpl(
             withContext(dispatchers.main) {
                 val player = connection.requirePlayer()
                 attachListener(player)
-                val controller = player as? MediaController
-                if (controller != null) {
-                    val args =
-                        Bundle().apply {
-                            putLong(PlaybackCommands.ARG_SONG_ID, song.mediaStoreId)
-                            putLong(
-                                PlaybackCommands.ARG_START_POSITION_MS,
-                                startPositionMs.coerceAtLeast(0),
-                            )
-                            putLong(PlaybackCommands.ARG_DELAY_MS, delayMs.coerceAtLeast(0))
-                            putLong(PlaybackCommands.ARG_FADE_MS, fadeMs.coerceAtLeast(0))
-                        }
-                    controller
-                        .sendCustomCommand(
-                            SessionCommand(PlaybackCommands.ACTION_ARM_LANDING, Bundle.EMPTY),
-                            args,
-                        ).awaitResult()
-                        .throwOnFailure()
-                }
+                val controller =
+                    player as? MediaController
+                        ?: return@withContext AppResult.failure(
+                            AppError.MediaUnavailable(song.mediaStoreId),
+                        )
+                val args =
+                    Bundle().apply {
+                        putLong(PlaybackCommands.ARG_SONG_ID, song.mediaStoreId)
+                        putLong(
+                            PlaybackCommands.ARG_START_POSITION_MS,
+                            startPositionMs.coerceAtLeast(0),
+                        )
+                        putLong(PlaybackCommands.ARG_DELAY_MS, delayMs.coerceAtLeast(0))
+                        putLong(PlaybackCommands.ARG_FADE_MS, fadeMs.coerceAtLeast(0))
+                    }
+                controller
+                    .sendCustomCommand(
+                        SessionCommand(PlaybackCommands.ACTION_ARM_LANDING, Bundle.EMPTY),
+                        args,
+                    ).awaitResult()
+                    .throwOnFailure()
+                AppResult.success(Unit)
             }
-            AppResult.success(Unit)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -402,7 +418,13 @@ class PlaybackRepositoryImpl(
                 .collect { snapshot ->
                     stateStore.write(
                         PersistedPlayerState(
-                            queueSongIds = snapshot.queueSongIds,
+                            queueEntries =
+                                snapshot.queue.map { item ->
+                                    PersistedQueueEntry(
+                                        mediaId = item.mediaId,
+                                        songId = item.songId,
+                                    )
+                                },
                             currentSongId = snapshot.currentSongId,
                             positionMs = snapshot.positionMs,
                             shuffleEnabled = snapshot.shuffleEnabled,
@@ -443,7 +465,12 @@ class PlaybackRepositoryImpl(
                         val item = getMediaItemAt(index)
                         QueueItem(
                             mediaId = item.mediaId,
-                            songId = item.mediaId.toLongOrNull(),
+                            // 2026-09-27: CUE-Tracks tragen `cue:<songId>:<nr>`.
+                            // `toLongOrNull()` liefert dafuer null und der
+                            // Eintrag war blind fuer Bibliothek und Marker.
+                            // songIdOf loest die ID der zugrunde liegenden
+                            // Datei auf.
+                            songId = DataStorePlayerStateStore.songIdOf(item.mediaId),
                             title = item.mediaMetadata.title?.toString() ?: item.mediaId,
                             artist = item.mediaMetadata.artist?.toString(),
                         )
@@ -451,7 +478,7 @@ class PlaybackRepositoryImpl(
                 }
             return PlaybackState(
                 isPlaying = isPlaying,
-                currentSongId = currentMediaItem?.mediaId?.toLongOrNull(),
+                currentSongId = currentMediaItem?.mediaId?.let { DataStorePlayerStateStore.songIdOf(it) },
                 positionMs = currentPosition.coerceAtLeast(0),
                 durationMs = duration.coerceAtLeast(0),
                 playbackSpeed = playbackParameters.speed,

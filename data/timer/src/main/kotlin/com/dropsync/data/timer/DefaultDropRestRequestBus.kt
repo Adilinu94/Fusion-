@@ -13,10 +13,17 @@ import kotlinx.coroutines.flow.asSharedFlow
  */
 class DefaultDropRestRequestBus : DropRestRequestBus {
     private val mutableRequests = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
+    private val mutableCancellations = MutableSharedFlow<Unit>(replay = 0, extraBufferCapacity = 1)
 
     override val requests: SharedFlow<Unit> = mutableRequests.asSharedFlow()
 
+    override val cancellations: SharedFlow<Unit> = mutableCancellations.asSharedFlow()
+
     override fun request() {
         mutableRequests.tryEmit(Unit)
+    }
+
+    override fun cancelForUndo() {
+        mutableCancellations.tryEmit(Unit)
     }
 }

@@ -8,6 +8,7 @@ import com.dropsync.core.testing.FakeClock
 import com.dropsync.core.testing.TestDispatcherProvider
 import com.dropsync.data.playback.PlaybackRepositoryImpl.Companion.toPlaybackState
 import com.dropsync.domain.playback.PersistedPlayerState
+import com.dropsync.domain.playback.PersistedQueueEntry
 import com.dropsync.domain.playback.RepeatMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -272,12 +273,26 @@ class PlaybackRepositoryImplTest {
         }
 
     @Test
-    fun `armLanding und cancelLanding sind ohne Controller ein No-op`() =
+    fun `armLanding meldet ohne Controller einen Fehler statt Erfolg`() =
         runTest {
             val repository = repository()
             repository.setQueue(songs, 0, playWhenReady = true)
 
-            assertTrue(repository.armLanding(song(2), 0, 1_000, 100) is AppResult.Success)
+            // 2026-09-27, Befund 4.5: hier stand `assertTrue(... is
+            // AppResult.Success)`. `armLanding` gab aber Erfolg zurueck,
+            // ohne etwas zu armieren, wenn der Player kein `MediaController`
+            // ist. Der `DropSyncCoordinator` meldete daraufhin
+            // `Armed(audioPrepared = true)` und startete **keinen**
+            // Fallback — die Landung fand nie statt und wurde nie gemeldet.
+            // Der Test zementierte genau diesen Fehler.
+            val armed = repository.armLanding(song(2), 0, 1_000, 100)
+            assertTrue(
+                "armLanding darf ohne Controller keinen Erfolg melden",
+                armed is AppResult.Failure,
+            )
+
+            // Die anderen beiden bleiben No-ops: sie tun nichts Schlimmes,
+            // wenn der Controller fehlt.
             assertTrue(repository.cancelLanding() is AppResult.Success)
             assertTrue(repository.setScrubbingMode(true) is AppResult.Success)
             assertEquals(listOf("1", "2", "3"), player.playlistMediaIds)
@@ -318,14 +333,28 @@ class PlaybackRepositoryImplTest {
             assertTrue("Scrub-Serie darf nicht in viele Writes muenden", store.writes.size <= 2)
             val last = store.writes.last()
             assertEquals(7_000L, last.positionMs)
-            assertEquals(listOf(1L, 2L, 3L), last.queueSongIds)
+            assertEquals(
+                listOf(
+                    PersistedQueueEntry(mediaId = "1", songId = 1L),
+                    PersistedQueueEntry(mediaId = "2", songId = 2L),
+                    PersistedQueueEntry(mediaId = "3", songId = 3L),
+                ),
+                last.queueEntries,
+            )
             assertEquals(1L, last.currentSongId)
         }
 
     @Test
     fun `lastPersistedState reicht den gespeicherten Zustand durch`() =
         runTest {
-            val persisted = PersistedPlayerState(listOf(5L), 5L, 1_000L, false, RepeatMode.OFF)
+            val persisted =
+                PersistedPlayerState(
+                    queueEntries = listOf(PersistedQueueEntry(mediaId = "5", songId = 5L)),
+                    currentSongId = 5L,
+                    positionMs = 1_000L,
+                    shuffleEnabled = false,
+                    repeatMode = RepeatMode.OFF,
+                )
             store.stored = persisted
 
             assertEquals(persisted, repository().lastPersistedState())
@@ -375,8 +404,32 @@ class PlaybackRepositoryImplTest {
 
         val state = fake.toPlaybackState()
         assertEquals(listOf("Titel 1", "cue:99:1"), state.queue.map { it.title })
-        assertEquals(listOf(1L), state.queueSongIds)
         assertEquals(180_000L, state.durationMs)
         assertEquals(0, state.currentIndex)
+    }
+
+    /**
+     * 2026-09-27, Befund 4.1: eine CUE-mediaId muss auf die ID der
+     * zugrunde liegenden Datei aufloesen. Vorher lieferte
+     * `mediaId.toLongOrNull()` null, der Eintrag fiel aus `queueSongIds`
+     * heraus und war fuer Bibliothek, Play-Stats und Marker unsichtbar.
+     */
+    @Test
+    fun `cue track liefert die song-id der zugrunde liegenden datei`() {
+        val fake = FakePlayer()
+        fake.setMediaItems(
+            listOf(
+                MediaItemFactory.fromSong(songs[0]),
+                MediaItem.Builder().setMediaId("cue:99:1").build(),
+            ),
+            0,
+            0L,
+        )
+
+        val state = fake.toPlaybackState()
+        assertEquals(listOf(1L, 99L), state.queueSongIds)
+        assertEquals(99L, state.queue[1].songId)
+        // Die mediaId bleibt fuer die Timeline-Position erhalten.
+        assertEquals("cue:99:1", state.queue[1].mediaId)
     }
 }

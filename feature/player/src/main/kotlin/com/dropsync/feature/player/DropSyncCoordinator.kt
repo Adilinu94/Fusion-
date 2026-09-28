@@ -198,6 +198,18 @@ class DropSyncCoordinator
             scope.launch {
                 dropRestRequests.requests.collect { onDropAutoRequested() }
             }
+            // 2026-09-27, Befund 5.11: der Satz wurde zurueckgenommen, der
+            // Plan lief weiter. Die Restmusik uebernahm die Queue, der
+            // Work-Titel landete zum geplanten Drop — der Nutzer hatte die
+            // Uebung fuer diesen Satz zurueckgenommen und die Musik nicht.
+            //
+            // Die Abbrechung beendet **nur** den Musik-Teil: Armierung,
+            // Queue-Uebernahme, Ducking und der Zustand. Der Resttimer
+            // gehoert dem ViewModel und wird dort beendet — sonst wuerde
+            // die Pause blind stehen bleiben, wenn kein Satz betroffen war.
+            scope.launch {
+                dropRestRequests.cancellations.collect { onDropAutoCancelled() }
+            }
             scope.launch {
                 playbackRepository.landingEvents.collect { onLandingEvent(it) }
             }
@@ -491,7 +503,12 @@ class DropSyncCoordinator
          * wird gefuellt.
          */
         private suspend fun adoptPersistedQueue() {
-            val ids = playbackRepository.lastPersistedState()?.queueSongIds.orEmpty()
+            val ids =
+                playbackRepository
+                    .lastPersistedState()
+                    ?.queueEntries
+                    ?.mapNotNull { it.songId }
+                    .orEmpty()
             restQueueSongIds =
                 ids.ifEmpty { planner.playlistSongs(PlaylistLabel.REST).map { it.mediaStoreId } }
             controlling = true
@@ -626,6 +643,10 @@ class DropSyncCoordinator
                     chain.segments.mapNotNull { segment ->
                         outcome.songsById[segment.songId]?.let { it.title ?: it.displayName }
                     },
+                // 2026-09-27, Befund 13.4: der Marker wandert in den
+                // Zustand, damit der Satz-Log festhalten kann, auf
+                // welchem Drop der Satz landete.
+                markerId = landing.markerId,
             )
         }
 
@@ -654,6 +675,8 @@ class DropSyncCoordinator
                 remainingMs = remaining,
                 markerLabel = plannedOutcome.markerLabel,
                 confidence = plannedOutcome.confidence,
+                // 2026-09-27, Befund 13.4: siehe Kettenpfad.
+                markerId = plannedOutcome.markerId,
             )
         }
 
@@ -697,6 +720,7 @@ class DropSyncCoordinator
             markerLabel: String,
             confidence: TimingConfidence,
             chainTitles: List<String> = emptyList(),
+            markerId: Long? = null,
         ) {
             targetElapsedRealtimeMs = clock.elapsedRealtimeMs() + plan.startAfterDelayMs
             val planned =
@@ -708,6 +732,13 @@ class DropSyncCoordinator
                     confidence = confidence,
                     mode = DropSyncMode.LANDING_AT_REST_END,
                     chain = chainTitles,
+                    // 2026-09-27, Befund 13.4: der Plan traegt Titel- und
+                    // Marker-ID, damit der Satz-Log daraus den Musikbezug
+                    // bauen kann. `activeWorkSong` allein reicht nicht — es
+                    // ist der *Ziel*-Titel der naechsten Pause, nicht der,
+                    // der waehrend des gerade geloggten Satzes lief.
+                    songId = workSong.mediaStoreId,
+                    markerId = markerId,
                 )
             plannedRemainingMs = remainingMs
             plannedAtElapsedMs = clock.elapsedRealtimeMs()
@@ -808,6 +839,11 @@ class DropSyncCoordinator
                         DropSyncState.Landed(
                             atElapsedRealtimeMs = clock.elapsedRealtimeMs(),
                             deltaMs = event.deltaMs,
+                            // 2026-09-27, Befund 13.4: der Plan wandert
+                            // mit, damit der Satz-Log nach der Landung
+                            // noch weiss, auf welchem Drop der Satz
+                            // gelandet ist. Genau dann wird er geloggt.
+                            plan = (mutableState.value as? DropSyncState.Armed)?.plan,
                         )
                 }
 
@@ -920,6 +956,39 @@ class DropSyncCoordinator
         private suspend fun override(reason: OverrideReason) {
             cancelLanding()
             mutableState.value = DropSyncState.Overridden(reason)
+        }
+
+        /**
+         * 2026-09-27, Befund 5.11: der Satz wurde zurueckgenommen, der
+         * Drop-Rest-Plan nicht. Der Aufrufer (Undo) beendet den Resttimer
+         * selbst — hier wird ausschliesslich der **Musik**-Teil
+         * zurueckgenommen: Armierung, Kettenwechsel, Queue-Uebernahme und
+         * Ducking.
+         *
+         * Anders als bei `override` wird der Zustand nicht auf
+         * `Overridden` gesetzt: das ist fuer **Nutzerwahl** reserviert
+         * (Songwechsel, Skip, Pause) und traegt eine Undo-Aktion. Beim
+         * Undo gibt es nichts zu undoen — der Satz ist schon weg, und ein
+         * Override-Chip wuerde dem Nutzer eine zweite Ruecknahme anbieten,
+         * die nichts bewirkt. Stattdessen: Zustand leeren (siehe
+         * `endSession`), damit die Konsole nichts mehr verspricht.
+         */
+        private suspend fun onDropAutoCancelled() {
+            cancelLanding()
+            activeSessionId = null
+            controlling = false
+            landed = false
+            restQueueSongIds = emptyList()
+            lastSample = null
+            sawPlaying = false
+            needsReplanOnResume = false
+            chainSource = null
+            // Eine noch nicht erreichte Anforderung gehoert zu dem
+            // geloeschten Satz und darf nicht in der naechsten Pause
+            // wieder auftauchen.
+            pendingDropAuto = false
+            restDucking.setActive(false)
+            mutableState.value = DropSyncState.Off
         }
 
         private suspend fun cancelLanding() {

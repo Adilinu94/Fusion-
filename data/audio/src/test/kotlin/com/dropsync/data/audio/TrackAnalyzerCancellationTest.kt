@@ -16,6 +16,9 @@ import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -130,6 +133,70 @@ class TrackAnalyzerCancellationTest {
                 processedBuffers,
             )
         }
+
+    /**
+     * 2026-09-27, Befund 9.2: die zeitabhaengigen Akkumulatoren wurden mit
+     * der **Container**-Rate gebaut, waehrend der Decoder eine andere
+     * liefern darf. Bei 48 kHz Ausgabe auf einem 44,1-kHz-Container waren
+     * die 25-ms-Fenster real 6,6 % zu kurz — und damit jede Onset-Position,
+     * jedes BPM, der Downbeat-Offset und jedes Marker-Snap systematisch
+     * verschoben. Still, dauerhaft, falsch.
+     *
+     * Der Test prueft **beide** Raten am Fenster nach: bei 44,1 kHz sind
+     * es 1102 Samples, bei 48 kHz genau 1200. Der alte Code haette in
+     * beiden Faellen den Wert fuer 44,1 kHz genommen, und die
+     * Onset-Positionen waeren um 8,9 % verschoben.
+     */
+    @Test
+    fun `energiefenster folgt der ausgabe- und nicht der containerrate`() {
+        val stages = LazyAnalysisStages()
+
+        // Der Decoder meldet 48 kHz. Die Fenster MUESSEN dazu passen.
+        stages.ensure(sampleRateHz = 48_000, includesOnsets = true, includesMix = false)
+        assertNotNull("Bei gueltiger Rate muss der Energie-Akkumulator entstehen", stages.energy)
+        assertEquals(
+            "48-kHz-Ausgabe braucht 1200 Samples je 25-ms-Fenster, nicht 1102",
+            1_200,
+            stages.energyWindowSamples(48_000),
+        )
+
+        // Gegenprobe: die Container-Rate ergibt den anderen Wert.
+        assertEquals(1_102, stages.energyWindowSamples(44_100))
+    }
+
+    /**
+     * Die Stufen duerfen ihren Fensterzustand **nicht** verlieren, wenn
+     * ein zweites Format-Event kommt (z. B. bei einem Decoder-Wechsel
+     * mitten im Track). `ensure` ist deshalb idempotent — und darf die
+     * bereits gesammelten Samples nicht verwerfen.
+     */
+    @Test
+    fun `zweites format-event erzeugt keine neuen stufen`() {
+        val stages = LazyAnalysisStages()
+        stages.ensure(sampleRateHz = 48_000, includesOnsets = true, includesMix = true)
+        val firstEnergy = stages.energy
+        val firstTempo = stages.tempo
+
+        stages.ensure(sampleRateHz = 44_100, includesOnsets = true, includesMix = true)
+
+        assertSame("Der Energie-Akkumulator darf nicht ersetzt werden", firstEnergy, stages.energy)
+        assertSame("Der Tempo-Akkumulator darf nicht ersetzt werden", firstTempo, stages.tempo)
+    }
+
+    /**
+     * Eine Rate von 0 (unbekanntes Decoder-Format) darf keine Stufen
+     * mit einer Unsinnsrate erzeugen — lieber keine Energie als eine
+     * Energie mit `samplesPerWindow = 0`, was in einer Endlosschleife
+     * enden wuerde.
+     */
+    @Test
+    fun `unbrauchbare rate erzeugt keine stufen`() {
+        val stages = LazyAnalysisStages()
+        stages.ensure(sampleRateHz = 0, includesOnsets = true, includesMix = true)
+        assertNull(stages.energy)
+        assertNull(stages.tempo)
+        assertNull(stages.loudness)
+    }
 
     private fun analyzer(scheduler: TestCoroutineScheduler) =
         TrackAnalyzerImpl(

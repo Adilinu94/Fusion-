@@ -46,11 +46,30 @@ data class PlaybackState(
  * Aenderung gespeichert. Automatisches Playback-Resume ueber den
  * Media3-Callback bleibt in Version 1 deaktiviert, bis es separat
  * implementiert und getestet ist.
+ *
+ * **Queue-Eintraege statt reiner Song-IDs (2026-09-27):** die Queue wird
+ * als [PersistedQueueEntry] gespeichert, nicht als `List<Long>`. Grund:
+ * virtuelle CUE-Tracks haben die mediaId `cue:<songId>:<trackNr>`, und
+ * `mediaId.toLongOrNull()` liefert dafuer `null` — ueber `mapNotNull`
+ * fielen sie aus der Persistenz heraus und waren nach Prozess-Tod
+ * verloren. Der Eintrag fuehrt beide Identitaeten: [mediaId] zur
+ * Wiederherstellung der Timeline-Position, [songId] fuer den
+ * bibliotheksseitigen Zugriff (Play-Stats, Marker).
  */
 data class PersistedPlayerState(
-    val queueSongIds: List<Long>,
+    val queueEntries: List<PersistedQueueEntry>,
     val currentSongId: Long?,
     val positionMs: Long,
     val shuffleEnabled: Boolean,
     val repeatMode: RepeatMode,
+)
+
+/**
+ * Ein Queue-Eintrag in der Persistenz. [songId] ist `null` fuer
+ * Eintraege, die sich nicht auf eine MediaStore-ID zurueckfuehren
+ * lassen; bei CUE-Tracks ist es die ID der zugrunde liegenden Datei.
+ */
+data class PersistedQueueEntry(
+    val mediaId: String,
+    val songId: Long?,
 )

@@ -8,12 +8,14 @@ import com.dropsync.core.common.datastore.createResilientPreferencesDataStore
 import com.dropsync.core.database.TransactionRunner
 import com.dropsync.core.database.dao.CueTrackDao
 import com.dropsync.core.database.dao.FavoriteDao
+import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.dao.LibraryBrowseDao
 import com.dropsync.core.database.dao.MarkerDao
 import com.dropsync.core.database.dao.PlayStatDao
 import com.dropsync.core.database.dao.PlaylistDao
 import com.dropsync.core.database.dao.SafFileDao
 import com.dropsync.core.database.dao.SongDao
+import com.dropsync.core.database.dao.TrackAnalysisDao
 import com.dropsync.data.library.DataStoreScanStateStore
 import com.dropsync.data.library.DropTargetStore
 import com.dropsync.data.library.LibraryBrowseRepositoryImpl
@@ -108,6 +110,13 @@ object LibraryDataModule {
         folderFilter: MusicFolderFilterRepository,
         trackAnalysisRepository: TrackAnalysisRepository,
         browseDao: LibraryBrowseDao,
+        // 2026-09-27 (Befund 6.7): Reconciliation nach Ordner-Verschiebung.
+        markerDao: MarkerDao,
+        favoriteDao: FavoriteDao,
+        playStatDao: PlayStatDao,
+        playlistDao: PlaylistDao,
+        flatSetDao: FlatSetDao,
+        trackAnalysisDao: TrackAnalysisDao,
     ): LibraryRepository =
         LibraryRepositoryImpl(
             gateway = gateway,
@@ -121,6 +130,12 @@ object LibraryDataModule {
             folderFilter = folderFilter,
             trackAnalysisRepository = trackAnalysisRepository,
             browseDao = browseDao,
+            markerDao = markerDao,
+            favoriteDao = favoriteDao,
+            playStatDao = playStatDao,
+            playlistDao = playlistDao,
+            flatSetDao = flatSetDao,
+            trackAnalysisDao = trackAnalysisDao,
         )
 
     @Provides

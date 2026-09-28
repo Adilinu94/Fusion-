@@ -277,21 +277,51 @@ class RepCounter(
         prominence: Double,
         durationMs: Long,
     ) {
-        recentDurationsMs.add(durationMs.toDouble())
-        recentProminences.add(prominence)
-        if (recentDurationsMs.size > 10) {
-            recentDurationsMs.removeAt(0)
-            recentProminences.removeAt(0)
+        // 2026-09-27, Befund 5.1: hier stand `average()`. Das
+        // arithmetische Mittel ist **nicht** ausreissergefest — ein
+        // einzelner Stoß, eine halbe Rep, eine Doppelzaehlung verschiebt
+        // den Erwartungswert fuer **alle folgenden Reps** im Satz. Und der
+        // Erwartungswert wiegt 45 % der Qualitaetsbewertung (ROM 25 % +
+        // Tempo 20 %, `QualityScorer.kt:36-39`).
+        //
+        // Die Kalibrierung ist an dieser Stelle bereits Median/MAD-robust
+        // (`CalibrationSweep.kt:309-318`) — der Live-Scorer war es nicht.
+        // Dieselbe Statistik, dieselbe Begruendung, ein anderer Ort.
+        //
+        // Ein Ausreisser wird **vor** dem Eintragen abgefangen: eine Dauer
+        // ueber dem Doppelten des aktuellen Medians ist mit hoher
+        // Wahrscheinlichkeit keine Rep, sondern eine Fehldetektion.
+        if (recentDurationsMs.isEmpty() ||
+            durationMs.toDouble() <= median(recentDurationsMs) * OUTLIER_FACTOR
+        ) {
+            recentDurationsMs.add(durationMs.toDouble())
+            recentProminences.add(prominence)
+            if (recentDurationsMs.size > 10) {
+                recentDurationsMs.removeAt(0)
+                recentProminences.removeAt(0)
+            }
         }
         if (recentDurationsMs.size >= 3) {
-            val avgDurationMs = recentDurationsMs.average()
-            val avgProminence = recentProminences.average()
+            val expectedDurationMs = median(recentDurationsMs)
+            val expectedProminence = median(recentProminences)
             qualityScorer.updateExpectations(
-                expectedDurationMs = avgDurationMs,
-                expectedProminence = avgProminence,
+                expectedDurationMs = expectedDurationMs,
+                expectedProminence = expectedProminence,
             )
             // Punkt 6: adaptive Refraktaerzeit folgt der echten Rep-Dauer.
-            peakDetector.updateExpectedDurationMs(avgDurationMs)
+            peakDetector.updateExpectedDurationMs(expectedDurationMs)
+        }
+    }
+
+    /** Median einer Liste (die Listen sind kurz, Sortieren ist billig). */
+    private fun median(values: List<Double>): Double {
+        if (values.isEmpty()) return 0.0
+        val sorted = values.sorted()
+        val middle = sorted.size / 2
+        return if (sorted.size % 2 == 1) {
+            sorted[middle]
+        } else {
+            (sorted[middle - 1] + sorted[middle]) / 2.0
         }
     }
 
@@ -338,11 +368,19 @@ class RepCounter(
 
     fun setTemplate(template: List<Double>) = templateMatcher.setTemplate(template)
 
-    /** Umbauplan Phase 1.4: feeds the calibrated threshold directly. */
+    /**
+     * Umbauplan Phase 1.4: feeds the calibrated threshold directly.
+     *
+     * 2026-09-27, Befund 5.8: [expectedProminence] wird durchgereicht,
+     * damit der Prominenz-Gate im [PeakDetector] die echte Peak-Hoehe
+     * aus dem Profil sieht statt eines aus der Schwelle abgeleiteten
+     * Wertes.
+     */
     fun updateThreshold(
         theta: Double,
         expectedDurationMs: Double? = null,
-    ) = peakDetector.updateThreshold(theta, expectedDurationMs)
+        expectedProminence: Double? = null,
+    ) = peakDetector.updateThreshold(theta, expectedDurationMs, expectedProminence)
 
     /** P2-Fix #21: reicht die gemessene Abtastrate an beide Detektoren. */
     fun updateSampleRate(rateHz: Double) {
@@ -352,4 +390,23 @@ class RepCounter(
 
     val hasTemplate: Boolean
         get() = templateMatcher.hasTemplate
+
+    private companion object {
+        /**
+         * Faktor, ab dem eine Rep-Dauer als Ausreisser gilt (Befund 5.1).
+         *
+         * **2,0** ist bewusst konservativ: gefiltert wird nur, was
+         * mit hoher Wahrscheinlichkeit keine Rep ist. Ein Doppelpuls,
+         * eine halbe Rep mit doppelter Dauer oder ein Stoß erzeugt
+         * Dauern jenseits des Doppelten. Echte langsame Reps (Pause,
+         * tiefer Punkt, Isometrie) liegen darunter — sie zu filtern
+         * wuerde genau die Reps entfernen, die man sehen will.
+         *
+         * Der Wert begrenzt nur den **Einfluss auf den Erwartungswert**,
+         * nicht die gezaehlte Rep. Ein Ausreisser wird also verworfen,
+         * aber nicht übersprungen: der Nutzer sieht weiterhin, was
+         * die Pipeline gesehen hat (`SetReport`/`rejectionCounts`).
+         */
+        const val OUTLIER_FACTOR = 2.0
+    }
 }

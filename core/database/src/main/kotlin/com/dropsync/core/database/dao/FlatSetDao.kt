@@ -67,6 +67,23 @@ interface FlatSetDao {
     suspend fun getRecent(limit: Int): List<FlatSetEntity>
 
     /**
+     * Haengt den Musikbezug der Historie auf eine neue MediaStore-ID um
+     * (2026-09-27, Befund 6.7 in Verbindung mit 13.4).
+     *
+     * `flat_sets` hat bewusst **keinen** Fremdschluessel auf `songs` (ein
+     * Satz soll das Verschwinden eines Titels ueberleben) — deshalb muss
+     * die Zuordnung hier per UPDATE nachgezogen werden. Sonst zeigt die
+     * Historie nach dem Verschieben einen Titel, den es nicht mehr gibt,
+     * und die Frage "welche Musik lief bei meinem letzten PR?" ist
+     * dauerhaft unbeantwortbar.
+     */
+    @Query("UPDATE flat_sets SET song_id = :newSongId WHERE song_id = :oldSongId")
+    suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int
+
+    /**
      * Gebuendelter Refetch nach Log/Undo (Befund 5.2): letzter Satz,
      * Max-Volumen und Mini-Verlauf in EINER Transaktion statt drei
      * getrennten Fahrten. Room darf Default-Methoden mit `@Transaction`

@@ -54,6 +54,7 @@
     <string name="train_new_exercise_chip">+ Neue Übung</string>
     <string name="train_weight_label">GEWICHT · KG</string>
     <string name="train_weight_last">Zuletzt %1$.1f kg</string>
+    <string name="train_reps_last">Zuletzt %1$d</string>
     <string name="train_weight_decrement">− 2,5</string>
     <string name="train_weight_increment">+ 2,5</string>
     <string name="train_reps_label">WIEDERHOLUNGEN</string>
@@ -117,8 +118,17 @@
     <string name="train_error_learning_save">Verfeinerte Kalibrierung konnte nicht gespeichert werden.</string>
     <string name="train_error_undo">Letzter Satz konnte nicht zurückgenommen werden. Bitte erneut versuchen.</string>
     <string name="train_error_history">Satz-Verlauf konnte nicht geladen werden. Bitte erneut versuchen.</string>
+    <string name="train_error_count_no_chip">Zum Zählen wird der Sensor gebraucht. Tippe oben auf „Sensor verbinden\" — die Wiederholungen kannst du auch von Hand eintragen.</string>
+    <string name="train_error_count_not_streaming">Der Sensor ist verbunden, liefert aber noch keine Daten. Prüfe, ob er eingeschaltet und in Reichweite ist.</string>
+    <string name="train_error_count_no_calibration">Diese Übung ist noch nicht kalibriert. Ohne Kalibrierung zählt der Sensor ungenau — du kannst die Wiederholungen auch von Hand eintragen.</string>
+    <string name="train_error_rest_start_failed">Satz gespeichert, die Pause konnte aber nicht starten. Starte sie unten über den Timer.</string>
     <!-- P2-17/RC-7: Satz-Report nach dem Stop (Snackbar). -->
     <string name="train_set_report">Satz beendet: %1$d erkannt · Rate %2$s Hz · %3$d Aussetzer · %4$d ZuPT</string>
+    <!-- 2026-09-27 (UI-Hebel 3): die einzige Angabe aus dem Set-Report, die
+         in der Snackbar fuer den Trainierenden handlungsrelevant ist.
+         Rate, ZuPT und die Ablehnungsmechanismen stehen im Diagnose-Panel
+         (Einstellungen, Entwicklerbereich). -->
+    <string name="train_set_report_gaps">%1$d Aussetzer im Signal</string>
     <string name="train_set_report_rejected">%1$d abgelehnt (%2$s)</string>
     <string name="train_rejection_accel">Accel-Voting</string>
     <string name="train_rejection_template">Template</string>
@@ -148,6 +158,11 @@
     <string name="live_count_countdown">Start in %1$d …</string>
     <string name="live_count_stop">Stopp</string>
     <string name="live_count_reason_no_profile">Für diese Übung gibt es noch kein Kalibrierungsprofil.</string>
+    <!-- 2026-09-27 (Produktentscheidung "Sensor optional"): der Sensor ist
+         eine Option, kein Erfordernis. Diese zwei Zeilen stehen da, wo
+         vorher gar nichts stand — der Grund und der Weg weiter. -->
+    <string name="live_count_reason_no_sensor">Ohne Sensor kein automatisches Zählen.</string>
+    <string name="live_count_manual_hint">Gib Gewicht und Wiederholungen oben von Hand ein — der Satz lässt sich so speichern.</string>
     <string name="train_counted_zero_hint">0 Wiederholungen erkannt — bitte Signal prüfen oder die Zahl manuell eintragen.</string>
 
     <!-- Train-Konsole 2.0 (P2-20/RC-5): Rep-Hero mit Quelle + Sensor-Kopfzeile.

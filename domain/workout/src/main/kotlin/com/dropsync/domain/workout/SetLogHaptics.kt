@@ -11,7 +11,23 @@ package com.dropsync.domain.workout
  * (Befundlage A1); sobald es eine echte Cue-Einstellung mit Leser gibt,
  * gehoert dieses Gate in die Implementierung dieses Ports.
  */
-fun interface SetLogHaptics {
+interface SetLogHaptics {
     /** Kurzer Impuls nach erfolgreichem Satz-Speichern. */
     fun confirm()
+
+    /**
+     * Kurze Bestaetigung fuer eine **einzelne** Aktion: Gewicht ± und
+     * erkannte Wiederholung (2026-09-27, Befund 12.3, UI-Hebel 4).
+     *
+     * Getrennt von [confirm], weil die beiden eine **verschiedene
+     * Bedeutung** haben: [confirm] sagt "gespeichert" (ein Ereignis,
+     * einmal pro Satz), [tap] sagt "angekommen" (eine Rueckmeldung auf
+     * jeden einzelnen Tastendruck bzw. jede gezaehlte Rep). Bei der
+     * Rep-Erkennung ist das der wichtigste Moment der ganzen App: der
+     * Nutzer liegt auf der Bank und schaut nicht auf den Bildschirm.
+     *
+     * **Kein `fun interface` mehr:** die SAM-Form ging nur mit einer
+     * abstrakten Methode; seit [tap] sind es zwei.
+     */
+    fun tap()
 }

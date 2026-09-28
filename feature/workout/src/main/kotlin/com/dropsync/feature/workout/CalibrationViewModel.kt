@@ -8,6 +8,7 @@ import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.domain.sensor.CalibrationProfile
 import com.dropsync.domain.sensor.CalibrationProfileRepository
 import com.dropsync.domain.sensor.ProfileStatus
+import com.dropsync.domain.sensor.SampleRateEstimator
 import com.dropsync.domain.sensor.SensorConnectionState
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.accelMagnitude
@@ -144,6 +145,26 @@ class CalibrationViewModel
         private var waveformFill = 0
         private var lastWaveformPublishMs: Long? = null
 
+        /**
+         * 2026-09-27, Befund 5.3: der Controller lief mit fest verdrahteten
+         * 50 Hz. Bei real 30 Hz (Poll-Fallback, JitterBuffer-Unterlaeufe)
+         * waren **alle** Zeit- und Fenstergroessen um den Faktor 0,6 zu
+         * klein — Dauer, Refraktaerzeit, Sweep-Fenster, PCA-Fenster. Die
+         * Kalibrierung lieferte dann eine systematisch zu kurze erwartete
+         * Rep-Dauer, und am Satzende kamen Ablehnungen mit Grund QUALITY,
+         * die der Nutzer nicht erklaeren konnte.
+         *
+         * Der Estimator nutzt den **Median** der Timestamps-Differenzen
+         * (nicht den Mittelwert) und verwirft Abstaende > 150 ms, weil ein
+         * einzelner Jitter-Aussetzer sonst den Median verschiebt — dieselbe
+         * Robustheit, die der PeakDetector und der Live-Scorer jetzt auch
+         * haben.
+         *
+         * [CalibrationRefiner.kt:105-111] misst bereits so; der Wizard
+         * war die letzte Stelle mit festem Wert.
+         */
+        private val rateEstimator = SampleRateEstimator()
+
         private var collectJob: Job? = null
         private var tickJob: Job? = null
         private var exerciseId: Long = 0
@@ -156,6 +177,7 @@ class CalibrationViewModel
         ) {
             this.exerciseId = exerciseId
             this.deviceId = deviceId
+            rateEstimator.reset()
             controller.start()
             resetUiForNewRun()
 
@@ -163,6 +185,15 @@ class CalibrationViewModel
             collectJob =
                 viewModelScope.launch {
                     sensorProvider.samples.collect { sample ->
+                        // 2026-09-27, Befund 5.3: gemessene Rate
+                        // nachfuehren, sobald der Estimator sicher ist.
+                        // Ohne das laeuft die ganze Kalibrierung mit 50 Hz
+                        // und liefert bei real 30 Hz systematisch zu kurze
+                        // Fenster.
+                        rateEstimator.onSample(sample.timestampMs)
+                        if (rateEstimator.isConfident) {
+                            controller.updateSampleRate(rateEstimator.estimatedRateHz)
+                        }
                         controller.onSample(sample)
                         pushWaveformSample(sample.accelMagnitude.toFloat())
                         _bufferedSamples.value = controller.bufferedSampleCount

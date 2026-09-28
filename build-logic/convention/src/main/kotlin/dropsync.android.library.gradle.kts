@@ -56,6 +56,23 @@ android {
             // Robolectric-Tests (DataStore, Room, Compose) brauchen die
             // Manifest-/Ressourcen-Zusammenfuehrung auf der JVM.
             isIncludeAndroidResources = true
+            // 2026-09-27: `android.util.Log` in Unit-Tests erlauben.
+            //
+            // Ausgangslage: jedes `Log.d/i/w/e` im Produktivcode liess sich
+            // im Test als `RuntimeException: Method e in android.util.Log
+            // not mocked` — der Test schlug an einer **Nebensache** fehl
+            // und die eigentliche Ursache blieb unsichtbar. Das war
+            // konkret der Grund, warum der Reconciliation-Fehler
+            // (Befund 6.7) drei Anlaeufe brauchte: der erste Fix war
+            // falsch, und der Test sagte nur "DatabaseFailure".
+            //
+            // `isReturnDefaultValues = true` laesst die Log-Aufrufe ins
+            // Leere laufen (Rueckgabewert 0), statt zu werfen. Das ist
+            // die uebliche Einstellung fuer Bibliotheken, die Logging
+            // produktiv verwenden — Robolectric mockt `Log` ohnehin
+            // korrekt, und die puren JVM-Tests sollen an der Log-Zeile
+            // scheitern duerfen oder nicht.
+            isReturnDefaultValues = true
         }
     }
 }

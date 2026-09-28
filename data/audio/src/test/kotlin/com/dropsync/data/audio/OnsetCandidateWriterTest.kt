@@ -154,6 +154,24 @@ private class RecordingMarkerDao : MarkerDao {
         return id
     }
 
+    /**
+     * Reconciliation (2026-09-27, Befund 6.7): fuer den Onset-Writer
+     * nicht benutzt, aber Teil des Interfaces.
+     */
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int {
+        var moved = 0
+        for ((id, link) in links.toMap()) {
+            if (link.songId == oldSongId) {
+                links[id] = link.copy(songId = newSongId)
+                moved++
+            }
+        }
+        return moved
+    }
+
     override suspend fun deletePendingBySourceForSong(
         songId: Long,
         source: String,

@@ -78,7 +78,7 @@
     <string name="audio_crossfade_title">Crossfade</string>
     <string name="audio_crossfade_seconds">Duration</string>
     <string name="audio_crossfade_desc">0 = off. Never applied for gapless albums or in Bit-Perfect mode.</string>
-    <string name="audio_crossfade_no_effect">Currently without effect. Transitions play as a hard cut. Duration is kept and will apply once the consumer exists.</string>
+    <string name="audio_crossfade_no_effect">Currently without effect. Transitions between tracks play as a hard cut. The duration is used as a fade-out before the switch at a Drop landing and is kept.</string>
 
     <!-- MusicFX / system effects -->
     <string name="audio_musicfx_title">System effects (MusicFX)</string>

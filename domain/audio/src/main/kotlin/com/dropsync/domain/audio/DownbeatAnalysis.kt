@@ -145,9 +145,26 @@ class DownbeatAccumulator(
     }
 
     /**
-     * Zweitbeste Phase ausserhalb der Naehe des Siegers (zirkulaer):
-     * direkt benachbarte Bins tragen bei feiner Aufloesung immer Energie
-     * desselben Angriffs und wuerden die Konfidenz systematisch druecken.
+     * Zweitbeste Phase ausserhalb der Naehe des Siegers (zirkulaer).
+     *
+     * 2026-09-27, Befund 10.2: die Schleife lief ueber
+     * `for (offset in (EXCLUSION_BINS + 1) until (PHASE_STEPS - EXCLUSION_BINS))`,
+     * also ueber die **Indexwerte** 5..42 statt ueber die **Distanzen** zum
+     * Sieger. Bei einem Sieger bei Bin 20 wurden die Bins 25..47 und 0..14
+     * betrachtet, aber **nicht** die Bins 15..19 — und das sind genau die
+     * unmittelbaren Nachbarn links, die bei feiner Aufloesung dieselbe
+     * Energie tragen. Der Code-Kommentar behauptete das Gegenteil von dem,
+     * was der Code tat.
+     *
+     * Folge: die Konfidenz wurde **systematisch ueberschaetzt**, weil die
+     * gefaehrlichsten Konkurrenten nicht im Wettbewerb standen. Bei
+     * gleichmaessigem Rauschen (ueber alle Bins gleiche Energie) waere
+     * `bestMean` gleich `secondMean` und die Konfidenz 0 — korrekt. Bei
+     * echter Struktur mit Auslaufern nach links fehlte der Konkurrent, und
+     * die Konfidenz blieb hoch, obwohl das Raster mehrdeutig war.
+     *
+     * Der Fix iteriert ueber **alle** Distanzen 1..PHASE_STEPS-1 und
+     * ueberspringt nur die symmetrische Naehe. Zirkulaer, wie beabsichtigt.
      */
     private fun secondBestMean(
         sums: DoubleArray,
@@ -155,11 +172,18 @@ class DownbeatAccumulator(
         bestIndex: Int,
     ): Double {
         var second = 0.0
-        // Die Naehe des Siegers ist ausgeschlossen (zirkulaer); nur die
-        // Bins mit Daten zaehlen.
-        for (offset in (EXCLUSION_BINS + 1) until (PHASE_STEPS - EXCLUSION_BINS)) {
+        for (offset in 1 until PHASE_STEPS) {
+            // Die Naehe des Siegers ist ausgeschlossen - in **beiden**
+            // Richtungen, symmetrisch um ihn herum.
+            val distance = if (offset > PHASE_STEPS / 2) PHASE_STEPS - offset else offset
             val bin = (bestIndex + offset) % PHASE_STEPS
-            if (counts[bin] == 0) continue
+            // 2026-09-27 (Detekt `LoopWithTooManyJumpStatements`): die
+            // beiden `continue`-Zweige sind zu **einer** Bedingung
+            // zusammengezogen. Sie filterten dieselbe Menge: Bins in der
+            // Naehe des Siegers und Bins ohne Daten. Die Kandidatenmenge
+            // ist damit dieselbe, aber die Schleife hat nur noch einen
+            // Sprung und liest sich als das, was sie ist.
+            if (distance <= EXCLUSION_BINS || counts[bin] == 0) continue
             val mean = sums[bin] / counts[bin]
             if (mean > second) second = mean
         }

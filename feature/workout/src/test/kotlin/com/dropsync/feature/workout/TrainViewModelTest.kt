@@ -108,7 +108,7 @@ class TrainViewModelTest {
         TrainViewModel(
             workoutRepository = workoutRepository,
             flatSetRepository = flatSetRepository,
-            setLogHaptics = SetLogHaptics { },
+            setLogHaptics = NoopSetLogHaptics,
             timerEngine = timerEngine,
             restTimerServiceStarter = RestTimerServiceStarter { },
             sensorProvider = sensorProvider,
@@ -882,70 +882,11 @@ class TrainViewModelTest {
 
     // --- Fakes ------------------------------------------------------------
     // Sensor/FlatSet/Workout/RestTimerPrefs/Clock/CalibrationProfile kommen
-    // aus :core:testing (Testinfra-Umbau Schritt 2); nur der hier spezifische
-    // Shadow-Recorder und die No-Op-Cues bleiben lokal.
+    // aus :core:testing (Testinfra-Umbau Schritt 2); die hier
+    // spezifischen Helfer liegen in `TrainTestDoubles.kt`.
 
-    private class FakeShadowSessionRecorder : ShadowSessionRecorder {
-        val recorded = mutableListOf<ShadowDiffEvent>()
-
-        /**
-         * Umbauplan 2026-09-04 Phase 0: Reihenfolge der Aufrufe ist Teil des
-         * Vertrags (recordSamples nach recordSet), deshalb wird sie hier
-         * mitprotokolliert und nicht nur die Nutzlast.
-         */
-        val callOrder = mutableListOf<String>()
-        val sampleWindows = mutableListOf<SampleWindow>()
-        var started: MutableList<String> = mutableListOf()
-        var ended: Int = 0
-
-        override suspend fun startSession(sessionId: String) {
-            started += sessionId
-        }
-
-        override suspend fun recordSet(event: ShadowDiffEvent) {
-            recorded += event
-            callOrder += "set"
-        }
-
-        override suspend fun recordSamples(window: SampleWindow) {
-            sampleWindows += window
-            callOrder += "samples"
-        }
-
-        override suspend fun endSession() {
-            ended++
-        }
-    }
-
-    private class NoOpCueOutput : CueOutput {
-        override fun speak(
-            cueSessionId: String,
-            secondsRemaining: Int,
-        ) = Unit
-
-        override fun haptic(cueSessionId: String) = Unit
-
-        override fun countdownBeep(cueSessionId: String) = Unit
-
-        override fun tone(cueSessionId: String) = Unit
-
-        override fun stopAll(cueSessionId: String) = Unit
-    }
-
-    /** Noop-Contract fuer den Health-Connect-Permission-Launcher (Tests). */
-    private class TestHealthPermissionContract :
-        androidx.activity.result.contract.ActivityResultContract<
-            Set<String>,
-            Set<String>,
-        >() {
-        override fun createIntent(
-            context: android.content.Context,
-            input: Set<String>,
-        ): android.content.Intent = android.content.Intent()
-
-        override fun parseResult(
-            resultCode: Int,
-            intent: android.content.Intent?,
-        ): Set<String> = emptySet()
-    }
+    // 2026-09-27: `FakeShadowSessionRecorder`, `NoOpCueOutput` und
+    // `TestHealthPermissionContract` liegen jetzt in `TrainTestDoubles.kt`.
+    // Sie waren `private` und blockierten damit
+    // `SensorOptionalBetriebTest`, das dieselben drei braucht.
 }

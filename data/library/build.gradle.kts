@@ -30,6 +30,19 @@ android {
         unitTests {
             // Robolectric fuer Room-/FTS-Tests der Bibliotheksansichten auf der JVM.
             isIncludeAndroidResources = true
+            // 2026-09-27: `android.util.Log` in Unit-Tests erlauben.
+            //
+            // Ausgangslage: `LibraryRepositoryImpl.refreshLibrary` loggt
+            // seit dem Reconciliation-Fix (Befund 6.7) den Originalfehler
+            // — im Test las sich das als `RuntimeException: Method e in
+            // android.util.Log not mocked`. Der Test schlug damit an
+            // der Log-Zeile fehl statt an der Sachaussage, und die
+            // eigentliche Ursache blieb unsichtbar.
+            //
+            // Dieser Block **ueberschreibt** die Konvention
+            // (`dropsync.android.library.gradle.kts`), weshalb die
+            // Einstellung hier noetig ist und nicht nur dort.
+            isReturnDefaultValues = true
         }
     }
 }

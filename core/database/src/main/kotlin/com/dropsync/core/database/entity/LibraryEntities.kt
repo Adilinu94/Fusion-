@@ -65,6 +65,38 @@ data class SongEntity(
      */
     @ColumnInfo(name = "known_sha256")
     val knownSha256: String? = null,
+    /**
+     * Titel, Interpreten und Album **ohne Diakritika**, kleingeschrieben
+     * (2026-09-27, Befund 6.9).
+     *
+     * **Warum die Spalte und nicht die Abfrage:** FTS4 und `LIKE`
+     * vergleichen **Bytes**. „Beyonce" findet „Beyoncé" nicht — das sind
+     * verschiedene Bytefolgen. Die Abfrage kann den gespeicherten Titel
+     * nicht umfalten, ohne die ganze Tabelle zu durchsuchen, also bleibt
+     * nur die zweite Hälfte: die Spalte hält eine vergleichbare Form
+     * bereit.
+     *
+     * **Was hier passiert:** `java.text.Normalizer` mit NFD zerlegt „é"
+     * in „e" + Combining-Accent, die Marken werden entfernt, das Ergebnis
+     * kommt in Kleinschreibung. Das ist derselbe Weg, den Lucene und
+     * SQLite-FTS5 für `remove_diacritics` gehen.
+     *
+     * **Der Nutzen ist größer als der Diakritika-Fall:** ein deutsches
+     * Tastaturlayout tippt „Beyoncé" als „Beyonce" — beide werden hier
+     * gleich. Und weil die Spalte kleingeschrieben ist, findet
+     * „born to be wild" auch „Born To Be Wild", was der Nutzer eher
+     * erwartet als eine case-sensible Suche.
+     *
+     * **Kosten:** drei zusätzliche Spalten, bei ~5.000 Titeln rund
+     * 300 kB. Der Schreib-Scan beim Bibliotheks-Scan ist der Preis,
+     * und er ist einmalig.
+     */
+    @ColumnInfo(name = "title_folded")
+    val titleFolded: String? = null,
+    @ColumnInfo(name = "artist_folded")
+    val artistFolded: String? = null,
+    @ColumnInfo(name = "album_folded")
+    val albumFolded: String? = null,
 )
 
 /**

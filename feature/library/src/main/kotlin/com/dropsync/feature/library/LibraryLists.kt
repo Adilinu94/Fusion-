@@ -31,7 +31,9 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
@@ -426,14 +428,28 @@ private fun AlphabetScroller(
             }
             map
         }
+    // 2026-09-27 (Befund 12.5): der Scroller war eine `Column` mit 26
+    // Buchstaben zu je 48 dp — rund 1.250 dp Inhalt in einer
+    // Bildschirmhoehe von ~600 dp. Ohne `verticalScroll` waren die
+    // Buchstaben ab „L" **unerreichbar**: kein Weg dorthin, weder durch
+    // Wischen noch durch Tippen (die Buchstaben selbst sind die
+    // Sprungziele, also kann man nur die sichtbaren benutzen).
+    //
+    // Bei „A" bis „L" hatte der Nutzer also eine funktionierende
+    // Navigation, ab „M" nicht mehr. Das ist der schlimmste Fall einer
+    // halb funktionierenden Funktion: sie sieht vollständig aus.
     Column(
         modifier =
             modifier
                 .fillMaxHeight()
                 // 7.2/10: volle 48-dp-Trefferbreite statt 32 dp.
-                .widthIn(min = 48.dp),
+                .widthIn(min = 48.dp)
+                .verticalScroll(rememberScrollState()),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        // `Center` waere mit dem Scrollen falsch: der Inhalt wuerde bei
+        // jedem Scrollen springen. Oben ausrichten und den Rest dem
+        // Nutzer geben.
+        verticalArrangement = Arrangement.Top,
     ) {
         for ((letter, index) in letterIndex) {
             Text(

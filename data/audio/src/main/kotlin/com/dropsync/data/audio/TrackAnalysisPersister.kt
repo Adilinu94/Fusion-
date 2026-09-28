@@ -125,7 +125,17 @@ class TrackAnalysisPersister(
                 songId = songId,
                 waveformData = ByteArray(0),
                 bucketCount = 0,
-                analyzerVersion = WaveformCodec.ANALYZER_VERSION,
+                // 2026-09-27, Befund 4.9: hier stand `ANALYZER_VERSION`, was
+                // den Eintrag als **fertig analysiert und dauerhaft
+                // fehlgeschlagen** markierte. `requestAnalysis` prueft
+                // `analyzerVersion == ANALYZER_VERSION` und startete deshalb
+                // nie neu — der Knopf "Erneut versuchen" im Now-Playing tat
+                // nichts, fuer immer. Version 0 bedeutet "kein Ergebnis",
+                // der Cache ist ungueltig und der naechste Versuch laeuft.
+                //
+                // Wer eine FFmpeg-Extension installiert hat, bekommt damit
+                // eine zweite Chance fuer APE/TAK/TTA/WMA/ALAC.
+                analyzerVersion = 0,
                 mixAnalyzerVersion = previous?.mixAnalyzerVersion ?: 0,
                 analyzedAtEpochMs = now,
                 bpm = previous?.bpm,

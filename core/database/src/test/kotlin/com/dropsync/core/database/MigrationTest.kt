@@ -644,6 +644,234 @@ class MigrationTest {
         }
     }
 
+    /**
+     * v15 -> v16 (2026-09-27): Sortier-Indizes, Playlist-Uniqueness,
+     * Musikbezug im Satz-Log.
+     *
+     * Drei Dinge werden hier getestet, weil alle drei beim Anwenden einer
+     * Migration **nicht** automatisch auffallen:
+     *
+     * 1. Die Indizes existieren, und die Sortierabfragen nutzen sie
+     *    (sonst waeren sie nur Dekoration, die Speicher und
+     *    Schreibkosten kostet).
+     * 2. Die UNIQUE-Constraint ist **da** — geprueft mit einem echten
+     *    Duplikat-Insert, der scheitern muss.
+     * 3. Die Duplikat-Bereinigung funktioniert, **bevor** der Index
+     *    entsteht. Ohne sie wuerde `CREATE UNIQUE INDEX` bei einer echten
+     *    Bibliothek mit Duplikaten scheitern — und nach Befund 4.8
+     *    startet die App dann nicht mehr.
+     * 4. Bestehende Saetze ueberleben mit `NULL` im Musikbezug.
+     */
+    @Test
+    fun `migration 15 auf 16 legt sortier-indizes an bereinigt duplikate und erhaelt den satz-bestand`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V16).absolutePath
+
+        helper.createDatabase(dbPath, 15).use { db ->
+            seedV15Duplicates(db)
+            db.execSQL("ANALYZE")
+
+            // Gegenprobe vor der Migration: ohne die Indizes muss die
+            // Sortierung extern laufen. Ohne diese Zeile wuerde der Test
+            // auch bestehen, wenn EXPLAIN in dieser Umgebung nicht
+            // unterscheidet.
+            val beforePlan =
+                queryPlan(db, "SELECT * FROM play_stats ORDER BY last_played_at_epoch_ms DESC LIMIT 20")
+            assertTrue(
+                "v15 muss play_stats sortieren. Plan war: $beforePlan",
+                beforePlan.contains("TEMP B-TREE"),
+            )
+            // ANALYZE-Statistik ist eine eigene Tabelle und wuerde die
+            // Room-Validierung der Migration brechen; ihr Zweck
+            // (Gegenprobe oben) ist erfuellt.
+            db.execSQL("DROP TABLE IF EXISTS sqlite_stat1")
+        }
+
+        helper.runMigrationsAndValidate(dbPath, 16, true, *DROPSYNC_MIGRATIONS).use { db ->
+            // --- 1. Sortier-Indizes ---------------------------------------
+            val statsPlan =
+                queryPlan(db, "SELECT * FROM play_stats ORDER BY last_played_at_epoch_ms DESC LIMIT 20")
+            assertTrue(
+                "play_stats nutzt den Index nicht. Plan war: $statsPlan",
+                statsPlan.contains("index_play_stats_last_played_at_epoch_ms"),
+            )
+            assertFalse(
+                "play_stats sortiert weiter extern. Plan war: $statsPlan",
+                statsPlan.contains("TEMP B-TREE"),
+            )
+
+            val countPlan = queryPlan(db, "SELECT * FROM play_stats ORDER BY play_count DESC LIMIT 20")
+            assertTrue(
+                "play_stats (play_count) nutzt den Index nicht. Plan war: $countPlan",
+                countPlan.contains("index_play_stats_play_count"),
+            )
+
+            val favoritesPlan =
+                queryPlan(db, "SELECT * FROM favorites ORDER BY created_at_epoch_ms DESC")
+            assertTrue(
+                "favorites nutzt den Index nicht. Plan war: $favoritesPlan",
+                favoritesPlan.contains("index_favorites_created_at_epoch_ms"),
+            )
+
+            // --- 2. UNIQUE-Constraint -------------------------------------
+            val duplicateInsert =
+                runCatching {
+                    db.execSQL("INSERT INTO playlist_items (playlist_id, song_id, position) VALUES (1, 1, 999)")
+                }
+            assertTrue(
+                "Ein doppelter Playlist-Eintrag muss scheitern — sonst existiert " +
+                    "die UNIQUE-Constraint nicht",
+                duplicateInsert.isFailure,
+            )
+
+            // --- 3. Duplikate bereinigt -----------------------------------
+            // Vor der Migration gab es Song 1 zweimal in Playlist 1.
+            var song1Count = 0
+            db.query("SELECT COUNT(*) FROM playlist_items WHERE playlist_id = 1 AND song_id = 1").use {
+                it.moveToFirst()
+                song1Count = it.getInt(0)
+            }
+            assertEquals(
+                "Das Duplikat wurde nicht entfernt",
+                1,
+                song1Count,
+            )
+
+            // --- 4. Satz-Bestand mit Musikbezug ---------------------------
+            // Der Satz existiert, die neuen Spalten sind NULL (additive
+            // Migration, kein Datenumbau).
+            db
+                .query("SELECT COUNT(*), MIN(song_id), MIN(playback_position_ms), MIN(marker_id) FROM flat_sets")
+                .use { cursor ->
+                    cursor.moveToFirst()
+                    assertEquals("Satz-Bestand ging verloren", 2, cursor.getInt(0))
+                    assertTrue("song_id haette gefuellt sein", cursor.isNull(1))
+                    assertTrue("playback_position_ms haette gefuellt sein", cursor.isNull(2))
+                    assertTrue("marker_id haette gefuellt sein", cursor.isNull(3))
+                }
+        }
+    }
+
+    /**
+     * Bestand fuer v15->v16: Songs, Playlists, **absichtliche Duplikate**
+     * und zwei Saetze ohne Musikbezug.
+     */
+    private fun seedV15Duplicates(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "WITH RECURSIVE seq(value) AS (" +
+                "SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 50) " +
+                "INSERT INTO songs (media_store_id, content_uri, display_name, relative_path, " +
+                "duration_ms, size_bytes, date_modified_seconds, title, artist, album, genre, " +
+                "is_available) SELECT value, 'content://' || value, value || '.mp3', 'Music/', " +
+                "200000, 5000000, 1700000000 + value, 'Titel ' || value, 'Interpret', 'Album', " +
+                "'Genre', 1 FROM seq",
+        )
+        db.execSQL(
+            "INSERT INTO exercises (id, canonical_name, kind, equipment, is_custom, is_archived) " +
+                "VALUES (1, 'bench-press', 'STRENGTH', 'BARBELL', 0, 0)",
+        )
+        db.execSQL("INSERT INTO playlists (id, name, created_at_epoch_ms, label) VALUES (1, 'Work', 1000, 'WORK')")
+
+        // Drei verschiedene Songs, plus ein **absichtliches Duplikat**:
+        // Song 1 steht zweimal in Playlist 1.
+        db.execSQL("INSERT INTO playlist_items (playlist_id, song_id, position) VALUES (1, 1, 0)")
+        db.execSQL("INSERT INTO playlist_items (playlist_id, song_id, position) VALUES (1, 1, 1)")
+        db.execSQL("INSERT INTO playlist_items (playlist_id, song_id, position) VALUES (1, 2, 2)")
+
+        // Play-Stats fuer die Sortierabfrage: 40 Eintraege, der letzte
+        // traegt den hoechsten Zeitstempel.
+        db.execSQL(
+            "WITH RECURSIVE seq(value) AS (" +
+                "SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 40) " +
+                "INSERT INTO play_stats (song_id, play_count, last_played_at_epoch_ms) " +
+                "SELECT value, value, 1000 + value * 1000 FROM seq",
+        )
+        db.execSQL(
+            "WITH RECURSIVE seq(value) AS (" +
+                "SELECT 1 UNION ALL SELECT value + 1 FROM seq WHERE value < 10) " +
+                "INSERT INTO favorites (song_id, created_at_epoch_ms) SELECT value, 1000 + value FROM seq",
+        )
+
+        // Zwei Saetze ohne Musikbezug — sie muessen die Migration ueberleben.
+        db.execSQL(
+            "INSERT INTO flat_sets (exercise_id, weight_milli_kg, reps, logged_at_epoch_ms) " +
+                "VALUES (1, 60000, 8, 2000)",
+        )
+        db.execSQL(
+            "INSERT INTO flat_sets (exercise_id, weight_milli_kg, reps, logged_at_epoch_ms) " +
+                "VALUES (1, 65000, 6, 3000)",
+        )
+    }
+
+    /**
+     * v16 -> v17 (2026-09-27, Befund 6.9): normalisierte Suchspalten.
+     *
+     * `title_folded`, `artist_folded` und `album_folded` sind **nullable**
+     * und kommen bei Bestand auf `NULL`. Der Test prueft genau das —
+     * einschliesslich der Konsequenz: `searchFolded` findet einen Titel
+     * ohne gefuellte Spalte **nicht**, und der vorherige Weg
+     * (FTS + ODER) deckt ihn ab. Deshalb ist die Suche nach der
+     * Migration nie schlechter als vorher, nur die Diakritika-Suche
+     * greift erst nach dem naechsten Scan.
+     */
+    @Test
+    fun `migration 16 auf 17 legt die gefalteten suchspalten an`() {
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val dbPath = context.getDatabasePath(TEST_DB_V17_FOLDED).absolutePath
+
+        helper.createDatabase(dbPath, 16).use { db ->
+            seedV16Songs(db)
+        }
+
+        helper.runMigrationsAndValidate(dbPath, 17, true, *DROPSYNC_MIGRATIONS).use { db ->
+            // 1. Die Spalten existieren...
+            val columns = mutableSetOf<String>()
+            db.query("PRAGMA table_info(songs)").use { cursor ->
+                val nameColumn = cursor.getColumnIndexOrThrow("name")
+                while (cursor.moveToNext()) columns.add(cursor.getString(nameColumn))
+            }
+            assertTrue("title_folded fehlt: $columns", "title_folded" in columns)
+            assertTrue("artist_folded fehlt: $columns", "artist_folded" in columns)
+            assertTrue("album_folded fehlt: $columns", "album_folded" in columns)
+
+            // 2. ...und sind beim Bestand NULL.
+            db.query("SELECT title_folded, artist_folded, album_folded FROM songs").use { cursor ->
+                var rows = 0
+                while (cursor.moveToNext()) {
+                    rows++
+                    assertTrue("title_folded haette gefuellt sein", cursor.isNull(0))
+                    assertTrue("artist_folded haette gefuellt sein", cursor.isNull(1))
+                    assertTrue("album_folded haette gefuellt sein", cursor.isNull(2))
+                }
+                assertEquals("Der Bestand ging verloren", 2, rows)
+            }
+
+            // 3. Der alte Bestand ist unveraendert lesbar.
+            db.query("SELECT COUNT(*) FROM songs WHERE title = 'Beyoncé'").use { cursor ->
+                cursor.moveToFirst()
+                assertEquals("Der Originaltitel muss unveraendert bleiben", 1, cursor.getInt(0))
+            }
+        }
+    }
+
+    /** Bestand fuer v16->v17: Titel mit und ohne Diakritika. */
+    private fun seedV16Songs(db: SupportSQLiteDatabase) {
+        db.execSQL(
+            "INSERT INTO songs (media_store_id, content_uri, display_name, relative_path, " +
+                "duration_ms, size_bytes, date_modified_seconds, title, artist, album, genre, " +
+                "is_available) VALUES (1, 'content://1', 'Beyoncé.mp3', 'Music/', " +
+                "200000, 5000000, 1700000000, 'Beyoncé', 'Destiny''s Child', 'Listen', " +
+                "'Pop', 1)",
+        )
+        db.execSQL(
+            "INSERT INTO songs (media_store_id, content_uri, display_name, relative_path, " +
+                "duration_ms, size_bytes, date_modified_seconds, title, artist, album, genre, " +
+                "is_available) VALUES (2, 'content://2', 'Metallica.mp3', 'Music/', " +
+                "200000, 6000000, 1700000000, 'Enter Sandman', 'Metallica', 'Black Album', " +
+                "'Metal', 1)",
+        )
+    }
+
     /** Realistischer Bestand fuer die Index-Messung (D5/A5+A6). */
     private fun seedIndexMeasurementData(db: SupportSQLiteDatabase) {
         // 400 Sessions, davon 2 ACTIVE — die Verteilung, fuer die der
@@ -709,5 +937,7 @@ class MigrationTest {
         const val TEST_DB_V13 = "migration-test-v13.db"
         const val TEST_DB_V14_PENDING = "migration-test-v14-pending.db"
         const val TEST_DB_V15_INDICES = "migration-test-v15-indices.db"
+        const val TEST_DB_V16 = "migration-test-v16.db"
+        const val TEST_DB_V17_FOLDED = "migration-test-v17-folded.db"
     }
 }

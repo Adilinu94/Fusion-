@@ -92,7 +92,7 @@ class TrainViewModelShadowSessionTest {
         TrainViewModel(
             workoutRepository = workoutRepository,
             flatSetRepository = flatSetRepository,
-            setLogHaptics = SetLogHaptics { },
+            setLogHaptics = NoopSetLogHaptics,
             timerEngine = timerEngine,
             restTimerServiceStarter = RestTimerServiceStarter { },
             sensorProvider = sensorProvider,

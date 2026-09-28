@@ -81,6 +81,14 @@ object DspConfigCodec {
             "useSystemEffects" to sanitized.useSystemEffects.toString(),
             "bitPerfect" to sanitized.bitPerfectEnabled.toString(),
             "restDuckDb" to sanitized.restDuckDb.toString(),
+            // 2026-09-27, Befund 1.12: `replayGainEnabled` fehlte hier, war
+            // aber in `decode` gelesen. Der Codec-Listen-Test hat den
+            // Fehler nicht gefunden, weil sein Test-Config den Schalter
+            // nicht gesetzt hat. Folge: beim **Geraetewechsel** (Profile
+            // werden ueber diesen Codec gespeichert und geladen) ging der
+            // ReplayGain-Schalter still verloren und normalisierte wieder
+            // bzw. eben nicht.
+            "replayGainEnabled" to sanitized.replayGainEnabled.toString(),
         ).joinToString(ENTRY_SEPARATOR) { (key, value) -> "$key$KV_SEPARATOR$value" }
     }
 
@@ -136,6 +144,8 @@ object DspConfigCodec {
                     values.bool("bitPerfect", defaults.bitPerfectEnabled) ?: return null,
                 restDuckDb =
                     values.double("restDuckDb", defaults.restDuckDb) ?: return null,
+                replayGainEnabled =
+                    values.bool("replayGainEnabled", defaults.replayGainEnabled) ?: return null,
             ),
         )
     }

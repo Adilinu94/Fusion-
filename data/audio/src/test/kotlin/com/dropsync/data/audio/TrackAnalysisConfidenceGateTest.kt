@@ -33,7 +33,16 @@ import org.robolectric.RobolectricTestRunner
 @RunWith(RobolectricTestRunner::class)
 class TrackAnalysisConfidenceGateTest {
     private val dao = FakeTrackAnalysisDao()
-    private val repository =
+
+    /**
+     * 2026-09-27 (Befund 7.11): das Repository lag als **Feld** mit einem
+     * `UnconfinedTestDispatcher`-Scope. Dessen Jobs liefen synchron weiter,
+     * wenn der naechste Test startete (`UncaughtExceptionsBeforeTest`,
+     * Befund 4.12-Klasse: ein unaufgeraeumter Hintergrundjob wirft in den
+     * Folgetest). Der Scope wird jetzt je Test neu gebaut und am Ende
+     * ausdruecklich abgebrochen.
+     */
+    private fun repository(): TrackAnalysisRepositoryImpl =
         TrackAnalysisRepositoryImpl(
             trackAnalysisDao = dao,
             analyzer = NoopTrackAnalyzer,
@@ -54,7 +63,7 @@ class TrackAnalysisConfidenceGateTest {
                 ),
             )
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertEquals(128f, analysis.bpm)
             assertEquals("8A", analysis.camelotKey)
@@ -75,7 +84,7 @@ class TrackAnalysisConfidenceGateTest {
                 ),
             )
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertNull(analysis.bpm)
             assertEquals("8A", analysis.camelotKey)
@@ -93,7 +102,7 @@ class TrackAnalysisConfidenceGateTest {
                 ),
             )
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertEquals(128f, analysis.bpm)
             assertNull(analysis.camelotKey)
@@ -106,7 +115,7 @@ class TrackAnalysisConfidenceGateTest {
             // UI nie erklaeren, warum kein BPM da ist.
             dao.emit(entity(bpm = 77f, bpmConfidence = 0.18f))
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertNull(analysis.bpm)
             assertEquals(0.18f, analysis.bpmConfidence)
@@ -127,7 +136,7 @@ class TrackAnalysisConfidenceGateTest {
                 ),
             )
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertNull(analysis.bpm)
             assertNull(analysis.camelotKey)
@@ -145,7 +154,7 @@ class TrackAnalysisConfidenceGateTest {
                 ).copy(mixAnalyzerVersion = 0),
             )
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertNull(analysis.bpm)
             assertNull(analysis.camelotKey)
@@ -157,7 +166,7 @@ class TrackAnalysisConfidenceGateTest {
         runTest {
             dao.emit(entity(bpm = 77f, bpmConfidence = 0.1f))
 
-            val analysis = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val analysis = requireNotNull(repository().observeAnalysis(SONG_ID).first())
 
             assertNotNull(analysis.waveformBuckets)
             assertEquals(2, analysis.waveformBuckets.size)
@@ -170,13 +179,13 @@ class TrackAnalysisConfidenceGateTest {
             dao.emit(entity(bpm = 128f, bpmConfidence = MixConfidence.MIN_BPM_CONFIDENCE))
             assertEquals(
                 128f,
-                requireNotNull(repository.observeAnalysis(SONG_ID).first()).bpm,
+                requireNotNull(repository().observeAnalysis(SONG_ID).first()).bpm,
             )
 
             dao.emit(
                 entity(bpm = 128f, bpmConfidence = MixConfidence.MIN_BPM_CONFIDENCE - 0.01f),
             )
-            assertNull(requireNotNull(repository.observeAnalysis(SONG_ID).first()).bpm)
+            assertNull(requireNotNull(repository().observeAnalysis(SONG_ID).first()).bpm)
         }
 
     @Test
@@ -192,7 +201,7 @@ class TrackAnalysisConfidenceGateTest {
             )
             assertEquals(
                 137L,
-                requireNotNull(repository.observeAnalysis(SONG_ID).first()).downbeatOffsetMs,
+                requireNotNull(repository().observeAnalysis(SONG_ID).first()).downbeatOffsetMs,
             )
 
             dao.emit(
@@ -201,7 +210,7 @@ class TrackAnalysisConfidenceGateTest {
                     downbeatConfidence = DownbeatConfidence.MIN_SNAP_CONFIDENCE - 0.01f,
                 ),
             )
-            val gated = requireNotNull(repository.observeAnalysis(SONG_ID).first())
+            val gated = requireNotNull(repository().observeAnalysis(SONG_ID).first())
             assertNull(gated.downbeatOffsetMs)
             // Die Rohkonfidenz bleibt sichtbar (spaetere Kalibrierung
             // braucht keine Neuanalyse).
@@ -219,7 +228,7 @@ class TrackAnalysisConfidenceGateTest {
                 ),
             )
 
-            assertNull(requireNotNull(repository.observeAnalysis(SONG_ID).first()).downbeatOffsetMs)
+            assertNull(requireNotNull(repository().observeAnalysis(SONG_ID).first()).downbeatOffsetMs)
         }
 
     private fun entity(
@@ -319,7 +328,7 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
 
     override suspend fun getBySongId(songId: Long): TrackAnalysisEntity? = state.value?.takeIf { it.songId == songId }
 
-    override suspend fun getBySongIds(songIds: List<Long>): List<TrackAnalysisEntity> =
+    override suspend fun getBySongIdsChunk(songIds: List<Long>): List<TrackAnalysisEntity> =
         listOfNotNull(state.value).filter { it.songId in songIds }
 
     override fun observeBySongId(songId: Long): Flow<TrackAnalysisEntity?> = state
@@ -329,4 +338,17 @@ private class FakeTrackAnalysisDao : TrackAnalysisDao {
             state.value = null
         }
     }
+
+    /**
+     * 2026-09-27 (Befunde 6.7 und 6.18): Reconciliation und Aufraeumen
+     * gehoeren zum Interface. Der Fake bildet sie nicht nach — fuer diese
+     * Tests sind sie gegenstandslos, und der Pfad ist in
+     * `LibraryRepositoryImplTest` abgedeckt.
+     */
+    override suspend fun deleteOrphans(): Int = 0
+
+    override suspend fun reassignSong(
+        oldSongId: Long,
+        newSongId: Long,
+    ): Int = 0
 }

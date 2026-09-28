@@ -118,10 +118,43 @@ internal data class RepMark(
  * instead of guessing at its own detection (root causes K1-K4).
  */
 class CalibrationController(
-    val sampleRateHz: Double = 50.0,
+    sampleRateHz: Double = 50.0,
     var knownSetCount: Int = 5,
     var slowSetCount: Int = 3,
 ) {
+    /**
+     * 2026-09-27, Befund 5.3: die Rate war ein unveraenderliches `val`,
+     * und der ViewModel hat sie fest auf 50 Hz gesetzt. Bei real 30 Hz
+     * (Poll-Fallback, JitterBuffer-Unterlaeufe) sind **alle** Zeit- und
+     * Fenstergroessen um den Faktor 30/50 = 0,6 zu klein: Dauer,
+     * Refraktaerzeit, Sweep-Fenster, PCA-Aktivitaetsfenster, Accel-Peak-
+     * Fenster. Die Kalibrierung lieferte dann eine **systematisch zu kurze
+     * erwartete Rep-Dauer** — und damit am Satzende Ablehnungen mit
+     * Grund QUALITY, die der Nutzer nicht nachvollziehen kann.
+     *
+     * [updateSampleRate] uebernimmt die **gemessene** Rate, sobald
+     * genug Samples vorliegen (der ViewModel misst mit
+     * `SampleRateEstimator` nach, `CalibrationRefiner.kt:105-111` macht
+     * es bereits so). Vorher bleibt der Startwert, der nur als
+     * Platzhalter fuer die Ruhephase dient.
+     */
+    var sampleRateHz: Double = sampleRateHz
+        private set
+
+    /**
+     * Uebernimmt die gemessene Abtastrate. Wirkt erst ab der naechsten
+     * Auswertung — die Puffer der bereits gesammelten Stufen werden
+     * nicht rueckwirkend umgerechnet, weil sie zur Zeit ueber
+     * Timestamps begrenzt werden und nicht ueber Sample-Indizes.
+     */
+    fun updateSampleRate(rateHz: Double) {
+        if (!rateHz.isFinite() || rateHz <= 0.0) return
+        // Nur plausibele Werte: ein BLE-Stream liegt zwischen 10 und
+        // 500 Hz. Alles darunter oder darueber ist ein Rechenfehler.
+        if (rateHz !in 10.0..500.0) return
+        sampleRateHz = rateHz
+    }
+
     /** Stages of Guided Calibration 2.0 (Konzept §3). */
     enum class Stage { REST, SINGLE_REP, KNOWN_SET, SLOW_SET, REVIEW, DONE, FAILED }
 
@@ -544,7 +577,7 @@ class CalibrationController(
     private fun runBSweep() {
         val axis = axisResult ?: return
         val restS = rest ?: return
-        signalsB = candidateSignals(bufB, axis.achse, restS.gyroBias)
+        signalsB = candidateSignals(bufB, axis.achse, restS.gyroBias, sampleRateHz)
         metaB = signalMeta(signalsB!!, sampleRateHz)
         sweepCfg = knownCountSweep(signalsB!!, metaB!!, axis.t0, knownSetCount, sampleRateHz)
         val cfg = sweepCfg
@@ -573,7 +606,7 @@ class CalibrationController(
         val sigB = signalsB ?: return
         val axis = axisResult ?: return
         val restS = rest ?: return
-        signalsC = candidateSignals(bufC, axis.achse, restS.gyroBias)
+        signalsC = candidateSignals(bufC, axis.achse, restS.gyroBias, sampleRateHz)
         val res =
             stufeC(
                 sigB[cfg.signal]!!,

@@ -111,14 +111,38 @@ class SignalChain(
         )
     }
 
-    /** Adopts a new calibration axis + bias (recalibration without reset). */
+    /**
+     * Adopts a new calibration axis + bias (recalibration without reset).
+     *
+     * 2026-09-27, Befund 5.7: [resetFilters] entscheidet, ob die
+     * Filterzustaende mitgeaezogen werden.
+     *
+     * Fuer einen **Bias**-Wechsel ist `false` richtig: der neue Bias ist ein
+     * Sprung, den man nicht wegschwingen will — der One-Euro-Filter
+     * soll ihn uebernehmen, nicht ausgleichen.
+     *
+     * Fuer einen **Achsen**-Wechsel ist `true` zwingend: die Achse
+     * bestimmt, was `rawGp` bedeutet (`:96`). One-Euro und Huellkurve
+     * enthalten dann Zustand der **alten** Achse, den man nicht auf die
+     * neue zurueckrechnen kann. Ohne Reset sieht der erste
+     * Rep-Durchlauf nach dem Wechsel ein unsinniges Signal — und genau
+     * das war die Falle, in die der naechste Eingriff getappt waere.
+     */
     fun updateCalibration(
         rotationAxis: List<Double>,
         gyroBias: List<Double>,
+        resetFilters: Boolean = false,
     ) {
         require(rotationAxis.size == 3 && gyroBias.size == 3) { "axis and bias must have 3 components" }
+        val axisChanged = this.rotationAxis.contentEquals(rotationAxis.toDoubleArray()).not()
         this.rotationAxis = rotationAxis.toDoubleArray()
         this.gyroBias = gyroBias.toDoubleArray()
+        if (resetFilters || axisChanged) {
+            oneEuro.reset()
+            envelope.reset()
+            oneEuroAccel.reset()
+            envelopeAccel.reset()
+        }
     }
 
     /**
@@ -150,6 +174,28 @@ class SignalChain(
         envelope.reset()
         oneEuroAccel.reset()
         envelopeAccel.reset()
+    }
+
+    /**
+     * Verwirft **nur die Zaehlbereitschaft**, nicht die Filter (Befund 5.4).
+     *
+     * Ausgangslage: `ExerciseEnginePipeline.onLargeGap()` rief nach jedem
+     * Gap > 250 ms `signalChain.reset()` auf. Das setzt `samplesSeen = 0`,
+     * und die Pipeline braucht danach 50 Samples Einschwingzeit — **eine
+     * Sekunde bei 50 Hz**, in der nichts gezaehlt wird. Bei 5 Prozent
+     * Paketverlust mit drei Gaps im Satz sind das drei von 30 Sekunden
+     * toter Zaehlzeit, und die erste Rep nach der Luecke fehlt garantiert.
+     *
+     * Das war ein Ueberreagieren: der One-Euro-Filter schwingt nach
+     * `minCutoff = 1,0 Hz` in rund 50 bis 100 ms ein, **nicht** in einer
+     * Sekunde. Nur `samplesSeen` (die Freigabesperre) muss neu gesetzt
+     * werden, damit die Pipeline nicht auf Halbwerts-Daten zaehlt.
+     *
+     * [reset] bleibt fuer den harten Fall (neues Set, Uebungswechsel,
+     * Reconnect), [resetCountingReadiness] fuer die weiche Luecke.
+     */
+    fun resetCountingReadiness() {
+        samplesSeen = 0
     }
 }
 

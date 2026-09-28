@@ -122,8 +122,32 @@ class BitPerfectGateway
                         it.type == AudioDeviceInfo.TYPE_USB_DEVICE ||
                             it.type == AudioDeviceInfo.TYPE_USB_HEADSET
                     } ?: return false
+            // 2026-09-27, Befund 17.2: `firstOrNull()` nahm das **erste**
+            // Attribut der Liste. Bei einem DAC, der 44,1/48/96/192 kHz
+            // unterstuetzt, ist das typischerweise 44,1 kHz — waehrend der
+            // laufende Titel 96 kHz spielt. Der Mixer muss dann doch
+            // resampeln, und "bit-perfect" stimmt nicht mehr, obwohl die
+            // App es meldet.
+            //
+            // Besser: das Attribut waehlen, das zur **aktuellen**
+            // Ausgabequelle passt. `DspRenderersFactory`/Media3 kennen die
+            // Format-Informationen; ueber [sourceSampleRateHz] bekommt die
+            // Auswahl die Information, die sie braucht. Ohne bekannte Rate
+            // (etwa vor dem ersten Track-Start) bleibt es bei der
+            // bisherigen Wahl, aber **nicht** mehr blind: die Liste wird
+            // bevorzugt nach der hoechsten unterstuetzten Rate durchsucht,
+            // weil eine hoehere Rate dem System erlaubt, selbst zu
+            // resampeln.
+            val supported =
+                audioManager.getSupportedMixerAttributes(usbDevice)
+            if (supported.isEmpty()) return false
             val mixerAttributes =
-                audioManager.getSupportedMixerAttributes(usbDevice).firstOrNull() ?: return false
+                sourceSampleRateHz
+                    ?.let { rate ->
+                        supported.firstOrNull { it.format.sampleRate == rate }
+                    }
+                    ?: supported.maxByOrNull { it.format.sampleRate }
+                    ?: return false
             return runCatching {
                 audioManager.setPreferredMixerAttributes(
                     android.media.AudioAttributes
@@ -136,6 +160,14 @@ class BitPerfectGateway
                 )
             }.getOrDefault(false)
         }
+
+        /**
+         * Aktuelle Ausgabequelle des Titels (null = unbekannt). Wird vom
+         * Service bei jedem Titelwechsel gesetzt, damit die
+         * Attribut-Auswahl in [applyInternal] zur Quelle passt.
+         */
+        @Volatile
+        var sourceSampleRateHz: Int? = null
 
         /** Gibt die bevorzugten Mixer-Attribute wieder frei (Ausschalten). */
         fun clearPreferredMixerAttributes() {

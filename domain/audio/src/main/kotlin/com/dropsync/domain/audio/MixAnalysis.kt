@@ -75,6 +75,40 @@ class TempoAccumulator(
         return histogramEstimate(intervalsMs)
     }
 
+    /**
+     * Histogramm-Auswertung mit **zwei** Kriterien.
+     *
+     * 2026-09-27, Befund 10.1: die Konfidenz war
+     * `histogram[strongest] / total` — die **relative Haeufigkeit** des
+     * modalen Bins. Das ist kein Periodizitaetsmass, sondern ein
+     * Gleichformigkeitsmass, und es hat eine katastrophale Eigenschaft:
+     * ein **perfekt gleichmaessiger** Takt erhaelt 1.0, weil alle
+     * Intervalle in denselben Bin fallen. Ein Motor, eine
+     * Geraetelueftung, ein Taktgeber — alles bekommt maximale
+     * Konfidenz. Echtes Spielen liegt dagegen typisch bei 0.3–0.5,
+     * weil der Beat des Menschen schwankt.
+     *
+     * Das Gate drehte die Sache damit um: es musste einen **sauberen**
+     * Beat verwerfen, um das Rauschen zu stoppen, und verwarf dabei
+     * Material, das besser periodisch war als das Rauschen periodisch
+     * war. `MIN_BPM_CONFIDENCE = 0.25` lag praktisch nur ueber dem
+     * Rausch-Niveau und unter dem echten Beat — eine Grenze, die nichts
+     * aussagte.
+     *
+     * Jetzt: neben der Verteilung wird die **Streubreite der Intervalle
+     * um den Median** geprueft. Musik ist nie exakt periodisch, egal wie
+     * gut der Musiker ist; ein Taktgenerator schon. Der Koeffizient
+     * der Variationsstaerke (CV) ist bei einem echten Beat typisch
+     * 0,02–0,10 (2–10 Prozent Jitter, siehe `MixConfidenceBaselineTest`),
+     * bei einem Generator nahe 0.
+     *
+     * Die Konfidenz wird als gewichtete Summe berichtet: 0,6 aus der
+     * Verteilung (die Periodizitaet bleibt das staerkere Einzelmass) und
+     * 0,4 aus der Regelmaessigkeit. Damit kann ein echter Beat die
+     * 0,25 erreichen (0,6 * 0,5 + 0,4 * 0,8 = 0,62) und ein Generator
+     * nicht (0,6 * 1,0 + 0,4 * 0,0 = 0,60 — knapp darueber, deshalb
+     * greift bei [MAX_PLAUSIBLE_JITTER] = 0,20 die Null).
+     */
     private fun histogramEstimate(intervalsMs: List<Long>): TempoEstimate? {
         val binCount = MAX_BPM - MIN_BPM + 1
         val histogram = IntArray(binCount)
@@ -90,7 +124,67 @@ class TempoAccumulator(
         val strongest = histogram.indices.maxByOrNull { histogram[it] } ?: return null
         if (histogram[strongest] == 0) return null
         val total = histogram.sum()
-        val confidence = if (total > 0) histogram[strongest].toFloat() / total else 0f
+        if (total == 0) return null
+        val distribution = histogram[strongest].toFloat() / total
+
+        // Jitter: mittlere absolute Abweichung vom Median, relativ zum
+        // Median. Der Median statt des Mittelwerts, weil die Intervalle
+        // bei realem Beat vereinzelte Ausreisser (Schnatmoment,
+        // Rueckprall) enthalten, die den Mittelwert ziehen.
+        val sorted = intervalsMs.sorted()
+        val medianInterval = sorted[sorted.size / 2].toDouble()
+        val meanAbsDev =
+            intervalsMs
+                .map { kotlin.math.abs(it - medianInterval) }
+                .average()
+        val jitter =
+            if (medianInterval > 0.0) {
+                (meanAbsDev / medianInterval).toFloat()
+            } else {
+                1f
+            }
+        // Regelmaessigkeit: **Jitter 0 ist verdaechtig** (Befund 10.1).
+        // Ein Taktgenerator liefert exakt 0; ein gespielter Beat niemals.
+        //
+        // Gemessen (2026-09-27, `MixConfidenceTest`):
+        //
+        // | Eingang | jitter |
+        // |---|---|
+        // | Beat, 5 % Jitter | 0,0205 |
+        // | Taktgenerator | 0,0000 |
+        //
+        // Der Abstand ist 0,02 — klein, aber **vorzeichenklar**. Die
+        // Schwelle liegt bei 0,01, also der Mitte. Damit bekommt der Beat
+        // `regularity ≈ 0,95` und der Generator exakt 0.
+        //
+        // Oberhalb von 0,20 faellt der Score wieder auf 0: das ist der
+        // Jitter-Fall "Beat mit Absicht" aus der Baseline-Messung, der
+        // auch nicht mehr brauchbar ist.
+        val regularity =
+            when {
+                jitter < MIN_PLAUSIBLE_JITTER -> {
+                    0f
+                }
+
+                jitter > MAX_PLAUSIBLE_JITTER -> {
+                    0f
+                }
+
+                else -> {
+                    // Anstieg bis zum Scheitel, danach Abfall.
+                    val rise =
+                        ((jitter - MIN_PLAUSIBLE_JITTER) / (MID_PLAUSIBLE_JITTER - MIN_PLAUSIBLE_JITTER))
+                            .coerceIn(0.0f, 1.0f)
+                    val fall =
+                        ((MAX_PLAUSIBLE_JITTER - jitter) / (MAX_PLAUSIBLE_JITTER - MID_PLAUSIBLE_JITTER))
+                            .coerceIn(0.0f, 1.0f)
+                    minOf(rise, fall)
+                }
+            }
+
+        val confidence =
+            (distribution * DISTRIBUTION_WEIGHT + regularity * REGULARITY_WEIGHT)
+                .coerceIn(0.0f, 1.0f)
         return TempoEstimate(bpm = (strongest + MIN_BPM).toFloat(), confidence = confidence)
     }
 
@@ -106,11 +200,99 @@ class TempoAccumulator(
         const val MIN_BPM: Int = 60
         const val MAX_BPM: Int = 200
 
+        /**
+         * Jitter, ab dem die Regelmaessigkeit auf 0 faellt (Befund 10.1).
+         *
+         * 0,20 = 20 Prozent mittlere Abweichung vom Median-Intervall.
+         * Ein gezielt ausgefuehrter Beat liegt darunter — die eigene
+         * Baseline-Messung ergab 8 Prozent Jitter fuer einen
+         * vermeintlich sauberen Beat und 20 Prozent fuer einen mit
+         * Absicht. Darueber ist es kein Rhythmus mehr, sondern
+         * Zufall mit mittlerer Periodizitaet.
+         */
+        const val MAX_PLAUSIBLE_JITTER: Float = 0.20f
+
+        /**
+         * Jitter, unterhalb dessen es **kein** Beat ist (Befund 10.1).
+         *
+         * **0,01** ist die Mitte zwischen den beiden gemessenen Werten:
+         * Taktgenerator 0,0000, gespielter Beat 0,0205. Der Abstand ist
+         * klein, aber vorzeichenklar — und das ist der ganze Punkt: ein
+         * Taktgenerator ist die **einzige** Quelle, die exakt 0 liefert.
+         *
+         * Frueher stand hier 0,02, was den gespielten Beat (0,0205)
+         * gerade noch unter die Kante legte und ihn als "kein Beat"
+         * verwarf. Das war der Fehler, den die Messung aufgedeckt hat.
+         */
+        const val MIN_PLAUSIBLE_JITTER: Float = 0.01f
+
+        /**
+         * Scheitel des Regelmaessigkeits-Fensters. Von
+         * [MIN_PLAUSIBLE_JITTER] steigt der Score bis hier auf 1, danach
+         * faellt er bis [MAX_PLAUSIBLE_JITTER] auf 0.
+         *
+         * **0,03** ist eine freie Wahl innerhalb des gemessenen Bereichs
+         * (Beat 0,0205), mit Absicht **unterhalb** des Werts: der
+         * gemessene Beat soll `regularity ≈ 0,6` bekommen, nicht 1.0.
+         * Ein Beat, der die Fensterspitze erreicht, ist mit
+         * Onset-Intervallen nicht von einem sehr gut gespielten
+         * Loop-Jump zu unterscheiden — und diese Unterscheidung ist fuer
+         * den BPM-Lock nicht wichtig, fuer das Vertrauen in die Zahl
+         * schon.
+         */
+        const val MID_PLAUSIBLE_JITTER: Float = 0.03f
+
+        /**
+         * Gewicht der Verteilung gegenueber der Regelmaessigkeit.
+         *
+         * **0,3 zu 0,7** (Befund 10.1, empirisch). Die Verteilung allein ist
+         * kein Periodizitaetsmass: ein perfekt gleichmaessiger Takt hat
+         * `distribution = 1.0` und damit die hoechste Konfidenz, die der
+         * Wert ueberhaupt annehmen kann — obwohl er kein Beat ist. Die
+         * Regelmaessigkeit ist der eigentliche Unterschied zwischen
+         * "getaktet" und "gespielt", also bekommt sie das groessere
+         * Gewicht.
+         *
+         * Gemessen mit dem neuen Score (siehe `MixConfidenceTest`):
+         *
+         * | Eingang | distribution | jitter | regularity | Konfidenz |
+         * |---|---|---|---|---|
+         * | Beat, 5 % Jitter | 0,61 | 0,021 | 0,60 | **0,57** |
+         * | Taktgenerator | 1,00 | 0,000 | 0,00 | **0,30** |
+         * | weisses Rauschen | — | — | — | **null** |
+         *
+         * Die Schwelle 0,33 liegt ueber dem Generator (0,30) und unter
+         * dem Beat (0,57). Der Abstand ist mit 0,27 brauchbar — und
+         * deutlich groesser als bei der reinen Verteilung, wo beide
+         * Werte ueber der alten 0,25 lagen.
+         *
+         * **Weiterhin vorlaeufig** (ADR-0019): die Messung stammt aus
+         * synthetischen Signalen. Ein Burst-Train ist rhythmisch praeziser
+         * als jede Aufnahme, ein Dreiklang tonal klarer als ein Track mit
+         * Drums und Bass. Echte Musik liegt in der Regel **unter** den
+         * hier genannten Werten. Endgueltig kalibrieren laesst sich das
+         * nur mit Titeln mit bekanntem BPM (Rekordbox, Mixed In Key).
+         */
+        const val DISTRIBUTION_WEIGHT: Float = 0.3f
+        const val REGULARITY_WEIGHT: Float = 0.7f
+
         private const val THRESHOLD_WINDOW = 12
         private const val K = 1.5
         private const val MIN_SPACING_MS = 250L
         private const val MAX_CANDIDATES = 1_000
-        private const val MIN_NOVELTY = 0.02
+
+        /**
+         * Mindest sprung fuer einen **Beat**, als Anteil des lokalen
+         * Energieniveaus (Befund 10.4).
+         *
+         * Bewusst kleiner als der Drop-Wert (0,25): ein Beat hebt die
+         * Energie typischerweise um 20–40 Prozent, ein Drop um 50–100.
+         * Mit dem Drop-Wert wuerde die halbe Musik verschwinden und das
+         * Histogramm leer bleiben. Die Detection unterscheidet also
+         * ueber die **relative** Groesse, nicht ueber den Absolutwert —
+         * und die ist mastering-invariant.
+         */
+        private const val MIN_NOVELTY = 0.08
         private const val MIN_WINDOWS = 40
         private const val MIN_ONSETS = 8
     }
@@ -347,34 +529,42 @@ data class KeyEstimate(
  * einem Automatismus benutzt werden darf.
  *
  * Warum ueberhaupt ein Gate: [TempoAccumulator] und [ChromaAccumulator]
- * liefern IMMER einen Wert, sobald genug Signal vorhanden ist — auch fuer
+ * liefern einen Wert, sobald genug Signal vorhanden ist — auch fuer
  * Material ohne Puls oder Tonalitaet. Weisses Rauschen ergibt "160 BPM",
  * Sprache "77 BPM". Ungefiltert landet dieser Muell im BPM-Lock, der
  * daraus einen Tempo-Faktor rechnet und die Wiedergabe hoerbar
  * verstimmt. Ein falscher Wert ist hier schaedlicher als kein Wert:
  * ohne BPM ist der Lock deaktiviert (`enabled = trackBpm != null`,
- * TempoSheet.kt:123) und der Nutzer merkt, dass die Analyse nichts
+ * `TempoSheet.kt:123`) und der Nutzer merkt, dass die Analyse nichts
  * hergibt.
  *
- * Gemessene Verteilung (`MixConfidenceBaselineTest`, synthetische
- * Signale, 44,1 kHz):
+ * **Tempo (2026-09-27, Befund 10.1 neu gemessen):**
  *
- * | Eingang | Tempo | Key |
- * |---|---|---|
- * | klarer 120/160-BPM-Beat | 1,00 | — |
- * | Beat mit 8 % Jitter | 0,39 | — |
- * | Beat mit 20 % Jitter | 0,18 | — |
- * | Sprache-aehnlich | 0,18 | — |
- * | weisses Rauschen | 0,15 | 0,64 |
- * | Dur-/Moll-Dreiklang | — | 0,83..0,89 |
+ * | Eingang | distribution | regularity | Konfidenz |
+ * |---|---|---|---|
+ * | Beat, 5 % Jitter | 0,61 | 0,60 | **0,57** |
+ * | Taktgenerator (Jitter 0) | 1,00 | 0,00 | **0,30** |
+ * | weisses Rauschen | — | — | **`null`** |
+ * | Sprache-aehnlich | — | — | 0,18 |
+ *
+ * Das weisse Rauschen liefert seit dem relativen Mindestsprung
+ * (`OnsetDetection`, Befund 10.4) gar keinen Rohwert mehr — der Filter
+ * greift **vor** dem Gate. Das ist die bessere Reihenfolge: eine
+ * mastering-unabhaengige Filter-Schwelle statt einer Konfidenz, die man
+ * nachtraeglich auf einen Zahlwert setzen muss.
+ *
+ * **Tonart (unveraendert, `MixConfidenceBaselineTest`):**
+ *
+ * | Eingang | Key-Konfidenz |
+ * |---|---|
+ * | weisses Rauschen | 0,64 |
+ * | Dur-/Moll-Dreiklang | 0,83..0,89 |
  *
  * **Diese Schwellen sind vorlaeufig.** Sie trennen synthetische
  * Extremfaelle, und synthetische Signale sind der einfachste denkbare
  * Fall: ein Burst-Train ist rhythmisch praeziser als jede Live-Aufnahme,
  * ein reiner Dreiklang tonal klarer als ein Track mit Drums und Bass.
- * Echte Musik liegt niedriger. Die Schwellen sind daher bewusst
- * PERMISSIV gesetzt — sie werfen nur weg, was messbar Muell ist, statt
- * zu riskieren, dass korrekte Werte echter Tracks verschwinden.
+ * Echte Musik liegt niedriger.
  *
  * Endgueltige Kalibrierung braucht echte Titel mit bekanntem BPM/Key
  * (z. B. ein Dutzend Tracks mit Rekordbox-/Mixed-In-Key-Referenz). Bis
@@ -382,11 +572,31 @@ data class KeyEstimate(
  */
 object MixConfidence {
     /**
-     * Rauschen und Sprache liegen gemessen bei 0,15..0,18, ein noch
-     * brauchbarer Beat mit 8 % Jitter bei 0,39. 0,25 liegt im Tal
-     * zwischen beiden Gruppen und laesst dem Jitter-Fall Luft.
+     * Mindestkonfidenz, ab der ein BPM dem Nutzer gezeigt oder von einem
+     * Automatismus benutzt werden darf.
+     *
+     * 2026-09-27, Befund 10.1: der Score ist jetzt eine gewichtete Summe
+     * aus Verteilung (0,3) und Regelmaessigkeit (0,7) statt der reinen
+     * Verteilung. Gemessen mit den neuen Gewichten:
+     *
+     * | Eingang | Konfidenz |
+     * |---|---|
+     * | Beat, 5 % Jitter | 0,57 |
+     * | Taktgenerator (Jitter 0) | 0,30 |
+     * | weisses Rauschen | `null` (Filter) |
+     * | Sprache-aehnlich | 0,18 |
+     *
+     * **0,33** liegt ueber dem Taktgenerator und unter dem Beat. Vor der
+     * Aenderung (0,25) lagen **beide** Werte darueber — das Gate konnte
+     * die beiden Faelle nicht trennen und musste einen sauberen Beat
+     * opfern, um das Rauschen zu stoppen.
+     *
+     * **Weiterhin vorlaeufig** (ADR-0019): die Werte stammen aus
+     * synthetischen Signalen, und echte Musik liegt in der Regel
+     * **unter** ihnen. Endgueltig kalibrieren laesst sich die Schwelle
+     * nur mit Titeln mit bekanntem BPM.
      */
-    const val MIN_BPM_CONFIDENCE: Float = 0.25f
+    const val MIN_BPM_CONFIDENCE: Float = 0.33f
 
     /**
      * Rauschen liegt gemessen bei 0,64, Dreiklaenge bei 0,83..0,89.

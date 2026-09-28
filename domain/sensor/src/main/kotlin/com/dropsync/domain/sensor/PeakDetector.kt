@@ -94,16 +94,41 @@ class PeakDetector(
                 .coerceAtMost(2_000)
     }
 
-    /** Umbauplan Phase 1.4: sets the calibrated theta directly. */
+    /**
+     * Umbauplan Phase 1.4: sets the calibrated theta directly.
+     *
+     * 2026-09-27, Befund 5.8: hier stand zusaetzlich `spk = theta` und
+     * `npk = theta * 0.5`. Damit war `spk` (die **Signal-Peak-Level** der
+     * Kalibrierung) an die **Schwelle** gekoppelt, und der
+     * Prominenz-Gate rechnete weiter mit
+     * `minProminence = spk * 0.2` (`:159`). Bei theta = 30 deg/s verlangte
+     * das 6 deg/s Prominenz, bei theta = 60 verlangte es 12 — eine
+     * Mitkalibrierung des Gates an die Schwelle, obwohl das Profil mit
+     * `expectedProminence` (`SensorModels.kt:88`) genau die richtige Groesse
+     * bereits mitliefert.
+     *
+     * Die Schwelle und die Peak-Level sind verschiedene Groessen: die
+     * Schwelle ist der Rauschboden, das Peak-Level die erwartete
+     * Signalhoehe. Sie fallen nur zusammen, wenn Rauschen und Signal
+     * aehnlich gross sind — bei sauberer Kalibrierung ist das gerade
+     * **nicht** der Fall. Deshalb kommt das Peak-Level jetzt aus dem
+     * Profil, und ohne bekanntes Level bleibt der Gate bei 0 (kein
+     * kuenstlicher Mindestwert, der echte kleine Reps unterdrueckt).
+     */
     fun updateThreshold(
         theta: Double,
         expectedDurationMs: Double? = null,
+        expectedProminence: Double? = null,
     ) {
         require(theta.isFinite() && theta >= 0.0) { "theta must be finite and >= 0" }
         this.threshold = theta
         currentThreshold = theta
-        spk = theta
-        npk = theta * 0.5
+        // Peak-Level aus dem Profil, wenn bekannt. Sonst bleibt es bei 0
+        // und der Prominenz-Gate greift nicht — das ist ehrlicher als
+        // ein aus der Schwelle abgeleiteter Wert, der systematisch zu
+        // hoch liegt und leise Reps verwirft.
+        spk = expectedProminence ?: 0.0
+        npk = (expectedProminence ?: 0.0) * 0.5
         expectedDurationMs?.let { updateExpectedDurationMs(it) }
     }
 

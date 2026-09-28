@@ -31,11 +31,23 @@ object OnsetDetection {
     const val DEFAULT_MAX_CANDIDATES: Int = 3
 
     /**
-     * Absoluter Mindestsprung der RMS-Energie (normalisiert auf [0..1]):
-     * der gleitende Schwellwert allein feuert statistisch auch auf
-     * Rauschen; ein echter Drop springt deutlich staerker.
+     * Mindest sprung der RMS-Energie, als **Anteil des lokalen Niveaus**.
+     *
+     * 2026-09-27, Befund 10.4: der Wert war `0.05` als **absoluter**
+     * RMS-Sprung. Das ist nicht mastering-invariant: ein Track auf
+     * -20 dBFS erreicht vielleicht 0.05 Sprung und faellt durch, einer
+     * auf -6 dBFS haette 0.5 und wird erkannt. Die Detektion bevorzugte
+     * damit **systematisch laute Musik** — obwohl das KDoc genau das
+     * behauptete ("damit leise und laute Tracks gleich behandelt
+     * werden"). Das stimmte fuer die Peak-Picking-Schwelle (die ist
+     * gleitend und damit relativ), nicht fuer diesen Absolutwert.
+     *
+     * Jetzt relativ: der Sprung muss mindestens [minNovelty] **des
+     * lok Fenstermittels** betragen. Ein Drop hebt die Energie
+     * typischerweise um 50–100 Prozent, ein 16tel-Hit um 10–30 Prozent.
+     * 0,25 trennt das unabhaengig vom Mastering.
      */
-    const val DEFAULT_MIN_NOVELTY: Double = 0.05
+    const val DEFAULT_MIN_NOVELTY: Double = 0.25
 
     /**
      * Liefert die Positionen (Millisekunden) der staerksten
@@ -71,7 +83,8 @@ object OnsetDetection {
                 }
             }
 
-        // Kandidaten: Novelty ueber dem lokalen Schwellwert.
+        // Kandidaten: Novelty ueber dem lokalen Schwellwert **und** ueber
+        // dem Mindestanteil am lokalen Energieniveau (Befund 10.4).
         val candidates = mutableListOf<Pair<Int, Double>>()
         for (index in 1 until novelty.size) {
             val from = (index - thresholdWindow).coerceAtLeast(0)
@@ -87,7 +100,22 @@ object OnsetDetection {
             }
             val stdDev = sqrt(varianceSum / count)
             val threshold = mean + k * stdDev
-            if (novelty[index] > threshold && novelty[index] >= minNovelty) {
+            // Lokales Energieniveau: der Mittelwert der **Energiefenster**
+            // im gleichen Umfeld, nicht der der Novelty. Die Novelty ist
+            // eine Differenz und hat nahe 0 — als Bezug waere sie sinnlos.
+            var levelSum = 0.0
+            for (i in from..to) levelSum += energyWindows[i]
+            val localLevel = levelSum / count
+            val relativeJump =
+                if (localLevel > MIN_LEVEL_FLOOR) {
+                    novelty[index] / localLevel
+                } else {
+                    // In echter Stille gibt es nichts zu detektieren; der
+                    // Absolut-Gate muss hier greifen, sonst wuerde jedes
+                    // Rauschen aus dem Nichts einen Sprung erzeugen.
+                    novelty[index]
+                }
+            if (novelty[index] > threshold && relativeJump >= minNovelty) {
                 candidates += index to novelty[index]
             }
         }
@@ -111,4 +139,14 @@ object OnsetDetection {
             .map { it.first * windowDurationMs }
             .sorted()
     }
+
+    /**
+     * Energieniveau, unterhalb dessen der relative Gate nicht greift
+     * (Befund 10.4). Unterhalb davon ist die Division instabil und der
+     * Sprung faellt auf den Absolutwert zurueck.
+     *
+     * 1e-4 entspricht −80 dBFS im Effektivwert — also echtem
+     * Digitalrauschen. Alles darueber ist Musik und wird beurteilt.
+     */
+    private const val MIN_LEVEL_FLOOR = 1e-4
 }

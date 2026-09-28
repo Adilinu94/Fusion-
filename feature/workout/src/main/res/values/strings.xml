@@ -54,6 +54,7 @@
     <string name="train_new_exercise_chip">+ New exercise</string>
     <string name="train_weight_label">WEIGHT · KG</string>
     <string name="train_weight_last">Last %1$.1f kg</string>
+    <string name="train_reps_last">Last %1$d</string>
     <string name="train_weight_decrement">− 2.5</string>
     <string name="train_weight_increment">+ 2.5</string>
     <string name="train_reps_label">REPS</string>
@@ -117,8 +118,16 @@
     <string name="train_error_learning_save">Could not save the refined calibration.</string>
     <string name="train_error_undo">Could not undo the last set. Please try again.</string>
     <string name="train_error_history">Could not load the set history. Please try again.</string>
+    <string name="train_error_count_no_chip">Counting needs the sensor. Tap \"Sensor verbinden\" above — or enter the reps by hand.</string>
+    <string name="train_error_count_not_streaming">The sensor is connected but not sending data. Check that it is switched on and in range.</string>
+    <string name="train_error_count_no_calibration">This exercise is not calibrated yet. Without calibration the sensor counts inaccurately — you can also enter the reps by hand.</string>
+    <string name="train_error_rest_start_failed">Set saved, but the rest could not start. Start it below via the timer.</string>
     <!-- P2-17/RC-7: set report after stop (snackbar). -->
     <string name="train_set_report">Set finished: %1$d counted · rate %2$s Hz · %3$d gaps · %4$d ZUPT</string>
+    <!-- 2026-09-27 (UI-Hebel 3): the only set-report figure that is
+         actionable for the athlete. Rate, ZUPT and the rejection reasons
+         live in the diagnostics panel (settings, developer section). -->
+    <string name="train_set_report_gaps">%1$d signal gaps</string>
     <string name="train_set_report_rejected">%1$d rejected (%2$s)</string>
     <string name="train_rejection_accel">accel voting</string>
     <string name="train_rejection_template">template match</string>
@@ -148,6 +157,11 @@
     <string name="live_count_countdown">Starting in %1$d …</string>
     <string name="live_count_stop">Stop</string>
     <string name="live_count_reason_no_profile">No calibration profile for this exercise yet.</string>
+    <!-- 2026-09-27 (product decision "sensor optional"): the sensor is an
+         option, not a requirement. These two lines sit where nothing was
+         shown before — the reason, and the way forward. -->
+    <string name="live_count_reason_no_sensor">No automatic counting without a sensor.</string>
+    <string name="live_count_manual_hint">Enter weight and reps by hand above — the set saves just the same.</string>
     <string name="train_counted_zero_hint">No repetitions detected — check the signal or enter the number manually.</string>
 
     <!-- Train console 2.0 (P2-20/RC-5): Rep-Hero mit Quelle + Sensor-Kopfzeile.

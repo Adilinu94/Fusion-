@@ -1,5 +1,7 @@
 package com.dropsync.domain.sensor.calibration
 
+import com.dropsync.domain.sensor.EnvelopeDetector
+import com.dropsync.domain.sensor.OneEuroFilter
 import com.dropsync.domain.sensor.SensorSample
 import com.dropsync.domain.sensor.accelMagnitude
 import kotlin.math.abs
@@ -140,10 +142,38 @@ internal fun axisAnalysis(
 
 // --- Stage B: candidate signals + known-count sweep -------------------------
 
+/**
+ * 2026-09-27, Befund 5.2: hier stand eine **rohe** Projektion.
+ *
+ * Die Live-Pipeline filtert dasselbe Signal vorher durch einen
+ * One-Euro-Filter und legt eine Huellkurve darueber
+ * (`SignalChain.kt:96-98`). Der One-Euro-Filter verschiebt Spitzenhoehe
+ * **und** -zeit, die Huellkurve glaettet Spitzen. Die gelernte Schwelle
+ * theta bezog sich also auf ein Signal, das live in dieser Form nie
+ * auftritt — und die Abweichung ist nicht klein: der Filter glaettet
+ * typische Spitzen um 10–30 Prozent und verschiebt sie um einige
+ * Millisekunden.
+ *
+ * Das ist die wahrscheinlichste stille Ursache dafuer, dass eine gute
+ * Kalibrierung in der Praxis nicht zu guten Zahlen fuehrt: nicht die
+ * Schwelle ist falsch, sondern das **Signal**, auf das sie sich bezieht.
+ *
+ * Der Fix filtert die Kandidaten mit denselben Klassen und denselben
+ * Parametern wie die Live-Kette (minCutoff 1.0 Hz, beta 0.007, Envelope
+ * 3.0 Hz — `SignalChain.kt:22-24`). Damit beschreibt theta genau das
+ * Signal, das der PeakDetector spaeter sieht.
+ *
+ * **GYM_MAG bleibt ungefiltert**: es ist die Groesse des
+ * Drehgeschwindigkeitsvektors, kein vorzeichenbehaftetes Signal, und
+ * braucht keine Vorzeichendarstellung. Fuer die anderen beiden wird die
+ * Envelope der Kandidat — sie entspricht der Groesse, die der
+ * Live-Detector tatsaechlich sieht.
+ */
 internal fun candidateSignals(
     buf: List<SensorSample>,
     achse: DoubleArray,
     bias: DoubleArray,
+    sampleRateHz: Double,
 ): Map<ChosenSignal, DoubleArray> {
     val gyroWeight = 0.05 // same formula as SignalProcessor
     val n = buf.size
@@ -160,11 +190,28 @@ internal fun candidateSignals(
         combinedRaw[i] = s.accelMagnitude + gyroWeight * gyroMag[i]
     }
     return mapOf(
-        ChosenSignal.GP to gP,
-        ChosenSignal.COMBINED to ema(combinedRaw, 0.6),
+        // Gefiltert + Huellkurve: genau die Kette der Live-Pipeline.
+        ChosenSignal.GP to filterAndEnvelope(gP, sampleRateHz),
+        ChosenSignal.COMBINED to filterAndEnvelope(ema(combinedRaw, 0.6), sampleRateHz),
+        // Ungefiltert: Betrag eines Vektors, keine Vorzeicheninformation.
         ChosenSignal.GYRO_MAG to gyroMag,
     )
 }
+
+/** One-Euro + Huellkurve mit den Parametern der Live-Kette. */
+private fun filterAndEnvelope(
+    raw: DoubleArray,
+    sampleRateHz: Double,
+): DoubleArray {
+    val oneEuro = OneEuroFilter(ONE_EURO_MIN_CUTOFF_HZ, ONE_EURO_BETA, sampleRateHz)
+    val envelope = EnvelopeDetector(ENVELOPE_CUTOFF_HZ, sampleRateHz)
+    return DoubleArray(raw.size) { index -> envelope.process(abs(oneEuro.process(raw[index]))) }
+}
+
+/** Parameter der Live-Kette (dupliziert aus `SignalChain.kt:22-24`). */
+private const val ONE_EURO_MIN_CUTOFF_HZ = 1.0
+private const val ONE_EURO_BETA = 0.007
+private const val ENVELOPE_CUTOFF_HZ = 3.0
 
 /** Baseline/sigma per candidate signal from the rest edges (1 s each side). */
 internal fun signalMeta(

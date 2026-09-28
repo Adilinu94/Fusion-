@@ -9,6 +9,7 @@ import com.dropsync.core.database.dao.FlatSetDao
 import com.dropsync.core.database.entity.FlatSetEntity
 import com.dropsync.domain.workout.FlatSet
 import com.dropsync.domain.workout.FlatSetRepository
+import com.dropsync.domain.workout.MusicContext
 import com.dropsync.domain.workout.SetSummaries
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
@@ -59,6 +60,7 @@ class FlatSetRepositoryImpl(
         exerciseId: Long,
         weightMilliKg: Long,
         reps: Int,
+        musicContext: MusicContext,
     ): AppResult<Long> {
         // Umbauplan Phase 10.5: die Repository-Grenze validiert unabhaengig
         // von der UI - negative Gewichte, NaN-Infinity oder unsinnige
@@ -83,6 +85,17 @@ class FlatSetRepositoryImpl(
                                     weightMilliKg = weightMilliKg,
                                     reps = reps,
                                     loggedAtEpochMs = clock.epochMillis(),
+                                    // 2026-09-27, Befund 11.3/13.4: der
+                                    // Musikbezug geht in **dieselbe**
+                                    // Transaktion wie Gewicht und Reps. Der
+                                    // vorherige Weg ueber
+                                    // `PlaybackSnapshotEntity` lief durch
+                                    // `completeCluster()`, das der
+                                    // Produktivpfad nie aufruft — die
+                                    // Tabelle blieb leer.
+                                    songId = musicContext.songId,
+                                    playbackPositionMs = musicContext.playbackPositionMs,
+                                    markerId = musicContext.markerId,
                                 ),
                             )
                         // A1/5.7: der flache Satz ist eine PR-Quelle; die
@@ -179,6 +192,9 @@ class FlatSetRepositoryImpl(
             weightMilliKg = weightMilliKg,
             reps = reps,
             loggedAtEpochMs = loggedAtEpochMs,
+            songId = songId,
+            playbackPositionMs = playbackPositionMs,
+            markerId = markerId,
         )
 
     private companion object {

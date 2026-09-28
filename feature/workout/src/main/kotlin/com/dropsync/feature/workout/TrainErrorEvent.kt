@@ -35,4 +35,30 @@ sealed interface TrainErrorEvent {
      * (bisher sah beides nach leerer Historie aus).
      */
     data object HistoryLoadFailed : TrainErrorEvent
+
+    /**
+     * 2026-09-27, Befund 5.10: `startCountedSet()` hatte drei stille
+     * `return`s (kein Profil, kein streamender Chip, keine Geraete-ID).
+     * Der Nutzer tippte auf "Live zaehlen starten" und **es passierte
+     * nichts** — kein Toast, kein Snackbar, kein visuelles Signal. Die
+     * app ist ohne Sensor voll nutzbar (Handeingabe), also war die
+     * Bedienung nicht kaputt, sie war nur stumm. Das ist der groesste
+     * einzelne UX-Bruch im Train-Screen.
+     *
+     * Die drei Gruende sind getrennt, weil sie unterschiedliche Handlungen
+     * brauchen: Chip verbinden, kalibrieren, oder einfach zaehlen.
+     */
+    data object CountBlockedNoChip : TrainErrorEvent
+
+    data object CountBlockedNotStreaming : TrainErrorEvent
+
+    data object CountBlockedNoCalibration : TrainErrorEvent
+
+    /**
+     * 2026-09-27, Befund 5.12: `startRestTimer()` pruefte das Ergebnis
+     * von `timerEngine.start()` nicht. Ein `TimerConflict` (es laeuft
+     * bereits eine Pause) bedeutete: Satz gespeichert, **keine** Pause,
+     * keine Musik, keine Meldung.
+     */
+    data object RestTimerStartFailed : TrainErrorEvent
 }

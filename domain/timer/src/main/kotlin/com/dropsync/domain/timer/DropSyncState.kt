@@ -99,6 +99,21 @@ sealed interface DropSyncState {
          * ("A -> B -> Drop"); leer bei einer Einzellandung.
          */
         val chain: List<String> = emptyList(),
+        /**
+         * MediaStore-ID des Work-Titels (2026-09-27, Befund 13.4).
+         * `null`, wenn der Plan keinen genauen Titel nennt.
+         *
+         * Wird gebraucht, um den Satz-Log mit Musik zu versehen: die
+         * Frage "welche Musik lief bei meinem letzten PR?" war vorher
+         * unbeantwortbar, weil `PlaybackSnapshotEntity` toter Code war.
+         */
+        val songId: Long? = null,
+        /**
+         * ID des Markers, auf den gelandet wird. Das ist die wertvolle
+         * Spalte: sie macht sichtbar, ob der Satz auf einen Drop landete
+         * oder nicht — die Frage, die die ganze App aufgeworfen hat.
+         */
+        val markerId: Long? = null,
     ) : DropSyncState
 
     /** Plan ist scharf: Landung terminiert, Watchdog laeuft. */
@@ -113,10 +128,19 @@ sealed interface DropSyncState {
         val audioPrepared: Boolean,
     ) : DropSyncState
 
-    /** Landung ausgefuehrt; [deltaMs] = tatsaechlich - geplant. */
+    /**
+     * Landung ausgefuehrt; [deltaMs] = tatsaechlich - geplant.
+     *
+     * 2026-09-27, Befund 13.4: [plan] wurde ergaenzt, damit der
+     * Musikbezug des Satzes **nach** der Landung noch abfragbar ist. Der
+     * Satz wird am Ende der Pause geloggt - also nachdem der Zustand auf
+     * `Landed` steht. Ohne [plan] waere genau dann die Information weg,
+     * die in die Historie soll.
+     */
     data class Landed(
         val atElapsedRealtimeMs: Long,
         val deltaMs: Long,
+        val plan: Planned? = null,
     ) : DropSyncState
 
     /** Nur Best-Effort-Landung moeglich. */

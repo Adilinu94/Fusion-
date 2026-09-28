@@ -18,4 +18,22 @@ interface DropRestRequestBus {
 
     /** Fordert genau einen Drop-Rest-Start an (fire-and-forget). */
     fun request()
+
+    /**
+     * Bricht einen laufenden Drop-Rest-Plan ab (2026-09-27, Befund 5.11).
+     *
+     * Aufrufer: `TrainViewModel.undoLastSet()`. Der Satz wurde
+     * zurueckgenommen, aber der Plan lief weiter — die Restmusik
+     * uebernahm die Queue, der Work-Titel landete zum geplanten Drop.
+     * Der Nutzer hatte die Uebung fuer diesen Satz zurueckgenommen und
+     * die Musik nicht.
+     *
+     * Getrennt von `request()`, weil es eine **Abbrechung** ist, kein
+     * Wunsch. Die Semantik des Signals muss der Koordinator kennen,
+     * sonst wuerde er es wie einen neuen Start behandeln.
+     */
+    val cancellations: SharedFlow<Unit>
+
+    /** Meldet, dass ein laufender Drop-Rest-Plan nicht mehr gilt. */
+    fun cancelForUndo()
 }

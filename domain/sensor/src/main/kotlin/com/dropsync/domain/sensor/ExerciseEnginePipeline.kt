@@ -444,13 +444,24 @@ class ExerciseEnginePipeline(
 
     /**
      * Umbauplan Phase 2.6: bei einer grossen Zeitluecke (>= 150-250 ms)
-     * werden laufender Peak, Pending-Rep und Filterzustand verworfen und
-     * die Filter schwingen neu ein. Physische Zeit wird so nie komprimiert.
+     * werden laufender Peak, Pending-Rep und die Zaehlbereitschaft verworfen.
+     * Physische Zeit wird so nie komprimiert.
+     *
+     * 2026-09-27, Befund 5.4: hier stand `signalChain.reset()`, also ein
+     * **voller** Filter-Reset. Der kostete die 50-Sample-Einschwingzeit —
+     * eine Sekunde bei 50 Hz, in der nichts gezaehlt wird. Bei 5 Prozent
+     * Paketverlust mit drei Gaps im Satz sind das drei von 30 Sekunden
+     * toter Zaehlzeit, und die erste Rep nach der Luecke fehlt garantiert.
+     *
+     * Der One-Euro-Filter schwingt in 50 bis 100 ms ein, nicht in einer
+     * Sekunde — die Filter zu verwerfen war ein Ueberreagieren auf eine
+     * Stoerung, die sie nicht beeintraechtigt. Jetzt wird nur die
+     * Zaehlbereitschaft verworfen.
      */
     private fun onLargeGap() {
         largeGapCount++
         repCounter.abortPending()
-        signalChain.reset()
+        signalChain.resetCountingReadiness()
     }
 
     /** ExerciseEngine contract: feed an already-processed frame. */
@@ -488,17 +499,40 @@ class ExerciseEnginePipeline(
     /** Sets the rep template (from the calibration profile). */
     fun setTemplate(template: List<Double>) = repCounter.setTemplate(template)
 
-    /** Umbauplan Phase 1.4: feeds the calibrated threshold directly. */
+    /**
+     * Umbauplan Phase 1.4: feeds the calibrated threshold directly.
+     *
+     * 2026-09-27, Befund 5.8: [expectedProminence] wird durchgereicht, damit
+     * der Prominenz-Gate die echte Peak-Hoehe aus dem Kalibrierprofil sieht
+     * (`CalibrationProfile.expectedProminence`) statt eines aus der
+     * Schwelle abgeleiteten, systematisch zu hohen Wertes.
+     */
     fun updateThreshold(
         theta: Double,
         expectedDurationMs: Double? = null,
-    ) = repCounter.updateThreshold(theta, expectedDurationMs)
+        expectedProminence: Double? = null,
+    ) = repCounter.updateThreshold(theta, expectedDurationMs, expectedProminence)
 
-    /** Adopts a new calibration axis + bias without resetting counts. */
+    /**
+     * Adopts a new calibration axis + bias.
+     *
+     * 2026-09-27, Befund 5.7: hier stand "without resetting counts" — und
+     * genau das war der Fehler. Ein Wechsel der **Achse** aendert, was
+     * `rawGp` ueberhaupt bedeutet (`SignalChain.kt:96`): der One-Euro-Filter
+     * und die Huellkurve enthalten dann Zustand der **alten** Achse, der
+     * sich nicht auf die neue zurueckrechnen laesst. Der erste
+     * Rep-Durchlauf nach dem Wechsel sah damit ein unsinniges Signal.
+     *
+     * Der Gyro-Bias wird weiterhin ohne Reset uebernommen (dort ist das
+     * richtig, ein Bias-Wechsel ist ein Sprung, den man nicht wegschwingen
+     * will — `SignalChain.kt:124-131`), die Achse aber mit.
+     */
     fun updateCalibration(
         rotationAxis: List<Double>,
         gyroBias: List<Double>,
-    ) = signalChain.updateCalibration(rotationAxis, gyroBias)
+    ) {
+        signalChain.updateCalibration(rotationAxis, gyroBias, resetFilters = true)
+    }
 
     /** Full reset: new session, exercise switch, or reconnect. */
     override fun reset() {

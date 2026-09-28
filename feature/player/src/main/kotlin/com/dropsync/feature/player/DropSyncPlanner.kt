@@ -57,6 +57,15 @@ class DropSyncPlanner
                 val song: Song,
                 val markerLabel: String,
                 val confidence: TimingConfidence,
+                /**
+                 * ID des gewaehlten Markers (2026-09-27, Befund 13.4).
+                 *
+                 * Sie wandert in den DropSync-Zustand und von dort in den
+                 * Satz-Log. Ohne sie konnte die Historie nicht sagen, auf
+                 * welchem Drop ein Satz landete — die Frage, die die ganze
+                 * App aufgeworfen hat.
+                 */
+                val markerId: Long? = null,
             ) : Outcome
 
             data class NotPossible(
@@ -122,6 +131,9 @@ class DropSyncPlanner
                 song = song,
                 markerLabel = candidates.labelsByMarkerId[plan.markerId].orEmpty(),
                 confidence = if (latency == null) TimingConfidence.DEGRADED else TimingConfidence.EXACT,
+                // 2026-09-27, Befund 13.4: der Marker wandert in den
+                // Zustand und von dort in den Satz-Log.
+                markerId = plan.markerId,
             )
         }
 
