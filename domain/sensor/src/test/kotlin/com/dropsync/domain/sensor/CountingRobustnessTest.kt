@@ -4,10 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.util.Random
 import kotlin.math.PI
-import kotlin.math.abs
-import kotlin.math.roundToInt
 import kotlin.math.sin
 
 /**
@@ -25,45 +22,6 @@ import kotlin.math.sin
  * die genannten Fehlerklassen nicht zurueckkehren.
  */
 class CountingRobustnessTest {
-    private class Trace(val ts: LongArray, val gx: DoubleArray, val az: DoubleArray, val truth: Int)
-
-    private fun trace(seed: Long, reps: Int = 10, tempoS: Double = 2.4, holdS: Double = 0.0, amp: Double = 70.0): Trace {
-        val rnd = Random(seed)
-        val fs = 50.0
-        val g = ArrayList<Double>()
-        repeat((1.5 * fs).toInt()) { g.add(0.0) }
-        for (i in 0 until reps) {
-            val t = tempoS * (1 + 0.06 * rnd.nextGaussian().coerceIn(-2.0, 2.0))
-            val a = amp * (1 - 0.01 * i) * (1 + 0.08 * rnd.nextGaussian().coerceIn(-2.0, 2.0))
-            val n1 = (t * 0.45 * fs).roundToInt().coerceAtLeast(6)
-            val n2 = (t * 0.55 * fs).roundToInt().coerceAtLeast(6)
-            for (k in 0 until n1) g.add(a * sin(PI * (k + 0.5) / n1))
-            repeat((holdS * fs).toInt()) { g.add(0.0) }
-            val eccentric = a * n1.toDouble() / n2
-            for (k in 0 until n2) g.add(-eccentric * sin(PI * (k + 0.5) / n2))
-            repeat((rnd.nextDouble() * 0.15 * fs).toInt()) { g.add(0.0) }
-        }
-        repeat((2.0 * fs).toInt()) { g.add(0.0) }
-        val n = g.size
-        return Trace(
-            ts = LongArray(n) { (it * 1000.0 / fs).toLong() },
-            gx = DoubleArray(n) { g[it] + 0.8 * rnd.nextGaussian() + 1.0 },
-            az = DoubleArray(n) { 1.0 + 0.004 * abs(g[it]) + 0.005 * rnd.nextGaussian() },
-            truth = reps,
-        )
-    }
-
-    /** Entfernt alle Samples mit Zeitstempel in [fromMs, toMs) - simuliert einen BLE-Ausfall. */
-    private fun withHole(t: Trace, fromMs: Long, toMs: Long): Trace {
-        val keep = t.ts.indices.filter { t.ts[it] < fromMs || t.ts[it] >= toMs }
-        return Trace(
-            LongArray(keep.size) { t.ts[keep[it]] },
-            DoubleArray(keep.size) { t.gx[keep[it]] },
-            DoubleArray(keep.size) { t.az[keep[it]] },
-            t.truth,
-        )
-    }
-
     private fun engine(
         tempoS: Double = 2.4,
         holdS: Double = 0.0,
@@ -82,7 +40,7 @@ class CountingRobustnessTest {
         ),
     )
 
-    private fun feed(e: ExerciseEnginePipeline, t: Trace) {
+    private fun feed(e: ExerciseEnginePipeline, t: SyntheticTrace) {
         for (i in t.ts.indices) e.processSample(t.ts[i], t.gx[i], 0.0, 0.0, 0.0, 0.0, t.az[i])
     }
 

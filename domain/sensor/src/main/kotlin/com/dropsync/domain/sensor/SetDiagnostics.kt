@@ -33,6 +33,11 @@ data class SetDiagnostics(
     val rejectionCounts: Map<RepRejectionReason, Int> = emptyMap(),
     /** P2-Fix #19: Autokorrelations-Zweitmeinung zum Zaehlerstand. */
     val plausibility: RepCountPlausibility.Result? = null,
+    /**
+     * Nachzaehlung des abgeschlossenen Satzes aus den Rohsamples ([SetRecount]).
+     * Ein Vorschlag, nie ein stilles Ueberschreiben; null bei zu wenig Signal.
+     */
+    val recount: SetRecount.Result? = null,
 ) {
     /** Gesamtzahl der abgelehnten Rep-Kandidaten. */
     val totalRejections: Int

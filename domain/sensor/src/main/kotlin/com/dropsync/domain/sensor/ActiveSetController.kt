@@ -81,6 +81,17 @@ class ActiveSetController(
     private val _lastDiagnostics = MutableStateFlow<SetDiagnostics?>(null)
     val lastDiagnostics: StateFlow<SetDiagnostics?> = _lastDiagnostics.asStateFlow()
 
+    /**
+     * Nachzaehlung des zuletzt gestoppten Sets ([SetRecount]): unabhaengige Zweitmeinung aus
+     * den Rohsamples mit Nullphasen-Filter und satzrelativer Peak-Hoehe. Die UI zeigt bei
+     * [SetRecount.Result.isSuggestion] "Analyse: n, live: m" und laesst uebernehmen. Gefuellt
+     * in [stop], geleert in [start]/[abort].
+     */
+    private val _lastRecount = MutableStateFlow<SetRecount.Result?>(null)
+    val lastRecount: StateFlow<SetRecount.Result?> = _lastRecount.asStateFlow()
+    private var recountAxis: List<Double> = emptyList()
+    private var recountBias: List<Double> = emptyList()
+
     private var engine: ExerciseEnginePipeline? = null
 
     /**
@@ -200,6 +211,8 @@ class ActiveSetController(
                 ),
             ).also { it.setTemplate(profile.repTemplate) }
 
+        recountAxis = profile.rotationAxis
+        recountBias = profile.gyroBias
         this.exerciseId = exerciseId
         this.deviceId = deviceId
         this.profileRevision = profile.revision
@@ -211,6 +224,7 @@ class ActiveSetController(
         // P2-Fix #19: die Zweitmeinung des Vorgaenger-Sets darf nicht in ein
         // neues Set hineinragen.
         _lastPlausibility.value = null
+        _lastRecount.value = null
         // RC-7: gleiches gilt fuer den Diagnose-Snapshot des Vorgaengers.
         _lastDiagnostics.value = null
         // Befund 5.5: unter dem Puffer-Lock — ein noch auslaufender
@@ -350,6 +364,20 @@ class ActiveSetController(
                 withContext(workerDispatcher) { activeEngine.checkPlausibility() }
             }
         _lastPlausibility.value = plausibility
+        _lastRecount.value =
+            if (activeEngine == null) {
+                null
+            } else {
+                val samples = synchronized(bufferLock) { bufferedSamples.toList() }
+                val rateHz =
+                    activeEngine.estimatedSampleRateHz
+                        ?.takeIf { it in MIN_RECOUNT_RATE_HZ..MAX_RECOUNT_RATE_HZ }
+                        ?: SetRecount.DEFAULT_RATE_HZ
+                val liveCount = _countedReps.value
+                withContext(workerDispatcher) {
+                    SetRecount.count(samples, recountAxis, recountBias, liveCount, rateHz)
+                }
+            }
         // B2 (RC-19): die Periode fuer den naechsten Satz merken (nur
         // Qualitaets-Erwartung, Entscheidung 5.14).
         lastMeasuredPeriodMs =
@@ -382,6 +410,7 @@ class ActiveSetController(
             signalQuality = _currentSignalQuality.value,
             rejectionCounts = activeEngine.rejectionCountsSnapshot,
             plausibility = _lastPlausibility.value,
+            recount = _lastRecount.value,
         )
     }
 
@@ -417,6 +446,7 @@ class ActiveSetController(
         // Zustand eine Wirkung nach draussen — deshalb hier und nicht in
         // Phase 6.
         _lastPlausibility.value = null
+        _lastRecount.value = null
         // RC-7: der Diagnose-Snapshot gehoert ebenfalls zum Zaehlstand.
         _lastDiagnostics.value = null
         // B2 (RC-19): [lastMeasuredPeriodMs] bleibt bewusst stehen — sie
@@ -523,5 +553,9 @@ class ActiveSetController(
 
     companion object {
         const val DEFAULT_COUNTDOWN_SECONDS = 3
+
+        /** Plausibler Bereich fuer die gemessene Rate, die als Recount-Raster dient. */
+        private const val MIN_RECOUNT_RATE_HZ = 20.0
+        private const val MAX_RECOUNT_RATE_HZ = 200.0
     }
 }

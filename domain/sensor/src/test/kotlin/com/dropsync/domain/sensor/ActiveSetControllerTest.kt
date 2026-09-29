@@ -600,6 +600,36 @@ class ActiveSetControllerTest {
             c.close()
         }
 
+    // --- Nachzaehlung (SetRecount) am Satzende -----------------------------
+
+    @Test
+    fun `stop fuellt die Nachzaehlung, Diagnose traegt sie, start und abort raeumen sie ab`() =
+        runTest {
+            val c = controller()
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertNull(c.lastRecount.value)
+            advanceTimeBy(3_100)
+            runCurrent()
+            // 12 saubere Reps im 50-Hz-Takt (Sinus-Lappen), genug Signal fuer die Nachzaehlung.
+            val set = trace(seed = 5, reps = 12, tempoS = 1.6, amp = 60.0)
+            set.toSamples().chunked(32).forEach { chunk ->
+                chunk.forEach { samplesFlow.tryEmit(it.copy(gx = it.gx - 1.0)) }
+                runCurrent()
+            }
+            c.stop()
+
+            val recount = c.lastRecount.value
+            assertNotNull("stop muss die Nachzaehlung setzen", recount)
+            assertEquals(12, recount?.count)
+            assertEquals(recount, c.lastDiagnostics.value?.recount)
+
+            c.abort(SetAbortReason.EXERCISE_CHANGED)
+            assertNull("abort raeumt die Nachzaehlung ab", c.lastRecount.value)
+            assertTrue(c.start(1L, "AA:BB", profile()))
+            assertNull("start raeumt die Nachzaehlung ab", c.lastRecount.value)
+            c.close()
+        }
+
     // --- RC-1: Zaehlpipeline off-main -------------------------------------
 
     /**
