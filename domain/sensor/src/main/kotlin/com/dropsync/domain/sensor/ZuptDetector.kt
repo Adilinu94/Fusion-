@@ -68,6 +68,12 @@ class ZuptDetector(
          * einsetzt (Segmentgrenze).
          */
         val motionStarted: Boolean,
+        /**
+         * Bisherige Dauer des laufenden Ruhefensters in ms; 0 bei Bewegung und im
+         * ersten Ruhe-Sample. Grundlage fuer den laengenabhaengigen Pending-Abbruch
+         * der Pipeline (Halte-Phasen von Pause-Reps duerfen nicht als Ruhe gelten).
+         */
+        val quietMs: Long = 0L,
     )
 
     var segment: Segment = Segment.UNKNOWN
@@ -144,13 +150,14 @@ class ZuptDetector(
         }
 
         accumulate(gx, gy, gz)
-        if (!confirmed && timestampMs - since >= minStationaryMs) {
+        val quietMs = timestampMs - since
+        if (!confirmed && quietMs >= minStationaryMs) {
             confirmed = true
             segment = Segment.STATIONARY
             stationaryWindows++
-            return Result(segment, zuptConfirmed = true, motionStarted = false)
+            return Result(segment, zuptConfirmed = true, motionStarted = false, quietMs = quietMs)
         }
-        return Result(segment, zuptConfirmed = false, motionStarted = false)
+        return Result(segment, zuptConfirmed = false, motionStarted = false, quietMs = quietMs)
     }
 
     /** Verwirft den Zustand (neues Set, Reconnect, Uebungswechsel). */

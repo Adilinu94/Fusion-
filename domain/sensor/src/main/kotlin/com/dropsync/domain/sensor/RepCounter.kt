@@ -76,6 +76,9 @@ class RepCounter(
     private var pendingWentBelowStartMin = false
     private var pendingSawNegative = false
 
+    /** Tiefster geglaetteter Wert seit Pending-Start (inkl. Peak-Fenster) - misst die Tiefe der exzentrischen Phase. */
+    private var pendingMinValue = 0.0
+
     /**
      * Timestamp des letzten in das Pending-Fenster aufgenommenen Frames.
      * Zeitbasis der Rep-Dauer (Umbauplan Phase 2.5); die Sample-Anzahl ist
@@ -115,6 +118,7 @@ class RepCounter(
         pendingLastMs = frame.timestampMs
         if (value < 0) pendingSawNegative = true
         if (value < pendingStartMin) pendingWentBelowStartMin = true
+        if (value < pendingMinValue) pendingMinValue = value
 
         if (pendingComplete(frame.timestampMs)) return finalizePending()
         return RepResult.NONE
@@ -137,6 +141,7 @@ class RepCounter(
         pendingStartMs = peak.timestampMs
         pendingLastMs = peak.timestampMs
         pendingStartMin = peak.window.min()
+        pendingMinValue = pendingStartMin
         pendingWentBelowStartMin = false
         pendingSawNegative = false
     }
@@ -154,8 +159,11 @@ class RepCounter(
         // early; only the time-based safety limit forces finalisation.
         // Toleranz gegen Filter-Nachschwingen knapp unter 0 (Float-Artefakt).
         if (!pendingSawNegative) return false
-        val returnTolerance = kotlin.math.max(1e-9, kotlin.math.abs(pendingPeak?.peakValue ?: 1.0) * 0.05)
-        return (pendingWentBelowStartMin && window.last() >= -returnTolerance) ||
+        val peakAbs = kotlin.math.abs(pendingPeak?.peakValue ?: 1.0)
+        val returnTolerance = kotlin.math.max(1e-9, peakAbs * 0.05)
+        val requiredDepth = kotlin.math.max(returnTolerance, peakAbs * MIN_NEGATIVE_DEPTH_FRACTION)
+        val negativePhaseDeveloped = pendingMinValue <= -requiredDepth
+        return (negativePhaseDeveloped && pendingWentBelowStartMin && window.last() >= -returnTolerance) ||
             (nowMs - pendingStartMs) >= maxExtraPhaseMs()
     }
 
@@ -341,6 +349,7 @@ class RepCounter(
         pendingStartMs = 0L
         pendingLastMs = 0L
         pendingStartMin = 0.0
+        pendingMinValue = 0.0
         pendingWentBelowStartMin = false
         pendingSawNegative = false
         recentAccelPeakTimestamps.clear()
@@ -392,6 +401,17 @@ class RepCounter(
         get() = templateMatcher.hasTemplate
 
     private companion object {
+        /**
+         * Mindesttiefe der exzentrischen Phase (Anteil des Peak-Betrags), bevor der
+         * Vollzyklus als abgeschlossen gilt. Ohne diese Schwelle schliesst das
+         * Pending-Fenster schon beim ERSTEN negativen Sample, sobald die Flanke am
+         * Nulldurchgang flacher als 5 Prozent des Peaks pro Sample ist - bei
+         * kontrolliertem Tempo (> ca. 2 s pro Wiederholung) ist das der Normalfall,
+         * und die Phasen-Validierung lehnt dann jede Rep als "Negative Phase zu
+         * kurz" ab.
+         */
+        const val MIN_NEGATIVE_DEPTH_FRACTION = 0.15
+
         /**
          * Faktor, ab dem eine Rep-Dauer als Ausreisser gilt (Befund 5.1).
          *

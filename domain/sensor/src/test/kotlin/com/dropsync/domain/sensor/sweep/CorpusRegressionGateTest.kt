@@ -49,7 +49,10 @@ class CorpusRegressionGateTest {
             SyntheticCorpus.gyroStream(2) +
                 List(60) { 0.0 } +
                 SyntheticCorpus.halfRepCycle() +
-                List(40) { 0.0 }
+                // 120 Samples = 2,4 s echte Ruhe: der ZUPT-Verwurf greift erst nach
+                // mindestens der halben erwarteten Rep-Dauer (Halte-Phasen von
+                // Pause-Reps duerfen kein Verwurf sein), nicht mehr schon nach 400 ms.
+                List(120) { 0.0 }
         val lines =
             buildList {
                 add("""{"t":"session_start","sessionId":"golden"}""")
