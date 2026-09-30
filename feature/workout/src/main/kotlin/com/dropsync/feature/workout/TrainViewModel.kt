@@ -531,6 +531,8 @@ class TrainViewModel
         fun setReps(value: String) {
             _repsInput.value = value
             _repsInputEdited.value = true
+            // Jede manuelle Eingabe macht die Zahl wieder zur eigenen (unabhaengigen) Aussage.
+            adoptedRecountReps = null
         }
 
         fun logSet() {
@@ -573,6 +575,7 @@ class TrainViewModel
                                 weightMilliKg = weightMilliKg,
                                 confirmedReps = reps,
                                 confirmedRepsEdited = repsEdited,
+                                recountAdopted = repsEdited && adoptedRecountReps == reps,
                                 liveCountedReps = counted,
                                 shadowReps = counted,
                                 // RC-17: Ablehnungsmechanismen mit ins JSONL.
@@ -1168,7 +1171,14 @@ class TrainViewModel
         fun adoptRecount() {
             val suggestion = recountSuggestion.value ?: return
             setReps(suggestion.analysisReps.toString())
+            adoptedRecountReps = suggestion.analysisReps
         }
+
+        /**
+         * Zahl, die per [adoptRecount] uebernommen und seither nicht manuell geaendert wurde.
+         * Nur fuer die Aufzeichnung: eine uebernommene Analyse ist keine unabhaengige Wahrheit.
+         */
+        private var adoptedRecountReps: Int? = null
 
         /**
          * RC-5: Herkunft der Rep-Zahl im Hero (UI-Handbuch 7.4). Zustand und

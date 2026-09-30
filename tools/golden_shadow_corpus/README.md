@@ -63,6 +63,15 @@ ausserhalb 15-25 ms. Solche Saetze sind fuer Parameter-Sweeps unbrauchbar
 (die 20-ms-Firmware-Garantie hat dann nicht gehalten) — die Meldung ist eine
 Diagnose, kein PASS/FAIL-Kriterium.
 
+## Nachzaehlung am Satzende (seit 2026-09-28)
+
+Das `set`-Event traegt zusaetzlich `recount` (Anzahl der Nachzaehlung aus den Rohsamples,
+`SetRecount`), `recountConfidence` (`HIGH`/`LOW`) und `recountAdopted`. `recountAdopted=true`
+heisst: die bestaetigte Zahl wurde per Tipp aus der Nachzaehlung uebernommen. Solche Saetze
+zaehlen NICHT als unabhaengige Wahrheit (`confirmedReps (edited)`), sonst wuerde die
+Nachzaehlung an sich selbst gemessen; ein `known_active_reps`-Eintrag im Manifest bleibt
+massgeblich. Auswertung: `liveCountedReps` und `recount` je gegen die Wahrheit.
+
 ## Abnahmekriterien (SHADOW_DIFF_HARNESS_PLAN.md Abschnitt 10)
 
 - Exakte Uebereinstimmung shadow == truth (Toleranz 0 Reps)
@@ -83,8 +92,8 @@ Diagnose, kein PASS/FAIL-Kriterium.
 
 ### Vorbereitung
 
-1. **Debug-Build installieren** (der JSONL-Recorder ist im normalen Build
-   aktiv, kein spezieller Schalter noetig).
+1. **Debug-Build installieren** (der JSONL-Recorder ist nur in debuggable
+   Builds aktiv, ADR-0023; einen Schalter gibt es nicht).
 2. **Chip verbinden:** Train-Tab -> Sensor verbinden. Warten bis der
    Zustand STREAMING zeigt (nicht nur CONNECTED).
 3. **Kalibrierung:** Fuer Szenario 2, 3, 5 vorher die Kalibrierung in der

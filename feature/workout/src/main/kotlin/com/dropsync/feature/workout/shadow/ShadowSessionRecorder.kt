@@ -109,6 +109,12 @@ data class ShadowDiffEvent(
      * gegenueber, um Pfad-Differenzen einzugrenzen. null bei Altaufrufern.
      */
     val diagnostics: SetDiagnostics? = null,
+    /**
+     * true, wenn [confirmedReps] per Tipp aus der Nachzaehlung uebernommen wurde. Eine
+     * uebernommene Analyse ist KEINE unabhaengige Wahrheit (Zirkelschluss beim Vergleich
+     * "Nachzaehlung gegen Wahrheit"), auch wenn [confirmedRepsEdited] true ist.
+     */
+    val recountAdopted: Boolean = false,
 ) {
     val delta: Int get() = shadowReps - confirmedReps
 
@@ -136,10 +142,16 @@ data class ShadowDiffEvent(
                     ",\"zuptAborted\":${it.zuptAbortedPending}" +
                     ",\"rateHz\":${it.measuredSampleRateHz}"
             } ?: ""
+        // Nachzaehlung am Satzende: Ergebnis der Analyse neben Live-Zahl und Bestaetigung,
+        // damit sich Live gegen Nachzaehlung auf echten Daten messen laesst.
+        val recountJson =
+            diagnostics?.recount?.let {
+                ",\"recount\":${it.count},\"recountConfidence\":\"${it.confidence.name}\""
+            } ?: ""
         return "{\"t\":\"set\",\"exerciseId\":$exerciseId,\"weightMilliKg\":$weightMilliKg," +
             "\"confirmedReps\":$confirmedReps,\"confirmedRepsEdited\":$confirmedRepsEdited," +
             "\"liveCountedReps\":$liveCountedReps,\"shadowReps\":$shadowReps,\"delta\":$delta," +
-            "\"rejections\":{$rejections}$diagnosticsJson}"
+            "\"rejections\":{$rejections}$diagnosticsJson$recountJson,\"recountAdopted\":$recountAdopted}"
     }
 }
 
