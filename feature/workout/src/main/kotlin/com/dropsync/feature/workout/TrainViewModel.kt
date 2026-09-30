@@ -1151,6 +1151,26 @@ class TrainViewModel
             }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
         /**
+         * Nachzaehlung am Satzende ([com.dropsync.domain.sensor.SetRecount]): eine konkrete
+         * Zahl aus dem ganzen Signal, wenn sie von der Live-Zaehlung abweicht und die
+         * Analyse sicher ist. Verschwindet, sobald die Person die Zahl selbst aendert
+         * (auch per [adoptRecount]). `Eagerly` aus demselben Grund wie [plausibilityHint].
+         */
+        val recountSuggestion: StateFlow<RecountSuggestion?> =
+            combine(
+                activeSetController.lastRecount,
+                _repsInputEdited,
+            ) { result, edited ->
+                if (edited) null else result?.toSuggestionOrNull()
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+        /** Uebernimmt die Nachzaehlung - erst dieser Tipp macht sie zur aktiven Korrektur. */
+        fun adoptRecount() {
+            val suggestion = recountSuggestion.value ?: return
+            setReps(suggestion.analysisReps.toString())
+        }
+
+        /**
          * RC-5: Herkunft der Rep-Zahl im Hero (UI-Handbuch 7.4). Zustand und
          * Ableitung liegen in [RepSourceTracker] — das ViewModel haelt nur
          * den Flow und meldet die Ereignisse (Stop, Reset, Abriss).

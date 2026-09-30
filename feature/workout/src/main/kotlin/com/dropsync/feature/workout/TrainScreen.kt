@@ -148,6 +148,7 @@ fun TrainScreen(
     val countdownSeconds by viewModel.countdownSeconds.collectAsStateWithLifecycle()
     val liveCountedReps by viewModel.liveCountedReps.collectAsStateWithLifecycle()
     val plausibilityHint by viewModel.plausibilityHint.collectAsStateWithLifecycle()
+    val recountSuggestion by viewModel.recountSuggestion.collectAsStateWithLifecycle()
     val countedZero by viewModel.countedZero.collectAsStateWithLifecycle()
     // RC-5: Quelle der Rep-Zahl im Hero (AUTO / KORRIGIERT / MANUELL / GETRENNT).
     val repsSource by viewModel.repsSource.collectAsStateWithLifecycle()
@@ -321,6 +322,7 @@ fun TrainScreen(
                     waveform = waveform,
                     lastPeakMs = lastPeakMs,
                     plausibilityHint = plausibilityHint,
+                    recountSuggestion = recountSuggestion,
                     countedZero = countedZero,
                     maxVolumeKg = maxVolumeKg,
                     restSeconds = restSeconds,
@@ -330,6 +332,7 @@ fun TrainScreen(
                     onIncrement = { viewModel.adjustWeight(2.5) },
                     onDecrement = { viewModel.adjustWeight(-2.5) },
                     onRepsChange = { viewModel.setReps(it) },
+                    onAdoptRecount = { viewModel.adoptRecount() },
                     onStartSet = { viewModel.startCountedSet() },
                     onStopSet = { viewModel.stopCountedSet() },
                     onLogSet = { viewModel.logSet() },
@@ -652,6 +655,38 @@ private fun PlausibilityHintRow(hint: PlausibilityHint) {
                 contentDescription = text
             },
     )
+}
+
+/**
+ * Nachzaehlung am Satzende: konkrete Zahl der Signalanalyse mit Uebernahme per Tipp.
+ * `liveRegion` Assertive aus demselben Grund wie bei [PlausibilityHintRow]: der Vorschlag
+ * gilt nur bis zum Loggen.
+ */
+@Composable
+private fun RecountSuggestionRow(
+    suggestion: RecountSuggestion,
+    onAdopt: () -> Unit,
+) {
+    val text = stringResource(R.string.recount_suggestion, suggestion.liveReps, suggestion.analysisReps)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = text,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.tertiary,
+            modifier =
+                Modifier.weight(1f).semantics {
+                    liveRegion = LiveRegionMode.Assertive
+                    contentDescription = text
+                },
+        )
+        TextButton(onClick = onAdopt) {
+            Text(text = stringResource(R.string.recount_adopt, suggestion.analysisReps))
+        }
+    }
 }
 
 @Composable
@@ -1716,6 +1751,7 @@ internal fun SetEntryHero(
     waveform: FloatArray,
     lastPeakMs: Long,
     plausibilityHint: PlausibilityHint?,
+    recountSuggestion: RecountSuggestion? = null,
     countedZero: Boolean,
     maxVolumeKg: Double?,
     restSeconds: Int,
@@ -1725,6 +1761,7 @@ internal fun SetEntryHero(
     onIncrement: () -> Unit,
     onDecrement: () -> Unit,
     onRepsChange: (String) -> Unit,
+    onAdoptRecount: () -> Unit = {},
     onStartSet: () -> Unit,
     onStopSet: () -> Unit,
     onLogSet: () -> Unit,
@@ -1794,9 +1831,16 @@ internal fun SetEntryHero(
         // Bewusst KEIN Gegenstueck fuer "Pruefung bestanden": die Pruefung ist
         // bei kurzen oder unregelmaessigen Saetzen stumm, und ein fehlender
         // Hinweis darf nie als Bestaetigung gelesen werden.
-        plausibilityHint?.let { hint ->
+        // Die Nachzaehlung hat Vorrang: beide sagen "die Zahl koennte falsch sein", die
+        // Nachzaehlung nennt aber eine konkrete Zahl und bietet die Uebernahme an.
+        if (recountSuggestion != null) {
             Spacer(Modifier.height(8.dp))
-            PlausibilityHintRow(hint)
+            RecountSuggestionRow(recountSuggestion, onAdopt = onAdoptRecount)
+        } else {
+            plausibilityHint?.let { hint ->
+                Spacer(Modifier.height(8.dp))
+                PlausibilityHintRow(hint)
+            }
         }
         // RC-4: 0 erkannte Reps sind kein stummes Nichts — der Nutzer bekommt
         // Grund und Handlung (manuell eintragen oder Signal pruefen), solange

@@ -186,6 +186,11 @@
          bestimmen, sie merkt nur, wenn die Signalperiodik widerspricht. -->
     <string name="plausibility_hint">Gezählt %1$d — der Bewegungsrhythmus sagt %2$d. Stimmt die Zahl?</string>
 
+    <!-- Nachzählung am Satzende (SetRecount): eine konkrete Zahl aus dem gesamten
+         Signal, die die Person mit einem Tipp übernehmen kann. Nie automatisch. -->
+    <string name="recount_suggestion">Signalanalyse: %2$d Wiederholungen (live gezählt: %1$d)</string>
+    <string name="recount_adopt">%1$d übernehmen</string>
+
     <!-- Kalibrierungs-Wizard (#26) -->
     <string name="calibration_title">Kalibrierung</string>
     <string name="calibration_no_chip">Kein Chip verbunden. Bitte zuerst den FlowRep-Chip verbinden.</string>

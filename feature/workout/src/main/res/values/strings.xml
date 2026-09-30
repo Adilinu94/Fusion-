@@ -185,6 +185,11 @@
          count, it only notices when the signal periodicity disagrees. -->
     <string name="plausibility_hint">Counted %1$d — the movement rhythm suggests %2$d. Is the number right?</string>
 
+    <!-- Recount at set end (SetRecount): a concrete number from the whole signal that
+         the person can adopt with one tap. Never applied automatically. -->
+    <string name="recount_suggestion">Signal analysis: %2$d reps (counted live: %1$d)</string>
+    <string name="recount_adopt">Use %1$d</string>
+
     <!-- Calibration wizard (#26) -->
     <string name="calibration_title">Calibration</string>
     <string name="calibration_no_chip">No chip connected. Please connect the FlowRep chip first.</string>
