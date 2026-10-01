@@ -69,7 +69,8 @@ class SettingsSectionsTest {
             libraryRepository = FakeLibraryRepository(),
             browseRepository = FakeLibraryBrowseRepository(),
             restMusicSettings = FakeRestMusicSettingsRepository(),
-            routeProfiles = FakeRouteProfileRepository(),
+            // Ohne Route bleibt der Abschnitt "Drop-Timing" ausgeblendet - bestehende Goldens/Zaehlungen gelten weiter.
+            routeProfiles = FakeRouteProfileRepository(initial = null),
             themeSettings = FakeThemeSettingsRepository(),
             accentColorSettings = FakeAccentColorRepository(),
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
