@@ -87,6 +87,15 @@
     <string name="settings_dropsync_label_work">Workout</string>
     <string name="settings_dropsync_label_rest">Rest</string>
     <string name="settings_dropsync_auto_hint">New tracks automatically get drop suggestions for review.</string>
+    <!-- Drop timing: output latency per route (speaker, wired, Bluetooth). The table value is
+         only an estimate; only a value the person has set counts as measured. -->
+    <string name="settings_drop_timing_title">Drop timing for this output</string>
+    <string name="settings_drop_timing_value">Output latency: %1$d ms</string>
+    <string name="settings_drop_timing_estimated">Estimated value for this output. Adjust it until the drop lands exactly on the end of the rest.</string>
+    <string name="settings_drop_timing_calibrated">Set for this output.</string>
+    <string name="settings_drop_timing_howto">If the drop comes too late, raise the value. If it comes too early, lower it.</string>
+    <string name="settings_drop_timing_reset">Reset to estimate</string>
+    <string name="a11y_drop_timing_ms">%1$d milliseconds output latency</string>
     <string name="settings_timing_hint">Timing adapts to your audio route. Bluetooth devices add latency of their own.</string>
     <string name="settings_extras_section">Workout extras</string>
     <string name="settings_data_section">Data</string>

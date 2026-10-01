@@ -87,6 +87,15 @@
     <string name="settings_dropsync_label_work">Work</string>
     <string name="settings_dropsync_label_rest">Pause</string>
     <string name="settings_dropsync_auto_hint">Neue Titel erhalten automatisch Drop-Vorschläge zur Prüfung.</string>
+    <!-- Drop-Timing: Ausgabe-Latenz je Route (Lautsprecher, Kabel, Bluetooth). Der Tabellenwert
+         ist nur eine Schätzung; erst die eingestellte Latenz gilt als gemessen. -->
+    <string name="settings_drop_timing_title">Drop-Timing dieser Ausgabe</string>
+    <string name="settings_drop_timing_value">Ausgabe-Latenz: %1$d ms</string>
+    <string name="settings_drop_timing_estimated">Geschätzter Wert für diese Ausgabe. Stell ihn so ein, dass der Drop genau mit dem Pausenende zusammenfällt.</string>
+    <string name="settings_drop_timing_calibrated">Für diese Ausgabe eingestellt.</string>
+    <string name="settings_drop_timing_howto">Kommt der Drop zu spät, erhöhe den Wert. Kommt er zu früh, verringere ihn.</string>
+    <string name="settings_drop_timing_reset">Auf Schätzung zurücksetzen</string>
+    <string name="a11y_drop_timing_ms">%1$d Millisekunden Ausgabe-Latenz</string>
     <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geräte bringen eigene Verzögerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
     <string name="settings_data_section">Daten</string>

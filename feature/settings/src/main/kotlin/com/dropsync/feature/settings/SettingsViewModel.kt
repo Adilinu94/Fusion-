@@ -26,7 +26,9 @@ import com.dropsync.domain.library.MarkerDocumentParser
 import com.dropsync.domain.library.MarkerRepository
 import com.dropsync.domain.library.ParsedMarkerDocument
 import com.dropsync.domain.library.Playlist
+import com.dropsync.domain.playback.AudioRouteProfile
 import com.dropsync.domain.playback.RestMusicSettingsRepository
+import com.dropsync.domain.playback.RouteProfileRepository
 import com.dropsync.domain.sensor.SensorHealth
 import com.dropsync.domain.sensor.SensorProvider
 import com.dropsync.domain.sensor.SetDiagnostics
@@ -48,6 +50,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -80,6 +83,7 @@ class SettingsViewModel
         libraryRepository: LibraryRepository,
         private val browseRepository: LibraryBrowseRepository,
         private val restMusicSettings: RestMusicSettingsRepository,
+        private val routeProfiles: RouteProfileRepository,
         private val themeSettings: ThemeSettingsRepository,
         private val accentColorSettings: AccentColorRepository,
         private val restTimerPreferences: RestTimerPreferencesRepository,
@@ -175,6 +179,40 @@ class SettingsViewModel
                 SharingStarted.WhileSubscribed(5_000),
                 RestTimerPreferencesRepository.DEFAULT_GET_READY_SECONDS,
             )
+
+        /**
+         * Ausgabe-Latenz der aktuellen Route fuers Drop-Timing (null = keine Route). Tabellenwerte
+         * sind nur Schaetzungen; erst eine hier eingestellte Latenz macht das Timing "stabil".
+         */
+        val dropTiming: StateFlow<DropTimingState?> =
+            routeProfiles.currentProfile
+                .map { profile ->
+                    profile?.let {
+                        DropTimingState(
+                            latencyMs = it.estimatedLatencyMs,
+                            calibrated = it.confidence == AudioRouteProfile.Confidence.CALIBRATED,
+                        )
+                    }
+                }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+        /** Stellt die Ausgabe-Latenz der aktuellen Route ein (geklemmt auf [DropTimingState.RANGE_MS]). */
+        fun setDropLatency(latencyMs: Long) {
+            viewModelScope.launch {
+                val current = routeProfiles.currentProfile.first() ?: return@launch
+                routeProfiles.upsert(
+                    current.copy(
+                        estimatedLatencyMs = latencyMs.coerceIn(DropTimingState.MIN_MS, DropTimingState.MAX_MS),
+                        confidence = AudioRouteProfile.Confidence.CALIBRATED,
+                        calibratedAt = null,
+                    ),
+                )
+            }
+        }
+
+        /** Verwirft die eingestellte Latenz der aktuellen Route; der Tabellenwert gilt wieder. */
+        fun resetDropLatency() {
+            viewModelScope.launch { routeProfiles.clearCalibration() }
+        }
 
         /** Bearbeitbare Rest-Schnellwahl in Sekunden (B8). */
         val restPresets: StateFlow<List<Int>> =

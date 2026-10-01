@@ -239,4 +239,8 @@ internal class FakeRouteProfiles(
     override suspend fun upsert(profile: AudioRouteProfile) {
         flows.value = profile
     }
+
+    override suspend fun clearCalibration() {
+        flows.value = flows.value?.copy(confidence = AudioRouteProfile.Confidence.ESTIMATED)
+    }
 }

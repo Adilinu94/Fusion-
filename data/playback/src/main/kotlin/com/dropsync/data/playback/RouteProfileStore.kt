@@ -80,6 +80,18 @@ class RouteProfileStore
             }
         }
 
+        override suspend fun clearCalibration() {
+            val key = routeKey(deviceMonitor.device.value) ?: return
+            profileStore.edit { prefs ->
+                prefs.remove(latencyKey(key))
+                prefs.remove(p50Key(key))
+                prefs.remove(p95Key(key))
+                prefs.remove(calibratedAtKey(key))
+                prefs.remove(confidenceKey(key))
+                prefs.remove(staleKey(key))
+            }
+        }
+
         /** Gespeichertes Profil; null wenn nie gemessen. */
         private fun storedProfile(
             key: String,

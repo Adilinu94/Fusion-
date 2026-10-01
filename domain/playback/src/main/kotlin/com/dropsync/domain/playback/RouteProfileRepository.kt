@@ -18,6 +18,12 @@ interface RouteProfileRepository {
     /** Markiert das aktuelle Profil als unsicher (Route-/Fokuswechsel). */
     suspend fun markStale()
 
-    /** Speichert/verfeinert ein Profil (z. B. nach lokaler Messung). */
+    /** Speichert/verfeinert ein Profil (z. B. nach lokaler Messung oder manueller Einstellung). */
     suspend fun upsert(profile: AudioRouteProfile)
+
+    /**
+     * Verwirft eine gespeicherte Einstellung der aktuellen Route; danach gilt wieder der
+     * Tabellenwert ([AudioRouteProfile.Confidence.ESTIMATED]).
+     */
+    suspend fun clearCalibration()
 }

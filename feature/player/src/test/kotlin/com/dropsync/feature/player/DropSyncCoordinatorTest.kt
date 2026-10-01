@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -1366,13 +1367,31 @@ private class CoordinatorDropTargetRepository : DropTargetRepository {
 private class CoordinatorRouteProfiles : RouteProfileRepository {
     var latencyMs: Long? = null
 
-    override val currentProfile: Flow<AudioRouteProfile?> = emptyFlow()
+    /** Wie die Latenz zustande kam; Tests mit einer eingestellten Route belassen CALIBRATED. */
+    var confidence: AudioRouteProfile.Confidence = AudioRouteProfile.Confidence.CALIBRATED
+
+    override val currentProfile: Flow<AudioRouteProfile?> =
+        flow {
+            emit(
+                latencyMs?.let {
+                    AudioRouteProfile(
+                        routeKey = "coordinator-test",
+                        sampleRate = 48_000,
+                        channels = 2,
+                        estimatedLatencyMs = it,
+                        confidence = confidence,
+                    )
+                },
+            )
+        }
 
     override suspend fun currentLatencyMs(): Long? = latencyMs
 
     override suspend fun markStale() = Unit
 
     override suspend fun upsert(profile: AudioRouteProfile) = Unit
+
+    override suspend fun clearCalibration() = Unit
 }
 
 private class CoordinatorRestDucking : RestDuckingGate {

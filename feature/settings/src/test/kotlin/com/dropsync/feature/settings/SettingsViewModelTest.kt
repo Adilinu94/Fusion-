@@ -7,6 +7,7 @@ import com.dropsync.core.model.ThemeMode
 import com.dropsync.core.testing.FakeFlatSetRepository
 import com.dropsync.core.testing.FakeLibraryBrowseRepository
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
+import com.dropsync.core.testing.FakeRouteProfileRepository
 import com.dropsync.core.testing.FakeSensorProvider
 import com.dropsync.core.testing.FakeSetDiagnosticsLog
 import com.dropsync.core.testing.FakeWorkoutRepository
@@ -75,6 +76,8 @@ class SettingsViewModelTest {
         Dispatchers.resetMain()
     }
 
+    private val routeProfiles = FakeRouteProfileRepository()
+
     private fun viewModel(audio: FakeAudioEngineRepository = FakeAudioEngineRepository()) =
         SettingsViewModel(
             context = RuntimeEnvironment.getApplication(),
@@ -82,6 +85,7 @@ class SettingsViewModelTest {
             libraryRepository = FakeLibraryRepository(),
             browseRepository = FakeLibraryBrowseRepository(),
             restMusicSettings = restMusic,
+            routeProfiles = routeProfiles,
             themeSettings = theme,
             accentColorSettings = accent,
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
@@ -189,6 +193,55 @@ class SettingsViewModelTest {
             assertEquals(AccentColor.BLUE, accent.lastWritten)
             assertEquals(true, libraryViews.lastShuffleWritten)
             assertEquals(5, goals.lastWritten)
+        }
+
+    @Test
+    fun `drop-timing zeigt die Schaetzung der Route und stellt sie ein`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.dropTiming.test {
+                awaitItem() // Startwert null, dann der Fake-Wert.
+                assertEquals(DropTimingState(latencyMs = 120L, calibrated = false), awaitItem())
+
+                model.setDropLatency(180L)
+                advanceUntilIdle()
+
+                assertEquals(180L, routeProfiles.lastUpserted?.estimatedLatencyMs)
+                assertEquals(
+                    com.dropsync.domain.playback.AudioRouteProfile.Confidence.CALIBRATED,
+                    routeProfiles.lastUpserted?.confidence,
+                )
+                val calibrated = awaitItem()
+                assertEquals(DropTimingState(latencyMs = 180L, calibrated = true), calibrated)
+            }
+        }
+
+    @Test
+    fun `drop-latenz wird auf den erlaubten Bereich geklemmt`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.setDropLatency(5_000L)
+            advanceUntilIdle()
+            assertEquals(DropTimingState.MAX_MS, routeProfiles.lastUpserted?.estimatedLatencyMs)
+
+            model.setDropLatency(-30L)
+            advanceUntilIdle()
+            assertEquals(DropTimingState.MIN_MS, routeProfiles.lastUpserted?.estimatedLatencyMs)
+        }
+
+    @Test
+    fun `zuruecksetzen verwirft die eingestellte Latenz`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+            model.setDropLatency(200L)
+            advanceUntilIdle()
+
+            model.resetDropLatency()
+            advanceUntilIdle()
+
+            assertEquals(1, routeProfiles.clearCalls)
         }
 
     @Test

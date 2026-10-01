@@ -13,6 +13,7 @@ import com.dropsync.core.designsystem.theme.FlowRepTheme
 import com.dropsync.core.testing.FakeFlatSetRepository
 import com.dropsync.core.testing.FakeLibraryBrowseRepository
 import com.dropsync.core.testing.FakeRestTimerPreferencesRepository
+import com.dropsync.core.testing.FakeRouteProfileRepository
 import com.dropsync.core.testing.FakeSensorProvider
 import com.dropsync.core.testing.FakeSetDiagnosticsLog
 import com.dropsync.core.testing.FakeWorkoutRepository
@@ -68,6 +69,7 @@ class SettingsSectionsTest {
             libraryRepository = FakeLibraryRepository(),
             browseRepository = FakeLibraryBrowseRepository(),
             restMusicSettings = FakeRestMusicSettingsRepository(),
+            routeProfiles = FakeRouteProfileRepository(),
             themeSettings = FakeThemeSettingsRepository(),
             accentColorSettings = FakeAccentColorRepository(),
             restTimerPreferences = FakeRestTimerPreferencesRepository(),
