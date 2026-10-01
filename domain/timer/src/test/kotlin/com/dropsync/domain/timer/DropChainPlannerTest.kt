@@ -98,6 +98,24 @@ class DropChainPlannerTest {
     }
 
     @Test
+    fun `Vorlauf wird bis in das Landungs-Segment durchgereicht`() {
+        val result =
+            DropChainPlanner.plan(
+                remainingRestMs = 120_000L,
+                currentSong = candidate(songId = 1L),
+                queue = listOf(candidate(songId = 2L, dropMs = 200_000L)),
+                latencyMs = 200L,
+                leadInMs = 6_000L,
+            )
+
+        val landing = planned(result).landing ?: error("Landung fehlt")
+        assertEquals(6_000L, landing.leadInMs)
+        assertEquals(194_000L, landing.startAtPositionMs)
+        // Der Drop faellt weiter aufs Pausenende (minus Latenz).
+        assertEquals(120_000L - 200L, landing.startsAfterMs + (200_000L - landing.startAtPositionMs))
+    }
+
+    @Test
     fun `letztes segment landet auf dem drop`() {
         // Die Landung startet so, dass Drop + Latenz + Crossfade genau am
         // Pausenende enden (bestehende Landungsmathematik).

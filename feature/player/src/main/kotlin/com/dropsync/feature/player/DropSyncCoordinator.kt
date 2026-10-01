@@ -629,6 +629,7 @@ class DropSyncCoordinator
                             DropLandingPlan.Kind.INTRO
                         },
                     crossfadeMs = outcome.crossfadeMs,
+                    leadInMs = landing.leadInMs,
                 )
             chainSongIds = chain.segments.map { it.songId }.toSet()
             chainJobs = scheduleChainFillers(session, outcome)
@@ -823,10 +824,7 @@ class DropSyncCoordinator
             plan: DropLandingPlan,
             lateMs: Long,
         ): Long =
-            when (plan.kind) {
-                DropLandingPlan.Kind.INTRO -> plan.startAtPositionMs + lateMs
-                DropLandingPlan.Kind.DIRECT_TO_DROP -> plan.startAtPositionMs
-            }
+            plan.startPositionAfterLate(lateMs)
 
         private suspend fun onLandingEvent(event: DropLandingEvent) {
             when (event) {
