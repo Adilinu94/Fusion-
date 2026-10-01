@@ -164,6 +164,18 @@ class TrackAnalyzerCancellationTest {
         assertEquals(1_102, stages.energyWindowSamples(44_100))
     }
 
+    /** Bass-Energie wird nur fuer die Onset-Stufe angelegt und liegt index-gleich zur Fullband-Energie. */
+    @Test
+    fun `bass-akkumulator entsteht nur mit Onset-Stufe`() {
+        val onsets = LazyAnalysisStages()
+        onsets.ensure(sampleRateHz = 48_000, includesOnsets = true, includesMix = false)
+        assertNotNull(onsets.bassEnergy)
+
+        val mixOnly = LazyAnalysisStages()
+        mixOnly.ensure(sampleRateHz = 48_000, includesOnsets = false, includesMix = true)
+        assertEquals(null, mixOnly.bassEnergy)
+    }
+
     /**
      * Die Stufen duerfen ihren Fensterzustand **nicht** verlieren, wenn
      * ein zweites Format-Event kommt (z. B. bei einem Decoder-Wechsel

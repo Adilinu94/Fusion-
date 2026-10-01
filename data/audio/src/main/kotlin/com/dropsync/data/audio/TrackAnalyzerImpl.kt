@@ -15,11 +15,12 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.AnalysisProfile
+import com.dropsync.domain.audio.BassEnergyAccumulator
 import com.dropsync.domain.audio.ChromaAccumulator
 import com.dropsync.domain.audio.DownbeatAccumulator
+import com.dropsync.domain.audio.DropDetection
 import com.dropsync.domain.audio.EnergyAccumulator
 import com.dropsync.domain.audio.LoudnessAccumulator
-import com.dropsync.domain.audio.OnsetDetection
 import com.dropsync.domain.audio.TempoAccumulator
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalyzer
@@ -163,8 +164,11 @@ class TrackAnalyzerImpl(
                     // sonst leer, ohne die Energie ueberhaupt zu berechnen.
                     onsetCandidatesMs =
                         if (includesOnsets && stages.energy != null) {
-                            OnsetDetection.detectOnsets(
-                                energyWindows = stages.energy!!.finish(),
+                            // Bass-Rueckkehr zuerst, Fullband-Spruenge fuellen auf; ohne Bass-
+                            // Energie identisch zum bisherigen Verhalten (DropDetection).
+                            DropDetection.candidatePositions(
+                                fullbandEnergy = stages.energy!!.finish(),
+                                bassEnergy = stages.bassEnergy?.finish().orEmpty(),
                                 windowDurationMs = ENERGY_WINDOW_MS.toLong(),
                             )
                         } else {
@@ -510,6 +514,7 @@ class TrackAnalyzerImpl(
     ) {
         waveform?.accept(monoSample)
         stages.energy?.accept(monoSample)
+        stages.bassEnergy?.accept(monoSample)
         stages.tempo?.accept(monoSample)
         stages.chroma?.accept(monoSample)
         stages.downbeat?.accept(monoSample)
@@ -592,6 +597,8 @@ private data class AnalysisTiming(
 internal class LazyAnalysisStages {
     var energy: EnergyAccumulator? = null
         private set
+    var bassEnergy: BassEnergyAccumulator? = null
+        private set
     var tempo: TempoAccumulator? = null
         private set
     var chroma: ChromaAccumulator? = null
@@ -617,6 +624,11 @@ internal class LazyAnalysisStages {
         // der Nur-Waveform-Pfad spart so die halbe Sample-Arbeit.
         if (includesOnsets) {
             energy = EnergyAccumulator(samplesPerWindow = energyWindowSamples(sampleRateHz))
+            bassEnergy =
+                BassEnergyAccumulator(
+                    sampleRateHz = sampleRateHz,
+                    samplesPerWindow = energyWindowSamples(sampleRateHz),
+                )
         }
         if (includesMix) {
             tempo = TempoAccumulator(sampleRateHz = sampleRateHz)
