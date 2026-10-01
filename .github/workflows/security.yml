@@ -1,0 +1,69 @@
+name: Security
+
+# Ergaenzung zu ci.yml (A5/B4 im Bericht vom 2026-09-28): ci.yml prueft Qualitaet, hier
+# liegen die Sicherheitspruefungen. Bewusst als EIGENE Datei: ci.yml hat eine dokumentierte,
+# bewusst sequenzielle Gate-Reihenfolge (Screenshot-Gate vor test), die hier nicht angefasst wird.
+#
+# - CodeQL (java-kotlin, build-mode none): statische Analyse ohne Gradle-Build, deshalb
+#   unabhaengig vom Android-SDK-Setup und schnell.
+# - Dependency Review: bei Pull Requests, schlaegt bei neuen Abhaengigkeiten mit bekannter
+#   Schwachstelle der Stufe "high" oder hoeher fehl. Braucht den Dependency Graph des Repos.
+
+on:
+  push:
+    branches: [master, "fusion/**"]
+  pull_request:
+  schedule:
+    # Montags 03:17 UTC: neue CodeQL-Regeln auch ohne Code-Aenderung anwenden.
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (Kotlin/Java)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # :training-core ist ein Submodul (wie in ci.yml).
+          submodules: recursive
+
+      - name: CodeQL initialisieren
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: none
+
+      - name: CodeQL-Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-kotlin"
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Abhaengigkeiten pruefen
+        # Exakter Tag: fuer diese Action gibt es kein bewegliches v4/v5-Tag (nur v1-v3 und Voll-Tags).
+        uses: actions/dependency-review-action@v4.9.0
+        with:
+          fail-on-severity: high
