@@ -71,7 +71,9 @@ internal fun withPulse(t: SyntheticTrace, start: Int, lenSamples: Int, amplitude
 internal fun concat(first: SyntheticTrace, second: SyntheticTrace, pauseMs: Long): SyntheticTrace {
     val offset = first.ts.last() + pauseMs
     return SyntheticTrace(
-        LongArray(first.ts.size + second.ts.size) { if (it < first.ts.size) first.ts[it] else second.ts[it - first.ts.size] + offset },
+        LongArray(first.ts.size + second.ts.size) {
+            if (it < first.ts.size) first.ts[it] else second.ts[it - first.ts.size] + offset
+        },
         first.gx + second.gx,
         first.az + second.az,
         first.truth + second.truth,

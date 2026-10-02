@@ -183,7 +183,9 @@ class DropDetectionTest {
         val steady = render(40.0, listOf(Section(0.0, 40.0, kick = 0.5, bass = 0.2, hats = 0.1)))
         assertTrue(
             "Dauer-Groove ohne Break: keine Bass-Rueckkehr",
-            DropDetection.detect(steady.fullband, steady.bass, windowMs).none { it.source == DropDetection.Source.BASS_RETURN },
+            DropDetection
+                .detect(steady.fullband, steady.bass, windowMs)
+                .none { it.source == DropDetection.Source.BASS_RETURN },
         )
     }
 
@@ -200,10 +202,16 @@ class DropDetectionTest {
             )
         val plain = DropDetection.detect(a.fullband, a.bass, windowMs).first().positionMs
         // Raster mit Beat bei 0: Position 44 s liegt auf 44000/468.75 = 93.87 Beats -> naechster Beat 94 = 44062 ms
-        val snapped = DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = DropDetection.BeatGrid(bpm, 0L)).first().positionMs
-        assertTrue("gerastet liegt auf einem Beat", abs(((snapped / beatMs) - Math.round(snapped / beatMs)) * beatMs) < 2.0)
-        val farGrid = DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = DropDetection.BeatGrid(bpm, 230L)).first().positionMs
-        assertTrue("Grid-Offset 230 ms ist weit weg: Position bleibt (plain=$plain, far=$farGrid)", farGrid == plain || abs(farGrid - plain) <= 60)
+        val onBeat = DropDetection.BeatGrid(bpm, 0L)
+        val snapped = DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = onBeat).first().positionMs
+        val offBeats = (snapped / beatMs) - Math.round(snapped / beatMs)
+        assertTrue("gerastet liegt auf einem Beat", abs(offBeats * beatMs) < 2.0)
+        val farOff = DropDetection.BeatGrid(bpm, 230L)
+        val farGrid = DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = farOff).first().positionMs
+        assertTrue(
+            "Grid-Offset 230 ms ist weit weg: Position bleibt (plain=$plain, far=$farGrid)",
+            farGrid == plain || abs(farGrid - plain) <= 60,
+        )
     }
 
     @Test

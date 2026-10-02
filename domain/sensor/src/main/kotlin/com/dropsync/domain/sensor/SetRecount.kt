@@ -65,7 +65,7 @@ object SetRecount {
     ): Result? {
         if (samples.size < MIN_SAMPLES || sampleRateHz <= 0.0) return null
         if (rotationAxis.size < 3 || gyroBias.size < 3) return null
-        val norm = sqrt(rotationAxis[0] * rotationAxis[0] + rotationAxis[1] * rotationAxis[1] + rotationAxis[2] * rotationAxis[2])
+        val norm = sqrt(rotationAxis.take(3).sumOf { it * it })
         if (norm < 1e-9) return null
         val ux = rotationAxis[0] / norm
         val uy = rotationAxis[1] / norm
@@ -88,7 +88,8 @@ object SetRecount {
         if (range < MIN_RANGE) return null
 
         val period = estimatePeriod(smooth, sampleRateHz)
-        val minDistance = ((period ?: DEFAULT_MIN_PERIOD_S) * sampleRateHz * MIN_DISTANCE_FRACTION).toInt().coerceAtLeast(3)
+        val minDistance =
+            ((period ?: DEFAULT_MIN_PERIOD_S) * sampleRateHz * MIN_DISTANCE_FRACTION).toInt().coerceAtLeast(3)
 
         val peaks = acceptedPeaks(smooth, range, minDistance, (sampleRateHz * MAX_PROMINENCE_SCAN_S).toInt())
         val medianProminence = peaks.medianProminence
@@ -106,7 +107,10 @@ object SetRecount {
                 widths[i] >= MIN_WIDTH_RATIO * medianWidth && widths[i] <= MAX_WIDTH_RATIO * medianWidth
             }
         val segments = linkSegments(shaped, periodSamples)
-        val main = segments.filter { it.size >= MIN_SEGMENT_REPS }.ifEmpty { listOfNotNull(segments.maxByOrNull { it.size }) }
+        val main =
+            segments
+                .filter { it.size >= MIN_SEGMENT_REPS }
+                .ifEmpty { listOfNotNull(segments.maxByOrNull { it.size }) }
         val hasOutliers = shaped.size < peaks.indices.size || segments.size > main.size
 
         // Vollzyklus: nach jedem Peak muss vor dem naechsten (bzw. innerhalb von
