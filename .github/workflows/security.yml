@@ -4,15 +4,19 @@ name: Security
 # liegen die Sicherheitspruefungen. Bewusst als EIGENE Datei: ci.yml hat eine dokumentierte,
 # bewusst sequenzielle Gate-Reihenfolge (Screenshot-Gate vor test), die hier nicht angefasst wird.
 #
-# - CodeQL (java-kotlin, build-mode none): statische Analyse ohne Gradle-Build, deshalb
-#   unabhaengig vom Android-SDK-Setup und schnell.
+# - CodeQL (java-kotlin): Kotlin wird von CodeQL NUR mit echtem Build analysiert (build-mode
+#   "none" verarbeitet in einem reinen Kotlin-Repo nichts und bricht ab). Gebaut wird deshalb
+#   mit Gradle, ohne Build-Cache und ohne Daemon, damit der Extraktor die Compiler-Laeufe sieht.
+#   Laeuft bewusst nicht bei jedem Feature-Branch-Push (lang): master, Pull Requests,
+#   woechentlich und manuell.
 # - Dependency Review: bei Pull Requests, schlaegt bei neuen Abhaengigkeiten mit bekannter
 #   Schwachstelle der Stufe "high" oder hoeher fehl. Braucht den Dependency Graph des Repos.
 
 on:
   push:
-    branches: [master, "fusion/**"]
+    branches: [master]
   pull_request:
+  workflow_dispatch:
   schedule:
     # Montags 03:17 UTC: neue CodeQL-Regeln auch ohne Code-Aenderung anwenden.
     - cron: "17 3 * * 1"
@@ -28,7 +32,7 @@ jobs:
   codeql:
     name: CodeQL (Kotlin/Java)
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 90
     permissions:
       contents: read
       security-events: write
@@ -40,11 +44,33 @@ jobs:
           # :training-core ist ein Submodul (wie in ci.yml).
           submodules: recursive
 
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gradlew ausfuehrbar
+        run: chmod +x ./gradlew
+
+      - name: Android-SDK
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -r | head -n1)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+
       - name: CodeQL initialisieren
         uses: github/codeql-action/init@v4
         with:
           languages: java-kotlin
-          build-mode: none
+          build-mode: manual
+
+      - name: Bauen (nur Kompilieren, ohne Cache und Daemon)
+        run: >
+          ./gradlew compileDebugKotlin compileKotlin
+          --no-daemon --no-build-cache --rerun-tasks
 
       - name: CodeQL-Analyse
         uses: github/codeql-action/analyze@v4
@@ -62,8 +88,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Exakter Tag: fuer diese Action gibt es kein bewegliches v4/v5-Tag (nur v1-v3 und Voll-Tags).
       - name: Abhaengigkeiten pruefen
-        # Exakter Tag: fuer diese Action gibt es kein bewegliches v4/v5-Tag (nur v1-v3 und Voll-Tags).
         uses: actions/dependency-review-action@v4.9.0
         with:
           fail-on-severity: high
