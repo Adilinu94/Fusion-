@@ -32,7 +32,10 @@ class DropDetectionTest {
         val highs: Double = 0.0,
     )
 
-    private class Analysis(val fullband: List<Double>, val bass: List<Double>)
+    private class Analysis(
+        val fullband: List<Double>,
+        val bass: List<Double>,
+    )
 
     private fun render(
         lengthS: Double,
@@ -91,6 +94,7 @@ class DropDetectionTest {
     @Test
     fun `Bass-Filter laesst 55 Hz durch und daempft 2 kHz stark`() {
         val spw = (sampleRate * windowMs / 1_000L).toInt()
+
         fun rms(freq: Double): Double {
             val acc = BassEnergyAccumulator(sampleRate, spw)
             for (i in 0 until sampleRate * 2) acc.accept(sin(2 * PI * freq * i / sampleRate))

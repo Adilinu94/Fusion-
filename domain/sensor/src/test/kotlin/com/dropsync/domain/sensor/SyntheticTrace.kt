@@ -11,9 +11,13 @@ import kotlin.math.sin
  * konzentrische und die exzentrische Phase, Rauschen, Tempo- und Amplitudenjitter,
  * Ermuedung. Ersetzt KEINE echten Aufnahmen (Gate 11b).
  */
-internal class SyntheticTrace(val ts: LongArray, val gx: DoubleArray, val az: DoubleArray, val truth: Int) {
-    fun toSamples(): List<SensorSample> =
-        ts.indices.map { SensorSample(ts[it], 0.0, 0.0, az[it], gx[it], 0.0, 0.0) }
+internal class SyntheticTrace(
+    val ts: LongArray,
+    val gx: DoubleArray,
+    val az: DoubleArray,
+    val truth: Int,
+) {
+    fun toSamples(): List<SensorSample> = ts.indices.map { SensorSample(ts[it], 0.0, 0.0, az[it], gx[it], 0.0, 0.0) }
 }
 
 internal fun trace(
@@ -50,7 +54,11 @@ internal fun trace(
 }
 
 /** Entfernt alle Samples mit Zeitstempel in [fromMs, toMs) - simuliert einen BLE-Ausfall. */
-internal fun withHole(t: SyntheticTrace, fromMs: Long, toMs: Long): SyntheticTrace {
+internal fun withHole(
+    t: SyntheticTrace,
+    fromMs: Long,
+    toMs: Long,
+): SyntheticTrace {
     val keep = t.ts.indices.filter { t.ts[it] < fromMs || t.ts[it] >= toMs }
     return SyntheticTrace(
         LongArray(keep.size) { t.ts[keep[it]] },
@@ -61,14 +69,23 @@ internal fun withHole(t: SyntheticTrace, fromMs: Long, toMs: Long): SyntheticTra
 }
 
 /** Addiert einen Sinus-Puls (eine volle Periode) der Laenge [lenSamples] ab Sample [start]. */
-internal fun withPulse(t: SyntheticTrace, start: Int, lenSamples: Int, amplitude: Double): SyntheticTrace {
+internal fun withPulse(
+    t: SyntheticTrace,
+    start: Int,
+    lenSamples: Int,
+    amplitude: Double,
+): SyntheticTrace {
     val gx = t.gx.copyOf()
     for (k in 0 until lenSamples) if (start + k < gx.size) gx[start + k] += amplitude * sin(2 * PI * k / lenSamples)
     return SyntheticTrace(t.ts, gx, t.az, t.truth)
 }
 
 /** Haengt [second] nach [pauseMs] Ruhe an [first] an (Cluster-Satz). Wahrheit = Summe. */
-internal fun concat(first: SyntheticTrace, second: SyntheticTrace, pauseMs: Long): SyntheticTrace {
+internal fun concat(
+    first: SyntheticTrace,
+    second: SyntheticTrace,
+    pauseMs: Long,
+): SyntheticTrace {
     val offset = first.ts.last() + pauseMs
     return SyntheticTrace(
         LongArray(first.ts.size + second.ts.size) {

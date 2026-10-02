@@ -647,11 +647,6 @@ private fun LinkMarkerDialog(
 }
 
 /**
- * Trainings-Extras (Musik-Workout-Plan Phase 6): Get-Ready-Vorlauf (B9),
- * bearbeitbare Rest-Schnellwahl (B8) und intelligentes Shuffle (A5).
- */
-@OptIn(ExperimentalLayoutApi::class)
-/**
  * Ausgabe-Latenz der aktuellen Route. Die Drop-Landung zieht diese Latenz von der Startzeit
  * ab; ein Tabellenwert (Lautsprecher, Kabel, Bluetooth-Codec) ist nur eine Schaetzung und
  * streut je Geraet um 100 ms und mehr. Hier stellt die Person ihn nach Gehoer ein - erst
@@ -716,6 +711,11 @@ private fun DropTimingSection(
     }
 }
 
+/**
+ * Trainings-Extras (Musik-Workout-Plan Phase 6): Get-Ready-Vorlauf (B9),
+ * bearbeitbare Rest-Schnellwahl (B8) und intelligentes Shuffle (A5).
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun WorkoutExtrasSection(
     getReadyEnabled: Boolean,

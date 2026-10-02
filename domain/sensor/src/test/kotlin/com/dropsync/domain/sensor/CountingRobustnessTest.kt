@@ -40,7 +40,10 @@ class CountingRobustnessTest {
         ),
     )
 
-    private fun feed(e: ExerciseEnginePipeline, t: SyntheticTrace) {
+    private fun feed(
+        e: ExerciseEnginePipeline,
+        t: SyntheticTrace,
+    ) {
         for (i in t.ts.indices) e.processSample(t.ts[i], t.gx[i], 0.0, 0.0, 0.0, 0.0, t.az[i])
     }
 
@@ -88,6 +91,7 @@ class CountingRobustnessTest {
         // Halbe Rep (nur konzentrisch), danach 4 s Ruhe: laenger als 0,5 x 2,4 s.
         val e = engine()
         var ts = 0L
+
         fun push(gx: Double) {
             e.processSample(ts, gx, 0.0, 0.0, 0.0, 0.0, 1.0)
             ts += 20L

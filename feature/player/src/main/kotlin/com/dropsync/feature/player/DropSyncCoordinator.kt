@@ -823,8 +823,7 @@ class DropSyncCoordinator
         private fun correctedStartPosition(
             plan: DropLandingPlan,
             lateMs: Long,
-        ): Long =
-            plan.startPositionAfterLate(lateMs)
+        ): Long = plan.startPositionAfterLate(lateMs)
 
         private suspend fun onLandingEvent(event: DropLandingEvent) {
             when (event) {

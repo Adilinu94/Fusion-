@@ -36,8 +36,10 @@ class SetRecountTest {
         return e.repCount.value
     }
 
-    private fun recount(t: SyntheticTrace, liveCount: Int) =
-        SetRecount.count(t.toSamples(), axis, bias, liveCount)
+    private fun recount(
+        t: SyntheticTrace,
+        liveCount: Int,
+    ) = SetRecount.count(t.toSamples(), axis, bias, liveCount)
 
     @Test
     fun `sauberer Satz - Nachzaehlung trifft die Wahrheit, stimmt mit live ueberein, kein Vorschlag`() {
