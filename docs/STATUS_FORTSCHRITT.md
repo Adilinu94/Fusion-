@@ -2352,3 +2352,27 @@ Deprecation-Sichtung, Abgleich der offenen Punkte aus den Plaenen.
   spotlessCheck, detekt, koverVerify, alle betroffenen Modul-Tests,
   Python-Gates (Baseline 19/23, Doku-Links, Design) und CRLF gruen.
   Restliste: `docs/UEBERARBEITUNGSBERICHT_2026-09-22.md`.
+
+## BC. Bericht 2026-09-28: Zaehl-, Drop- und Timing-Verbesserungen (Session: Claude-chat-2026-09-28)
+
+Quelle: Repo-Analyse vom 28.09.2026 (Stand `7c38967`). Entscheidungen: ADR-0028, 0029, 0030.
+Lokal verifiziert (Kotlin 2.4.10 + JUnit4, ohne Gradle/Android-SDK): `:domain:sensor` 194,
+`:domain:audio` 114, `:domain:timer` 76 Tests gruen; reine JVM-Teile der Feature-Module
+(Mapper, Konfidenz-Policy, Aufnahme-JSON) gelaufen. **Nicht gebaut/gelaufen:** alles mit
+Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`, `spotlessCheck`,
+`detekt` und `recordRoborazziDebug` (Now-Playing) laufen lassen.
+
+- [x] Zaehlpipeline: Tempo-Fehler im `RepCounter`, ZUPT-Abbruch nach langer Ruhe, Luecken-
+      Ueberbrueckung (ADR-0028). Synthetisch (80 Saetze x 10 Reps, 5 % Paketverlust + 1 % Bursts): exakt 5 % -> 98 %.
+- [x] `SetRecount` + Vorschlags-Zeile "Signalanalyse: n Wiederholungen" mit Uebernahme per Tipp.
+- [x] Shadow-Event: `recount`, `recountConfidence`, `recountAdopted`; Harness wertet
+      uebernommene Analysen nicht als Wahrheit. Release-Recorder bewusst NICHT (ADR-0023).
+- [x] Timing-Konfidenz `EXACT` nur bei eingestellter Latenz + Regler in den Einstellungen (ADR-0029).
+- [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030).
+- [~] Build-up-Vorlauf der Landung: implementiert, `DropSyncPlanner.LEAD_IN_MS = 0` bis zum Hoertest.
+- [x] Now-Playing: Play/Pause unter der Waveform (Goldens neu aufnehmen).
+- [!] Start-Tab (Musik/Train): Produktentscheidung, nicht geaendert.
+- [ ] Rest-Konsole (letzter Satz, naechstes Ziel, Chip-Farbe), Aufteilung von `TrainScreen`/
+      `TrainViewModel`/`NowPlayingScreen`: nicht umgesetzt (Compose ohne Build, Merge-Risiko
+      mit parallelen Sessions).
+- [x] CI: `security.yml` (CodeQL, Dependency Review); `ci.yml` unveraendert.

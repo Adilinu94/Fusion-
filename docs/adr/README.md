@@ -32,3 +32,6 @@ stammen aus dem jeweiligen Kopf. Neue ADRs hier mit einer Zeile ergaenzen.
 | [0025-beat-raster-offset-fuer-marker-snap.md](0025-beat-raster-offset-fuer-marker-snap.md) | ADR-0025: Beat-Raster-Offset fuer das Marker-Snap (B4/RC-22) | 2026-09-21 | Akzeptiert (Umsetzung B4, Stufe 1; Nutzerentscheidungen 5.11/5.12) |
 | [0026-health-write-back-aufgeschoben.md](0026-health-write-back-aufgeschoben.md) | ADR-0026: Health bleibt in V1 lesend, Write-back aufgeschoben | 2026-09-23 | Akzeptiert (Nutzerentscheidung im Analyse-Paket 6) |
 | [0027-build-logic-vor-toolchain-upgrade.md](0027-build-logic-vor-toolchain-upgrade.md) | ADR-0027: build-logic als eigener Umbau vor dem naechsten Toolchain-Upgrade | 2026-09-23 | Akzeptiert (Nutzerentscheidung im Analyse-Paket 6) |
+| [0028-zaehlrobustheit-und-nachzaehlung.md](0028-zaehlrobustheit-und-nachzaehlung.md) | ADR-0028: Zaehlrobustheit der Rep-Pipeline und Nachzaehlung am Satzende | 2026-09-28 | Akzeptiert |
+| [0029-timing-konfidenz-nur-bei-eingestellter-latenz.md](0029-timing-konfidenz-nur-bei-eingestellter-latenz.md) | ADR-0029: Timing-Konfidenz "exakt" nur bei eingestellter Latenz | 2026-09-28 | Akzeptiert |
+| [0030-drop-erkennung-ueber-bass-rueckkehr.md](0030-drop-erkennung-ueber-bass-rueckkehr.md) | ADR-0030: Drop-Erkennung ueber Bass-Rueckkehr statt nur Fullband-RMS | 2026-09-28 | Akzeptiert |
