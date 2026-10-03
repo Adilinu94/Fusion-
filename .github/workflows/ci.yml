@@ -16,7 +16,10 @@ concurrency:
 jobs:
   build:
     name: Test, Spotless, Assemble
-    runs-on: ubuntu-latest
+    # Fest auf 24.04: ubuntu-latest wechselt am 2026-10-19 auf 26, und die Roborazzi-Referenzen
+    # (auf Linux aufgenommen) rendern je Image-Version leicht anders. Beim bewussten Wechsel die
+    # Referenzen neu aufnehmen (record-goldens.yml) und hier alle runs-on gemeinsam umstellen.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
 
     steps:
@@ -184,7 +187,8 @@ jobs:
   # Tracking: VOLLSTAENDIGE_PROJEKTANALYSE_2026-09-23.md, Abschnitt 3.4.
   instrumented:
     name: Instrumentierte Tests (Emulator, vorlaeufig nicht blockierend)
-    runs-on: ubuntu-latest
+    # Siehe oben: Runner-Image fest auf 24.04.
+    runs-on: ubuntu-24.04
     timeout-minutes: 45
     continue-on-error: true
 
