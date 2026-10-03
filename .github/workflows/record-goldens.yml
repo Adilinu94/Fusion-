@@ -13,8 +13,6 @@ name: Goldens aufnehmen (Linux)
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["fusion/goldens-linux"]
 
 concurrency:
   group: record-goldens-${{ github.ref }}
