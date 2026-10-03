@@ -2371,7 +2371,7 @@ Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`
 - [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030).
 - [~] Build-up-Vorlauf der Landung: implementiert, `DropSyncPlanner.LEAD_IN_MS = 0` bis zum Hoertest.
 - [x] Now-Playing: Play/Pause unter der Waveform (Goldens neu aufnehmen).
-- [!] Start-Tab (Musik/Train): Produktentscheidung, nicht geaendert.
+- [x] Start-Tab: **Train** (Entscheidung des Nutzers, 2026-09-28); eine Konstante `START_TAB` in `TopLevelDestination.kt`.
 - [ ] Rest-Konsole (letzter Satz, naechstes Ziel, Chip-Farbe), Aufteilung von `TrainScreen`/
       `TrainViewModel`/`NowPlayingScreen`: nicht umgesetzt (Compose ohne Build, Merge-Risiko
       mit parallelen Sessions).

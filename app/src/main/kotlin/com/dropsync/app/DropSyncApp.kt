@@ -283,7 +283,7 @@ private fun DropSyncNavHost(
     val reducedMotion = LocalReducedMotion.current
     NavHost(
         navController = navController,
-        startDestination = TopLevelDestination.MUSIC.route,
+        startDestination = START_TAB.route,
         // Now-Playing als Sheet-Moment: von unten aufsteigend, zurueck
         // gleitend; alle anderen Ziele bleiben bei weichem Fade (kein
         // Slide-Wettlauf mit der Tab-Pille). Echte Shared-Element-Transition
