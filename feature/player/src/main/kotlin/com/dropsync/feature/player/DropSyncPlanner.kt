@@ -96,7 +96,10 @@ class DropSyncPlanner
         }
 
         /** Plant die Landung fuer [remainingMs] Restzeit. */
-        suspend fun plan(remainingMs: Long): Outcome {
+        suspend fun plan(
+            remainingMs: Long,
+            leadInMs: Long = 0L,
+        ): Outcome {
             val candidates = workCandidates()
             val latency = routeProfiles.currentLatencyMs()
             val routeConfidence = routeProfiles.currentProfile.firstOrNull()?.confidence
@@ -106,7 +109,7 @@ class DropSyncPlanner
                     candidates = candidates.drops,
                     latencyMs = latency ?: 0L,
                     crossfadeMs = crossfadeMs(),
-                    leadInMs = LEAD_IN_MS,
+                    leadInMs = leadInMs,
                 )
             val plan = (scheduled as? DropLandingResult.Scheduled)?.plan
             if (plan == null) {
@@ -156,6 +159,7 @@ class DropSyncPlanner
             queue: List<QueueItem>,
             currentIndex: Int,
             currentPositionMs: Long,
+            leadInMs: Long = 0L,
         ): ChainOutcome {
             val currentId = queue.getOrNull(currentIndex)?.songId
             val window = queue.drop(currentIndex + 1).take(DropChainPlanner.MAX_PLANNED_SONGS)
@@ -211,7 +215,7 @@ class DropSyncPlanner
                     queue = queueCandidates,
                     latencyMs = latency ?: 0L,
                     crossfadeMs = crossfade,
-                    leadInMs = LEAD_IN_MS,
+                    leadInMs = leadInMs,
                 )
             return when (result) {
                 is DropChainResult.NotPossible -> {
@@ -335,18 +339,6 @@ class DropSyncPlanner
             // D5/A7: EINE Abfrage fuer alle Playlists des Labels (vorher je
             // Playlist eine Query).
             browseRepository.songsForLabelOnce(label).getOrNull().orEmpty()
-
-        private companion object {
-            /**
-             * Build-up-Vorlauf bei DIRECT_TO_DROP (Titel steigt so viele ms VOR dem Drop ein, der
-             * Drop faellt weiter aufs Pausenende). **0 = aus** - bewusst, bis ein Hoertest auf
-             * dem Geraet vorliegt: der Wechsel von der Rest-Musik auf den Build-up passiert dann
-             * mitten in der Pause (harter Schnitt mit Mikro-Rampe, kein Crossfade), und ob das
-             * musikalisch besser klingt als der Direktsprung zum Go, laesst sich nur hoeren.
-             * Einschalten: auf [DropLandingPlanner.DEFAULT_LEAD_IN_MS] setzen.
-             */
-            const val LEAD_IN_MS: Long = 0L
-        }
 
         private data class WorkCandidates(
             val drops: List<WorkSongDrop>,

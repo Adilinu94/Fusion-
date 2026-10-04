@@ -218,6 +218,20 @@ class SettingsViewModelTest {
         }
 
     @Test
+    fun `build-up-schalter ist aus und wird geschrieben`() =
+        runTest(dispatcher) {
+            val model = viewModel()
+
+            model.dropLeadInEnabled.test {
+                assertEquals(false, awaitItem())
+                model.setDropLeadInEnabled(true)
+                advanceUntilIdle()
+                assertEquals(true, awaitItem())
+            }
+            assertEquals(true, restMusic.lastDropLeadInWritten)
+        }
+
+    @Test
     fun `drop-latenz wird auf den erlaubten Bereich geklemmt`() =
         runTest(dispatcher) {
             val model = viewModel()

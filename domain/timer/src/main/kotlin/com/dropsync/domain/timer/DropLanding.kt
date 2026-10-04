@@ -109,7 +109,8 @@ object DropLandingPlanner {
     /**
      * Build-up vor dem Drop bei DIRECT_TO_DROP: Der Titel steigt so lange vor dem Drop ein,
      * dass der Aufbau (Snare-Wirbel, Riser) zu hoeren ist. 6 s sind ca. 3 Takte bei 120 BPM.
-     * Startwert, nicht an echter Musik abgestimmt; 0 schaltet den Build-up ab.
+     * Startwert, nicht an echter Musik abgestimmt. Aktiv nur, wenn der Schalter "Build-up vor dem Drop"
+     * in den Einstellungen an ist (Standard aus, [RestMusicSettingsRepository.dropLeadInEnabled]).
      */
     const val DEFAULT_LEAD_IN_MS: Long = 6_000L
 

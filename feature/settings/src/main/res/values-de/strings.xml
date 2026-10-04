@@ -96,6 +96,8 @@
     <string name="settings_drop_timing_howto">Kommt der Drop zu spät, erhöhe den Wert. Kommt er zu früh, verringere ihn.</string>
     <string name="settings_drop_timing_reset">Auf Schätzung zurücksetzen</string>
     <string name="a11y_drop_timing_ms">%1$d Millisekunden Ausgabe-Latenz</string>
+    <string name="settings_drop_leadin_title">Build-up vor dem Drop (experimentell)</string>
+    <string name="settings_drop_leadin_desc">Liegt der Drop hinter dem Pausenende, steigt der Titel einige Sekunden vor dem Drop ein, damit du den Aufbau hörst. Der Wechsel passiert dann mitten in der Pause. Zum Ausprobieren, bitte nach Gehör prüfen.</string>
     <string name="settings_timing_hint">Das Timing passt sich deiner Audio-Route an. Bluetooth-Geräte bringen eigene Verzögerung mit; die Drop-Landung rechnet sie ein.</string>
     <string name="settings_extras_section">Trainings-Extras</string>
     <string name="settings_data_section">Daten</string>

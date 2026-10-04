@@ -104,6 +104,7 @@ fun SettingsScreen(
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val accentColor by viewModel.accentColor.collectAsStateWithLifecycle()
     val dropTiming by viewModel.dropTiming.collectAsStateWithLifecycle()
+    val dropLeadInEnabled by viewModel.dropLeadInEnabled.collectAsStateWithLifecycle()
     val getReadyEnabled by viewModel.getReadyEnabled.collectAsStateWithLifecycle()
     val getReadySeconds by viewModel.getReadySeconds.collectAsStateWithLifecycle()
     val restPresets by viewModel.restPresets.collectAsStateWithLifecycle()
@@ -202,6 +203,16 @@ fun SettingsScreen(
                     onReset = viewModel::resetDropLatency,
                 )
             }
+        }
+        item {
+            // Build-up vor dem Drop (experimentell): zum Ausprobieren nach Gehoer.
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_drop_leadin_title)) },
+                supportingContent = { Text(stringResource(R.string.settings_drop_leadin_desc)) },
+                trailingContent = {
+                    Switch(checked = dropLeadInEnabled, onCheckedChange = viewModel::setDropLeadInEnabled)
+                },
+            )
         }
         item {
             WorkoutExtrasSection(

@@ -604,6 +604,7 @@ class DropSyncCoordinator
                 queue = source.queue,
                 currentIndex = if (currentStillPlaying) source.currentIndex else -1,
                 currentPositionMs = if (currentStillPlaying) live.positionMs else 0L,
+                leadInMs = leadInMs(),
             )
         }
 
@@ -651,12 +652,19 @@ class DropSyncCoordinator
             )
         }
 
+        /**
+         * Build-up-Vorlauf der Direktsprung-Landung: nur wenn der Schalter in den Einstellungen
+         * an ist (Standard aus, Hoertest steht aus), sonst 0 = Sprung direkt auf den Drop.
+         */
+        private suspend fun leadInMs(): Long =
+            if (restMusicSettings.dropLeadInEnabled.first()) DropLandingPlanner.DEFAULT_LEAD_IN_MS else 0L
+
         /** Bestehender Pfad: genau EINE Landung aus der Work-Playlist. */
         private suspend fun planSingleLanding(
             session: TimerSession,
             remaining: Long,
         ) {
-            val outcome = planner.plan(remaining)
+            val outcome = planner.plan(remaining, leadInMs())
             if (outcome is DropSyncPlanner.Outcome.NotPossible) {
                 // C13: Eine rekonstruierte Sitzung, die nicht neu geplant
                 // werden kann, ist sichtbar "verloren" (5.8).

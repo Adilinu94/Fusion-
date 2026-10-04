@@ -52,8 +52,20 @@ class RestMusicSettingsStore(
         }
     }
 
+    override val dropLeadInEnabled: Flow<Boolean> =
+        context.restMusicSettingsDataStore.data.map { prefs ->
+            prefs[KEY_DROP_LEAD_IN] ?: RestMusicSettingsRepository.DEFAULT_DROP_LEAD_IN_ENABLED
+        }
+
+    override suspend fun setDropLeadInEnabled(enabled: Boolean) {
+        context.restMusicSettingsDataStore.edit { prefs ->
+            prefs[KEY_DROP_LEAD_IN] = enabled
+        }
+    }
+
     companion object {
         private val KEY_BEHAVIOR = stringPreferencesKey("rest_music_behavior")
         private val KEY_DROP_AUTO = booleanPreferencesKey("drop_auto_enabled")
+        private val KEY_DROP_LEAD_IN = booleanPreferencesKey("drop_lead_in_enabled")
     }
 }

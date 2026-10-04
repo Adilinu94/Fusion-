@@ -195,6 +195,18 @@ class SettingsViewModel
                     }
                 }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
+        /** Build-up vor dem Drop (experimentell, Standard aus). */
+        val dropLeadInEnabled: StateFlow<Boolean> =
+            restMusicSettings.dropLeadInEnabled.stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5_000),
+                RestMusicSettingsRepository.DEFAULT_DROP_LEAD_IN_ENABLED,
+            )
+
+        fun setDropLeadInEnabled(enabled: Boolean) {
+            viewModelScope.launch { restMusicSettings.setDropLeadInEnabled(enabled) }
+        }
+
         /** Stellt die Ausgabe-Latenz der aktuellen Route ein (geklemmt auf [DropTimingState.RANGE_MS]). */
         fun setDropLatency(latencyMs: Long) {
             viewModelScope.launch {
