@@ -92,7 +92,11 @@ class DualPlayerCrossfadeInstrumentedTest {
                         durationSeconds = 1,
                         preset = MixPreset.FADE,
                     )
-                    delay(250L)
+                    // Mitten in der 1-s-Ueberblendung messen, nicht an einer Tick-Grenze: der
+                    // Controller zaehlt Ticks (elapsedMs += 50), jedes delay(50) driftet leicht. Nach
+                    // 250 ms waren so erst 4 Ticks gelaufen (Fortschritt 0,2): die Ausblendkurve steht
+                    // dann bei ca. 0,951 und reisst die Obergrenze 0,95 um Haaresbreite (CI-Emulator).
+                    delay(400L)
                     assertTrue(
                         "incoming Media3 player should be playing during overlap",
                         incomingPlayer.isPlaying,
