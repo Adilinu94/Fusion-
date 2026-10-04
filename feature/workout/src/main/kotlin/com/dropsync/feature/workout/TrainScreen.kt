@@ -360,6 +360,10 @@ fun TrainScreen(
                     onOpenTimer = onOpenTimer,
                     onSetRestDuckDb = { viewModel.setRestDuckDb(it) },
                     onSetDropAuto = { viewModel.setDropAutoForCurrentRest(it) },
+                    lastSetText =
+                        lastSet?.let {
+                            stringResource(R.string.train_rest_last_set, it.weightMilliKg / 1_000_000.0, it.reps)
+                        },
                     modifier = Modifier.padding(horizontal = 16.dp),
                 )
             }
@@ -797,6 +801,7 @@ internal fun RestConsole(
     onOpenTimer: () -> Unit,
     onSetRestDuckDb: (Double) -> Unit,
     onSetDropAuto: (Boolean) -> Unit,
+    lastSetText: String? = null,
     modifier: Modifier = Modifier,
 ) {
     // MP-6: `+15 s` ist bei einem DropSync-Rest wirkungslos (die Dauer folgt
@@ -829,6 +834,16 @@ internal fun RestConsole(
                     remainingMs = remainingMs,
                     onOpenTimer = onOpenTimer,
                 )
+                // Der gerade geloggte Satz bleibt waehrend der Pause sichtbar (Gewicht x Wdh.),
+                // damit man nicht zurueckblaettern muss, um das naechste Ziel zu bestimmen.
+                lastSetText?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
                 RestConsoleActions(
                     canExtend = canExtend,
                     canCancelPlan = canCancelPlan,
