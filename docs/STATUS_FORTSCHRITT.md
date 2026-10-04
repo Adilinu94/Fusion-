@@ -2369,10 +2369,15 @@ Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`
       uebernommene Analysen nicht als Wahrheit. Release-Recorder bewusst NICHT (ADR-0023).
 - [x] Timing-Konfidenz `EXACT` nur bei eingestellter Latenz + Regler in den Einstellungen (ADR-0029).
 - [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030).
-- [~] Build-up-Vorlauf der Landung: implementiert, `DropSyncPlanner.LEAD_IN_MS = 0` bis zum Hoertest.
-- [x] Now-Playing: Play/Pause unter der Waveform (Goldens neu aufnehmen).
+- [~] Build-up-Vorlauf der Landung: implementiert und per Schalter erreichbar (Einstellungen > "Build-up vor dem Drop
+      (experimentell)", Standard aus, `RestMusicSettings.dropLeadInEnabled`). Offen: Hoertest am Geraet, danach Default entscheiden.
+- [x] Now-Playing: Play/Pause unter der Waveform.
 - [x] Start-Tab: **Train** (Entscheidung des Nutzers, 2026-09-28); eine Konstante `START_TAB` in `TopLevelDestination.kt`.
-- [ ] Rest-Konsole (letzter Satz, naechstes Ziel, Chip-Farbe), Aufteilung von `TrainScreen`/
-      `TrainViewModel`/`NowPlayingScreen`: nicht umgesetzt (Compose ohne Build, Merge-Risiko
-      mit parallelen Sessions).
-- [x] CI: `security.yml` (CodeQL, Dependency Review); `ci.yml` unveraendert.
+- [x] Rest-Konsole: zuletzt geloggter Satz unter dem Timer, DropSync-Chips in Palettenfarbe (kein Lavendel).
+      Ein "naechstes Ziel" gibt es nicht: die App kennt keinen Trainingsplan pro Satz.
+- [x] Aufteilung: `TrainScreen.kt` 2.177 -> 829 Zeilen (+ `RestConsole.kt`, `SetEntryHero.kt`), `NowPlayingScreen.kt`
+      1.519 -> 1.077 Zeilen (+ `NowPlayingWaveform.kt`, `NowPlayingDropSync.kt`); rein mechanisch, Zeilenbilanz geprueft.
+      `TrainViewModel.kt` (1.554 Zeilen) bleibt ungeteilt: eine Klasse laesst sich nicht rein mechanisch zerlegen.
+- [x] CI: Screenshot-Gate gruen (Referenzen auf Linux aufgenommen, `record-goldens.yml`), Runner fest auf `ubuntu-24.04`,
+      `security.yml` (CodeQL, Dependency Review), Dependency-Verification fuer Linux ergaenzt.
+- [x] Instrumentierte Tests: `DualPlayerCrossfadeInstrumentedTest` war der einzige rote von sechs (Tick-Race im Test).

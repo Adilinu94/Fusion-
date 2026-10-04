@@ -30,4 +30,5 @@ oben, der Tiefbass kehrt zurueck - fallen durch.
   erneut laeuft. Die Beat-Raster-Rastung ist im Detektor getestet, im Analyzer aber nicht
   verdrahtet: die Onset-Stufe berechnet kein Tempo (nur die Mix-Stufe).
 - Build-up-Vorlauf der Landung (`DropLandingPlanner.plan(leadInMs)`): implementiert und
-  getestet, `DropSyncPlanner.LEAD_IN_MS = 0` (aus), bis ein Hoertest vorliegt.
+  getestet und per Schalter erreichbar (Einstellungen > "Build-up vor dem Drop (experimentell)", Standard aus,
+  `RestMusicSettings.dropLeadInEnabled`), bis ein Hoertest vorliegt.
