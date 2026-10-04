@@ -237,7 +237,11 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: ./gradlew connectedCheck --stacktrace
+          # Das Benchmark-Modul (Macrobenchmark, com.android.test) ist ausgenommen: Macrobenchmarks
+          # brauchen ein echtes Geraet und scheitern auf dem Emulator in allen vier connected-Tasks
+          # ("There were failing tests"). Es wird im Hauptjob weiter assembliert
+          # (:benchmarks:assembleBenchmarkRelease), laeuft aber nicht hier.
+          script: ./gradlew connectedCheck -x :benchmarks:connectedCheck --stacktrace
 
       - name: Instrumentierte Berichte hochladen (bei Fehlschlag)
         if: failure()
