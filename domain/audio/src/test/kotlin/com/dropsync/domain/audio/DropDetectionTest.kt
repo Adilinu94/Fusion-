@@ -219,6 +219,37 @@ class DropDetectionTest {
     }
 
     @Test
+    fun `Taktraster nur bei ausreichender Konfidenz von Tempo und Downbeat`() {
+        val ok = DropDetection.beatGrid(TempoEstimate(128f, 0.8f), DownbeatEstimate(120L, 0.5f))
+        assertEquals(DropDetection.BeatGrid(128.0, 120L), ok)
+        assertEquals(null, DropDetection.beatGrid(TempoEstimate(128f, 0.1f), DownbeatEstimate(120L, 0.5f)))
+        assertEquals(null, DropDetection.beatGrid(TempoEstimate(128f, 0.8f), DownbeatEstimate(120L, 0.05f)))
+        assertEquals(null, DropDetection.beatGrid(null, DownbeatEstimate(120L, 0.5f)))
+        assertEquals(null, DropDetection.beatGrid(TempoEstimate(128f, 0.8f), null))
+    }
+
+    @Test
+    fun `vor dem Raster-Offset und ausserhalb von 30 bis 300 BPM wird nicht gerastet`() {
+        val a =
+            render(
+                70.0,
+                listOf(
+                    Section(0.0, 20.0, kick = 0.5, bass = 0.2, hats = 0.1),
+                    Section(20.0, 44.0, hats = 0.05, pad = 0.55, riserTo = 0.9),
+                    Section(44.0, 70.0, kick = 0.5, bass = 0.2, hats = 0.1),
+                ),
+            )
+        val plain = DropDetection.detect(a.fullband, a.bass, windowMs).first().positionMs
+        val offsetBehind = DropDetection.BeatGrid(bpm, plain + 10_000L)
+        assertEquals(
+            plain,
+            DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = offsetBehind).first().positionMs,
+        )
+        val tooFast = DropDetection.BeatGrid(400.0, 0L)
+        assertEquals(plain, DropDetection.detect(a.fullband, a.bass, windowMs, beatGrid = tooFast).first().positionMs)
+    }
+
+    @Test
     fun `Mindestabstand und Maximalzahl werden eingehalten`() {
         val sections = ArrayList<Section>()
         // vier Break/Drop-Zyklen im Abstand von 30 s

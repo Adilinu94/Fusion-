@@ -170,6 +170,8 @@ class TrackAnalyzerImpl(
                                 fullbandEnergy = stages.energy!!.finish(),
                                 bassEnergy = stages.bassEnergy?.finish().orEmpty(),
                                 windowDurationMs = ENERGY_WINDOW_MS.toLong(),
+                                // Nur im Profil FULL liegen Tempo und Downbeat vor (sonst null).
+                                beatGrid = DropDetection.beatGrid(tempoEstimate, downbeatEstimate),
                             )
                         } else {
                             emptyList()

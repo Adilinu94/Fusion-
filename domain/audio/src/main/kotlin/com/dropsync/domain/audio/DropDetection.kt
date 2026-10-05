@@ -43,6 +43,20 @@ object DropDetection {
         val downbeatOffsetMs: Long,
     )
 
+    /**
+     * Taktraster nur, wenn Tempo UND Downbeat die Konfidenz-Schwellen der Mix-Analyse erreichen
+     * ([MixConfidence.MIN_BPM_CONFIDENCE], [DownbeatConfidence.MIN_SNAP_CONFIDENCE]) - dieselben
+     * wie beim Marker-Snap in der UI (ADR-0025). Sonst null: die Kandidaten bleiben ungerastet.
+     */
+    fun beatGrid(
+        tempo: TempoEstimate?,
+        downbeat: DownbeatEstimate?,
+    ): BeatGrid? {
+        val bpm = MixConfidence.acceptBpm(tempo?.bpm, tempo?.confidence) ?: return null
+        val offset = DownbeatConfidence.acceptOffset(downbeat?.offsetMs, downbeat?.confidence) ?: return null
+        return BeatGrid(bpm.toDouble(), offset)
+    }
+
     /** Kandidaten, staerkster zuerst (Bass-Rueckkehr vor Fullband). */
     fun detect(
         fullbandEnergy: List<Double>,
@@ -145,15 +159,23 @@ object DropDetection {
         return bestIndex * windowMs
     }
 
+    /**
+     * Rastet [positionMs] auf den naechsten Beat ab dem Raster-Offset ein, wie der Marker-Snap
+     * (ADR-0025): nie VOR dem Offset (dort gibt es keinen Beat), nur im Bereich 30-300 BPM und nur,
+     * wenn der Beat nah genug liegt (hoechstens [SNAP_TOLERANCE_MS] und ein Viertel Beat).
+     */
     private fun snap(
         positionMs: Long,
         grid: BeatGrid?,
     ): Long {
-        if (grid == null || grid.bpm <= 0.0) return positionMs
+        if (grid == null || grid.bpm !in MIN_SNAP_BPM..MAX_SNAP_BPM) return positionMs
+        val offset = grid.downbeatOffsetMs.coerceAtLeast(0L)
+        if (positionMs < offset) return positionMs
         val beatMs = 60_000.0 / grid.bpm
-        val k = ((positionMs - grid.downbeatOffsetMs) / beatMs).roundToLong()
-        val snapped = (grid.downbeatOffsetMs + k * beatMs).roundToLong()
-        return if (abs(snapped - positionMs) <= SNAP_TOLERANCE_MS && snapped >= 0) snapped else positionMs
+        val k = ((positionMs - offset) / beatMs).roundToLong()
+        val snapped = (offset + k * beatMs).roundToLong()
+        val tolerance = minOf(SNAP_TOLERANCE_MS.toDouble(), beatMs / 4.0)
+        return if (abs(snapped - positionMs) <= tolerance) snapped else positionMs
     }
 
     private fun mean(
@@ -189,4 +211,6 @@ object DropDetection {
 
     /** Rasten nur, wenn der Takt-Punkt nah genug liegt - sonst bleibt die gemessene Position. */
     private const val SNAP_TOLERANCE_MS = 60L
+    private const val MIN_SNAP_BPM = 30.0
+    private const val MAX_SNAP_BPM = 300.0
 }
