@@ -27,8 +27,10 @@ oben, der Tiefbass kehrt zurueck - fallen durch.
 - Schwellen sind Startwerte; belegt nur durch `DropDetectionTest` (Kick/Bass/Hats/Pad/Riser).
   Ein Satz selbst gelabelter echter Tracks (z. B. 20, Treffer +-1 Beat) ist der naechste Beleg.
 - Kein Analyzer-Version-Bump: vorhandene Kandidaten bleiben, bis "Drops automatisch erkennen"
-  erneut laeuft. Die Beat-Raster-Rastung ist im Detektor getestet, im Analyzer aber nicht
-  verdrahtet: die Onset-Stufe berechnet kein Tempo (nur die Mix-Stufe).
+  erneut laeuft. Im Profil FULL werden die Kandidaten zusaetzlich auf das Taktraster gerastet
+  (`DropDetection.beatGrid`, Konfidenz-Schwellen wie beim Marker-Snap, ADR-0025: Tempo 0,33, Downbeat 0,2;
+  nie vor dem Raster-Offset, 30-300 BPM, hoechstens 60 ms und ein Viertel Beat). Profile ohne Mix-Stufe
+  berechnen kein Tempo und bleiben ungerastet.
 - Build-up-Vorlauf der Landung (`DropLandingPlanner.plan(leadInMs)`): implementiert und
   getestet und per Schalter erreichbar (Einstellungen > "Build-up vor dem Drop (experimentell)", Standard aus,
   `RestMusicSettings.dropLeadInEnabled`), bis ein Hoertest vorliegt.

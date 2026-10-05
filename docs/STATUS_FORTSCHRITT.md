@@ -2368,7 +2368,7 @@ Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`
 - [x] Shadow-Event: `recount`, `recountConfidence`, `recountAdopted`; Harness wertet
       uebernommene Analysen nicht als Wahrheit. Release-Recorder bewusst NICHT (ADR-0023).
 - [x] Timing-Konfidenz `EXACT` nur bei eingestellter Latenz + Regler in den Einstellungen (ADR-0029).
-- [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030).
+- [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030); im Profil FULL zusaetzlich auf das Taktraster gerastet.
 - [~] Build-up-Vorlauf der Landung: implementiert und per Schalter erreichbar (Einstellungen > "Build-up vor dem Drop
       (experimentell)", Standard aus, `RestMusicSettings.dropLeadInEnabled`). Offen: Hoertest am Geraet, danach Default entscheiden.
 - [x] Now-Playing: Play/Pause unter der Waveform.
@@ -2381,3 +2381,10 @@ Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`
 - [x] CI: Screenshot-Gate gruen (Referenzen auf Linux aufgenommen, `record-goldens.yml`), Runner fest auf `ubuntu-24.04`,
       `security.yml` (CodeQL, Dependency Review), Dependency-Verification fuer Linux ergaenzt.
 - [x] Instrumentierte Tests: `DualPlayerCrossfadeInstrumentedTest` war der einzige rote von sechs (Tick-Race im Test).
+- [x] Tests fuer den Nachzaehlungs-Vorschlag im `TrainViewModel` (Vorschlag, Uebernahme, Editieren); README-Aussage zur
+      absoluten `minNovelty` korrigiert (Befund 10.4 erledigt).
+- [ ] **Offen, bewusst nicht geaendert (Befund 5.8):** `PeakDetector` startet sein Prominenz-Gate im Live-Pfad mit
+      `spk = detectionThreshold`; `config.expectedProminence` speist nur den `QualityScorer`. Der Fix in `updateThreshold`
+      greift dort nicht. Wirkung: nur die ersten Peaks, danach passt sich `spk` an. Zusaetzlich mischt der Kommentar
+      zwei Groessen (`spk` = Peak-Wert, `expectedProminence` = Peak minus Tal). Ohne echte Saetze nicht entscheidbar:
+      erst am Korpus (Gate 11b) pruefen, ob die Startphase Reps verliert oder Stoerungen durchlaesst.
