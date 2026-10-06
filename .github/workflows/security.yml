@@ -92,8 +92,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Die Action bricht ohne aktivierten Dependency Graph mit "not supported on this repository" ab
+      # (Repo-Einstellung, nicht Code). Damit der Job nicht dauerhaft rot auf jedem PR steht, wird der
+      # Graph vorher abgefragt (SBOM-Endpunkt: 200 nur bei aktivem Graph) und die Pruefung sonst
+      # uebersprungen. Aktivieren: Settings > Advanced Security > Dependency graph; danach laeuft sie von selbst.
+      - name: Dependency Graph verfuegbar?
+        id: graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dependency-graph/sbom")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dependency Review uebersprungen::Der Dependency Graph ist fuer dieses Repository nicht aktiv (HTTP $code). Aktivieren unter Settings > Advanced Security > Dependency graph."
+          fi
+
       # Exakter Tag: fuer diese Action gibt es kein bewegliches v4/v5-Tag (nur v1-v3 und Voll-Tags).
       - name: Abhaengigkeiten pruefen
+        if: steps.graph.outputs.enabled == 'true'
         uses: actions/dependency-review-action@v4.9.0
         with:
           fail-on-severity: high
