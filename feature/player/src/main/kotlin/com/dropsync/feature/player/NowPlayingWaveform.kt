@@ -204,6 +204,19 @@ internal fun PowerampWaveformTransport(
                     Unit
                 }
             }
+            // Play/Pause liegt auf der Abspielposition der Waveform (Vorbild: Poweramp). Die laufende
+            // Waveform haelt die Position in der Mitte, der Button bleibt dort stehen.
+            IconButton(
+                onClick = onTogglePlayPause,
+                modifier = Modifier.size(PLAY_BUTTON_SIZE).background(palette.accent, CircleShape),
+            ) {
+                Icon(
+                    painter = painterResource(if (isPlaying) BrandIcons.Pause else BrandIcons.Play),
+                    contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
+                    tint = palette.onAccent,
+                    modifier = Modifier.size(30.dp),
+                )
+            }
         }
         Row(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
@@ -218,25 +231,6 @@ internal fun PowerampWaveformTransport(
                 // C1 (7.2): Typo-Skala statt 15-sp-Literal.
                 style = MaterialTheme.typography.bodyMedium,
             )
-        }
-        // Play/Pause UNTER der Waveform statt darauf: die laufende Waveform haelt die
-        // Abspielposition in der Mitte, dort verdeckte der Button genau den Bereich, den man
-        // zum Setzen und Verschieben von Markern sehen muss.
-        Box(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            IconButton(
-                onClick = onTogglePlayPause,
-                modifier = Modifier.size(PLAY_BUTTON_SIZE).background(palette.accent, CircleShape),
-            ) {
-                Icon(
-                    painter = painterResource(if (isPlaying) BrandIcons.Pause else BrandIcons.Play),
-                    contentDescription = stringResource(if (isPlaying) R.string.player_pause else R.string.player_play),
-                    tint = palette.onAccent,
-                    modifier = Modifier.size(30.dp),
-                )
-            }
         }
     }
 }
