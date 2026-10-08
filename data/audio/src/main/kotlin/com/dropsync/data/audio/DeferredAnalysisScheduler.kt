@@ -1,6 +1,7 @@
 package com.dropsync.data.audio
 
 import android.content.Context
+import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
@@ -78,7 +79,7 @@ class WorkManagerAnalysisScheduler(
             .enqueueUniqueWork(
                 "track_analysis_$songId",
                 ExistingWorkPolicy.KEEP,
-                request(songId, AnalysisProfile.FULL),
+                request(songId, AnalysisProfile.FULL, requireBatteryNotLow = true),
             )
     }
 
@@ -108,10 +109,17 @@ class WorkManagerAnalysisScheduler(
             )
     }
 
+    /**
+     * @param requireBatteryNotLow nur fuer die Massenanalyse neu importierter Songs: bei schwachem Akku
+     *   wird sie zurueckgestellt. Alles, was der Nutzer ausgeloest hat (Mix-Metadaten, Onset-Erkennung,
+     *   Waveform-Vorwaermen), laeuft ohne Einschraenkung.
+     */
     private fun request(
         songId: Long,
         profile: AnalysisProfile,
+        requireBatteryNotLow: Boolean = false,
     ) = OneTimeWorkRequestBuilder<TrackAnalysisWorker>()
+        .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(requireBatteryNotLow).build())
         .setInputData(
             workDataOf(
                 TrackAnalysisWorker.KEY_SONG_ID to songId,

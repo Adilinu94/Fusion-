@@ -48,7 +48,15 @@ class TrackAnalyzerImpl(
     ): AppResult<TrackAnalysis> =
         withContext(dispatchers.default) {
             try {
-                AppResult.success(decodeAndAccumulate(song, profile))
+                AppResult.success(
+                    if (profile == AnalysisProfile.WAVEFORM_ONLY) {
+                        // Waveform des laufenden Titels: ungedrosselt (der Nutzer wartet darauf).
+                        decodeAndAccumulate(song, profile)
+                    } else {
+                        // Alles andere ist Hintergrundarbeit: ein Lauf zugleich, niedrige Prioritaet.
+                        backgroundGate.background { decodeAndAccumulate(song, profile) }
+                    },
+                )
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 // Umbauplan Phase 10.4: Abbruch ist KEIN Analysefehler und
                 // darf nie als Cache-Eintrag enden - weiterwerfen.
@@ -529,6 +537,9 @@ class TrackAnalyzerImpl(
     }
 
     companion object {
+        /** Prozessweit: alle Analyzer-Instanzen teilen sich EIN Hintergrund-Gate (siehe [AnalysisGate]). */
+        private val backgroundGate = AnalysisGate()
+
         private const val LOG_TAG = "TrackAnalyzer"
         private const val TIMING_LOG_TAG = "TrackAnalysisTiming"
         private const val NS_PER_MS = 1_000_000L
