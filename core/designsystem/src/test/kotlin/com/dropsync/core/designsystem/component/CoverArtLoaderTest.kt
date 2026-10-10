@@ -5,6 +5,7 @@ import android.graphics.Bitmap
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.test.core.app.ApplicationProvider
+import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -18,7 +19,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
@@ -26,7 +27,8 @@ import java.util.concurrent.atomic.AtomicInteger
  * "kein Cover" ist endgueltig, ein Fehlschlag nur kurz gemerkt, Treffer werden gecacht, und die
  * parallelen Dekodierungen sind begrenzt.
  */
-@RunWith(RobolectricTestRunner::class)
+@RunWith(AndroidJUnit4::class)
+@Config(sdk = [34])
 class CoverArtLoaderTest {
     private val context: Context get() = ApplicationProvider.getApplicationContext()
     private var nowMs = 1_000L
