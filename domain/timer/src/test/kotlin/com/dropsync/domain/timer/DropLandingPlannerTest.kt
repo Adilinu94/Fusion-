@@ -18,6 +18,114 @@ class DropLandingPlannerTest {
         markerId: Long = songId * 10,
     ) = WorkSongDrop(songId = songId, dropPositionMs = dropMs, durationMs = durationMs, markerId = markerId)
 
+    // --- Build-up-Vorlauf (leadInMs) ----------------------------------------
+
+    @Test
+    fun `Direktsprung mit Vorlauf steigt vor dem Drop ein und der Drop faellt trotzdem aufs Go`() {
+        val rest = 60_000L
+        val latency = 120L
+        val plan =
+            (
+                DropLandingPlanner.plan(
+                    remainingRestMs = rest,
+                    candidates = listOf(drop(dropMs = 90_000L)),
+                    latencyMs = latency,
+                    leadInMs = 6_000L,
+                ) as DropLandingResult.Scheduled
+            ).plan
+        assertEquals(DropLandingPlan.Kind.DIRECT_TO_DROP, plan.kind)
+        assertEquals(6_000L, plan.leadInMs)
+        assertEquals(84_000L, plan.startAtPositionMs)
+        assertEquals(rest - 6_000L - latency, plan.startAfterDelayMs)
+        // Drop-Zeitpunkt: Start + (Drop - Startposition) = Go - Latenz (die Latenz ist abgezogen)
+        assertEquals(rest - latency, plan.startAfterDelayMs + (90_000L - plan.startAtPositionMs))
+    }
+
+    @Test
+    fun `Vorlauf ohne Wirkung bei 0 - Direktsprung wie bisher`() {
+        val result = DropLandingPlanner.plan(20_000L, listOf(drop(dropMs = 60_000L)))
+        val plan = (result as DropLandingResult.Scheduled).plan
+        assertEquals(0L, plan.leadInMs)
+        assertEquals(60_000L, plan.startAtPositionMs)
+        assertEquals(20_000L, plan.startAfterDelayMs)
+    }
+
+    @Test
+    fun `Vorlauf ist auf ein Viertel der Restzeit begrenzt`() {
+        val plan =
+            (
+                DropLandingPlanner.plan(
+                    remainingRestMs = 60_000L,
+                    candidates = listOf(drop(dropMs = 120_000L)),
+                    leadInMs = 40_000L,
+                ) as DropLandingResult.Scheduled
+            ).plan
+        assertEquals(15_000L, plan.leadInMs)
+        assertEquals(105_000L, plan.startAtPositionMs)
+        assertEquals(45_000L, plan.startAfterDelayMs)
+    }
+
+    @Test
+    fun `Vorlauf geht nie vor Position 0`() {
+        val plan =
+            (
+                DropLandingPlanner.plan(
+                    remainingRestMs = 60_000L,
+                    candidates = listOf(drop(dropMs = 61_000L)),
+                    leadInMs = 6_000L,
+                ) as DropLandingResult.Scheduled
+            ).plan
+        assertEquals(6_000L, plan.leadInMs)
+        val early =
+            (
+                DropLandingPlanner.plan(
+                    remainingRestMs = 60_000L,
+                    candidates = listOf(drop(dropMs = 61_000L)),
+                    leadInMs = 80_000L,
+                ) as DropLandingResult.Scheduled
+            ).plan
+        assertTrue("Startposition >= 0", early.startAtPositionMs >= 0L)
+        assertTrue("Vorlauf <= Drop", early.leadInMs <= 61_000L)
+    }
+
+    @Test
+    fun `Intro-Landung ignoriert den Vorlauf`() {
+        val plan =
+            (
+                DropLandingPlanner.plan(
+                    remainingRestMs = 60_000L,
+                    candidates = listOf(drop(dropMs = 20_000L)),
+                    leadInMs = 6_000L,
+                ) as DropLandingResult.Scheduled
+            ).plan
+        assertEquals(DropLandingPlan.Kind.INTRO, plan.kind)
+        assertEquals(0L, plan.leadInMs)
+    }
+
+    @Test
+    fun `Verspaetete Armierung spult hoechstens um den Vorlauf vor`() {
+        val withLead =
+            (
+                DropLandingPlanner.plan(60_000L, listOf(drop(dropMs = 90_000L)), leadInMs = 6_000L)
+                    as DropLandingResult.Scheduled
+            ).plan
+        assertEquals(84_000L + 2_000L, withLead.startPositionAfterLate(2_000L))
+        assertEquals("nicht ueber den Drop hinaus", 90_000L, withLead.startPositionAfterLate(20_000L))
+        assertEquals("nie zurueck", 84_000L, withLead.startPositionAfterLate(-5L))
+
+        val noLeadResult = DropLandingPlanner.plan(20_000L, listOf(drop(dropMs = 60_000L)))
+        val noLead = (noLeadResult as DropLandingResult.Scheduled).plan
+        assertEquals("ohne Vorlauf wie bisher: Direktsprung", 60_000L, noLead.startPositionAfterLate(2_000L))
+
+        val introResult = DropLandingPlanner.plan(60_000L, listOf(drop(dropMs = 20_000L)))
+        val intro = (introResult as DropLandingResult.Scheduled).plan
+        assertEquals(
+            "Intro spult um die Verspaetung vor",
+            intro.startAtPositionMs + 2_000L,
+            intro.startPositionAfterLate(2_000L),
+        )
+    }
+
     @Test
     fun `Drop hinter dem Go springt direkt zum Drop`() {
         // R = 20 s, D = 60 s: Rest-Musik laeuft die volle Restzeit,

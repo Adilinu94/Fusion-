@@ -15,11 +15,12 @@ import com.dropsync.core.common.AppResult
 import com.dropsync.core.common.DispatcherProvider
 import com.dropsync.core.model.Song
 import com.dropsync.domain.audio.AnalysisProfile
+import com.dropsync.domain.audio.BassEnergyAccumulator
 import com.dropsync.domain.audio.ChromaAccumulator
 import com.dropsync.domain.audio.DownbeatAccumulator
+import com.dropsync.domain.audio.DropDetection
 import com.dropsync.domain.audio.EnergyAccumulator
 import com.dropsync.domain.audio.LoudnessAccumulator
-import com.dropsync.domain.audio.OnsetDetection
 import com.dropsync.domain.audio.TempoAccumulator
 import com.dropsync.domain.audio.TrackAnalysis
 import com.dropsync.domain.audio.TrackAnalyzer
@@ -47,7 +48,15 @@ class TrackAnalyzerImpl(
     ): AppResult<TrackAnalysis> =
         withContext(dispatchers.default) {
             try {
-                AppResult.success(decodeAndAccumulate(song, profile))
+                AppResult.success(
+                    if (profile == AnalysisProfile.WAVEFORM_ONLY) {
+                        // Waveform des laufenden Titels: ungedrosselt (der Nutzer wartet darauf).
+                        decodeAndAccumulate(song, profile)
+                    } else {
+                        // Alles andere ist Hintergrundarbeit: ein Lauf zugleich, niedrige Prioritaet.
+                        backgroundGate.background { decodeAndAccumulate(song, profile) }
+                    },
+                )
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 // Umbauplan Phase 10.4: Abbruch ist KEIN Analysefehler und
                 // darf nie als Cache-Eintrag enden - weiterwerfen.
@@ -163,9 +172,14 @@ class TrackAnalyzerImpl(
                     // sonst leer, ohne die Energie ueberhaupt zu berechnen.
                     onsetCandidatesMs =
                         if (includesOnsets && stages.energy != null) {
-                            OnsetDetection.detectOnsets(
-                                energyWindows = stages.energy!!.finish(),
+                            // Bass-Rueckkehr zuerst, Fullband-Spruenge fuellen auf; ohne Bass-
+                            // Energie identisch zum bisherigen Verhalten (DropDetection).
+                            DropDetection.candidatePositions(
+                                fullbandEnergy = stages.energy!!.finish(),
+                                bassEnergy = stages.bassEnergy?.finish().orEmpty(),
                                 windowDurationMs = ENERGY_WINDOW_MS.toLong(),
+                                // Nur im Profil FULL liegen Tempo und Downbeat vor (sonst null).
+                                beatGrid = DropDetection.beatGrid(tempoEstimate, downbeatEstimate),
                             )
                         } else {
                             emptyList()
@@ -510,6 +524,7 @@ class TrackAnalyzerImpl(
     ) {
         waveform?.accept(monoSample)
         stages.energy?.accept(monoSample)
+        stages.bassEnergy?.accept(monoSample)
         stages.tempo?.accept(monoSample)
         stages.chroma?.accept(monoSample)
         stages.downbeat?.accept(monoSample)
@@ -522,6 +537,9 @@ class TrackAnalyzerImpl(
     }
 
     companion object {
+        /** Prozessweit: alle Analyzer-Instanzen teilen sich EIN Hintergrund-Gate (siehe [AnalysisGate]). */
+        private val backgroundGate = AnalysisGate()
+
         private const val LOG_TAG = "TrackAnalyzer"
         private const val TIMING_LOG_TAG = "TrackAnalysisTiming"
         private const val NS_PER_MS = 1_000_000L
@@ -592,6 +610,8 @@ private data class AnalysisTiming(
 internal class LazyAnalysisStages {
     var energy: EnergyAccumulator? = null
         private set
+    var bassEnergy: BassEnergyAccumulator? = null
+        private set
     var tempo: TempoAccumulator? = null
         private set
     var chroma: ChromaAccumulator? = null
@@ -617,6 +637,11 @@ internal class LazyAnalysisStages {
         // der Nur-Waveform-Pfad spart so die halbe Sample-Arbeit.
         if (includesOnsets) {
             energy = EnergyAccumulator(samplesPerWindow = energyWindowSamples(sampleRateHz))
+            bassEnergy =
+                BassEnergyAccumulator(
+                    sampleRateHz = sampleRateHz,
+                    samplesPerWindow = energyWindowSamples(sampleRateHz),
+                )
         }
         if (includesMix) {
             tempo = TempoAccumulator(sampleRateHz = sampleRateHz)

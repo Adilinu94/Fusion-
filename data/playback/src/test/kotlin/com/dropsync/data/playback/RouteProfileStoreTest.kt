@@ -53,6 +53,29 @@ class RouteProfileStoreTest {
         }
 
     @Test
+    fun `clearCalibration verwirft die Einstellung und der Tabellenwert gilt wieder`() =
+        runTest {
+            val key = store.currentProfile.first()!!.routeKey
+            store.upsert(
+                AudioRouteProfile(
+                    routeKey = key,
+                    sampleRate = 48_000,
+                    channels = 2,
+                    estimatedLatencyMs = 210,
+                    confidence = AudioRouteProfile.Confidence.CALIBRATED,
+                ),
+            )
+            assertEquals(210L, store.currentLatencyMs())
+
+            store.clearCalibration()
+
+            val profile = store.currentProfile.first()!!
+            assertEquals(RouteProfileStore.LATENCY_SPEAKER_MS, profile.estimatedLatencyMs)
+            assertEquals(AudioRouteProfile.Confidence.ESTIMATED, profile.confidence)
+            assertEquals(RouteProfileStore.LATENCY_SPEAKER_MS, store.currentLatencyMs())
+        }
+
+    @Test
     fun `upsert ersetzt den Tabellenwert und markStale faellt zurueck`() =
         runTest {
             val key = store.currentProfile.first()!!.routeKey

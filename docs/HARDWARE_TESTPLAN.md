@@ -310,6 +310,29 @@ trägt: bewusste Entscheidung dokumentieren (ADR-0001 aktualisieren).
 
 ---
 
+## 8a. Teil H: Änderungen vom 28.09.2026 (nur am Gerät prüfbar)
+
+Alles Folgende ist in der CI und in Simulationen grün, aber **nicht an echter Hardware oder per Gehör belegt**.
+Die Schwellen (15 % Tiefe, halbe Rep-Dauer, 500 ms Lücke, Bass-Rückkehr) sind Startwerte aus synthetischen Signalen
+(ADR-0028 bis ADR-0030). Hinweis: Sätze, deren Zahl per „übernehmen“ aus der Signalanalyse gesetzt wurde, zählen im
+Harness **nicht** als unabhängige Wahrheit (`recountAdopted`); die Handzählung bleibt maßgeblich.
+
+| ID | Szenario | Ablauf | Erwartung |
+|---|---|---|---|
+| H1 | Pause-Reps (Halte-Phase oben) | 2 Sätze à 8 Wiederholungen mit 1-2 s Halt oben | Zählung = Handzählung; im Satz-Report `zuptAbortedPending` = 0 |
+| H2 | Langsames Tempo (ergänzt A3) | 2 Sätze à 8 Wiederholungen mit 3-4 s je Wiederholung | Zählung = Handzählung; keine Ablehnungen „Negative Phase zu kurz“ (`PHASE_VALIDATION`) |
+| H3 | Kurze BLE-Aussetzer | Während eines Satzes den Sensor 2-3 Mal kurz (ca. 0,3-0,5 s) abschirmen, z. B. Handy in der Tasche, Körper dazwischen | `largeGapCount` > 0 im Report, aber Rep-Diff = 0; `interpolatedSamples` notieren |
+| H4 | Nachzählung am Satzende | 6 Sätze, 3 davon mit absichtlich schlechtem Profil (anderes Gewicht oder Tempo als bei der Kalibrierung) | Vorschlag erscheint nur bei Abweichung zur Live-Zahl; „übernehmen“ setzt die Zahl; **kein** Vorschlag, wenn die Live-Zahl stimmt. Notieren: Wie oft Vorschlag, wie oft stimmte er? Ziel: nie eine falsche Korrektur |
+| H5 | Latenz-Regler je Route | Für Lautsprecher, Kabel und Bluetooth: Einstellungen › „Drop-Timing dieser Ausgabe“, Wert nach Gehör einstellen (Drop zu spät → Wert erhöhen), danach ≥ 5 Landungen (B1) | „Timing stable“ erscheint erst nach dem Einstellen; Drop-Fehler p95 je Route notieren (B1) |
+| H6 | Build-up vor dem Drop | Einstellungen › „Build-up vor dem Drop“ einschalten, B2-Szenario (Drop weit hinter dem Pausenende) 5 Mal | Hörurteil: besser / gleich / schlechter als Direktsprung. **Danach Default entscheiden** (`dropLeadInEnabled`) |
+| H7 | Drop-Erkennung | ca. 20 eigene Tracks (gemischte Genres), „Drops automatisch erkennen“, ersten Kandidaten gegen den echten Drop hören | Anteil der Tracks mit Treffer ±1 Beat und Fehlalarme notieren; Profil `FULL` rastet auf das Taktraster |
+| H8 | Start-Tab | Kaltstart; Zurück-Taste von einem anderen Tab; Medien-Benachrichtigung antippen | App startet auf Train; Zurück führt dorthin; Benachrichtigung öffnet weiterhin die Wiedergabe |
+
+**Beweise:** JSONL + Manifest (jetzt mit `recount`, `recountConfidence`, `recountAdopted`), Notizen zu H4-H7,
+Freigabe-Protokoll (Abschnitt 10).
+
+---
+
 ## 9. Auswertung und Freigabe
 
 **Nach jedem Testtag:**

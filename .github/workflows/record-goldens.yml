@@ -1,0 +1,77 @@
+name: Goldens aufnehmen (Linux)
+
+# MANUELL (Actions > "Goldens aufnehmen (Linux)" > Run workflow, Branch waehlen).
+#
+# Hintergrund: Das Screenshot-Gate in ci.yml vergleicht auf einem Linux-Runner. Referenzen, die
+# lokal unter Windows aufgenommen wurden, rendern dort nicht pixelgleich (Schrift/Kantenglaettung):
+# auf master scheitern so 10 von 16 Screenshot-Tests, darunter unveraenderte Basiskomponenten.
+# Dieser Workflow nimmt die Referenzen auf derselben Plattform wie das Gate auf und committet
+# sie auf den gewaehlten Branch. Er aendert ci.yml NICHT.
+#
+# Folge fuer die lokale Arbeit unter Windows: `verifyRoborazziDebug` meldet dann dort Abweichungen.
+# Neue Referenzen also kuenftig ueber diesen Workflow aufnehmen, nicht lokal.
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: record-goldens-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  record:
+    name: recordRoborazziDebug auf Linux
+    # Fest auf 24.04: ubuntu-latest wechselt am 2026-10-19 auf 26, und die Roborazzi-Referenzen
+    # (auf Linux aufgenommen) rendern je Image-Version leicht anders. Beim bewussten Wechsel die
+    # Referenzen neu aufnehmen (record-goldens.yml) und hier alle runs-on gemeinsam umstellen.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gradlew ausfuehrbar
+        run: chmod +x ./gradlew
+
+      - name: Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Android-SDK
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -r | head -n1)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+
+      - name: Referenzen aufnehmen
+        run: >-
+          ./gradlew
+          :core:designsystem:recordRoborazziDebug
+          :feature:workout:recordRoborazziDebug
+          :feature:player:recordRoborazziDebug
+          --stacktrace
+
+      - name: Geaenderte Referenzen committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A -- '*/src/test/screenshots/*.png'
+          if git diff --cached --quiet; then
+            echo "Keine Aenderungen an den Referenzen."
+            exit 0
+          fi
+          git diff --cached --stat | tail -n 20
+          git commit -m "test(screenshots): Roborazzi-Referenzen auf Linux neu aufgenommen"
+          git push

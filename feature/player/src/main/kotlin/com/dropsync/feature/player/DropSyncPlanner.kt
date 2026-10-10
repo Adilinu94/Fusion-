@@ -24,6 +24,7 @@ import com.dropsync.domain.timer.DropSyncFailureReason
 import com.dropsync.domain.timer.TimingConfidence
 import com.dropsync.domain.timer.WorkSongDrop
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -95,15 +96,20 @@ class DropSyncPlanner
         }
 
         /** Plant die Landung fuer [remainingMs] Restzeit. */
-        suspend fun plan(remainingMs: Long): Outcome {
+        suspend fun plan(
+            remainingMs: Long,
+            leadInMs: Long = 0L,
+        ): Outcome {
             val candidates = workCandidates()
             val latency = routeProfiles.currentLatencyMs()
+            val routeConfidence = routeProfiles.currentProfile.firstOrNull()?.confidence
             val scheduled =
                 DropLandingPlanner.plan(
                     remainingRestMs = remainingMs,
                     candidates = candidates.drops,
                     latencyMs = latency ?: 0L,
                     crossfadeMs = crossfadeMs(),
+                    leadInMs = leadInMs,
                 )
             val plan = (scheduled as? DropLandingResult.Scheduled)?.plan
             if (plan == null) {
@@ -130,7 +136,7 @@ class DropSyncPlanner
                 plan = plan,
                 song = song,
                 markerLabel = candidates.labelsByMarkerId[plan.markerId].orEmpty(),
-                confidence = if (latency == null) TimingConfidence.DEGRADED else TimingConfidence.EXACT,
+                confidence = timingConfidenceFor(latency, routeConfidence),
                 // 2026-09-27, Befund 13.4: der Marker wandert in den
                 // Zustand und von dort in den Satz-Log.
                 markerId = plan.markerId,
@@ -153,6 +159,7 @@ class DropSyncPlanner
             queue: List<QueueItem>,
             currentIndex: Int,
             currentPositionMs: Long,
+            leadInMs: Long = 0L,
         ): ChainOutcome {
             val currentId = queue.getOrNull(currentIndex)?.songId
             val window = queue.drop(currentIndex + 1).take(DropChainPlanner.MAX_PLANNED_SONGS)
@@ -199,6 +206,7 @@ class DropSyncPlanner
                         ?.let { song -> chainCandidate(song, 0L, drops[song.mediaStoreId]) }
                 }
             val latency = routeProfiles.currentLatencyMs()
+            val routeConfidence = routeProfiles.currentProfile.firstOrNull()?.confidence
             val crossfade = crossfadeMs()
             val result =
                 DropChainPlanner.plan(
@@ -207,6 +215,7 @@ class DropSyncPlanner
                     queue = queueCandidates,
                     latencyMs = latency ?: 0L,
                     crossfadeMs = crossfade,
+                    leadInMs = leadInMs,
                 )
             return when (result) {
                 is DropChainResult.NotPossible -> {
@@ -225,7 +234,7 @@ class DropSyncPlanner
                         currentSongId = currentId,
                         songsById = songsById,
                         labelsByMarkerId = labels,
-                        confidence = if (latency == null) TimingConfidence.DEGRADED else TimingConfidence.EXACT,
+                        confidence = timingConfidenceFor(latency, routeConfidence),
                         crossfadeMs = crossfade,
                     )
                 }

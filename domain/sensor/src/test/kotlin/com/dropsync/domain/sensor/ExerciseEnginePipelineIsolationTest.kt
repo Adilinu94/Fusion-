@@ -199,8 +199,8 @@ class ExerciseEnginePipelineIsolationTest {
         // Luecke: der naechste Sample-Timestamp springt um 1000 ms.
         engine.processSample(ts + 1_000L, 0.0, 0.0, 0.0)
         assertEquals(1, engine.largeGapCount)
-        // Nach dem Gap sind die Filter neu eingeschwungen: isSettled ist
-        // erst nach settleSamples wieder true.
+        // Nach einer harten Luecke (> gapInterpolateMaxMs) schwingen die Filter neu
+        // ein: isSettled ist erst nach gapSettleSamples wieder true.
         assertEquals(false, engine.isSettled)
     }
 

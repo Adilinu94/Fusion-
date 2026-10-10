@@ -45,6 +45,8 @@ data class ChainSegment(
     val playForMs: Long,
     val startAtPositionMs: Long = 0L,
     val markerId: Long? = null,
+    /** Nur Landung mit Direktsprung: so weit liegt [startAtPositionMs] vor dem Drop (Build-up). */
+    val leadInMs: Long = 0L,
 )
 
 /** Ergebnis der Kettenplanung: mindestens die Landung, optional Fueller. */
@@ -109,6 +111,7 @@ object DropChainPlanner {
         crossfadeMs: Long = 0L,
         minSegmentMs: Long = MIN_SEGMENT_MS,
         maxPlannedSongs: Int = MAX_PLANNED_SONGS,
+        leadInMs: Long = 0L,
     ): DropChainResult {
         if (remainingRestMs < DropLandingPlanner.MIN_DROP_AUTO_REST_MS) {
             return DropChainResult.NotPossible(DropLandingReason.REST_TOO_SHORT)
@@ -142,6 +145,7 @@ object DropChainPlanner {
                         candidates = listOf(landingSong.toWorkSongDrop(drop)),
                         latencyMs = latencyMs,
                         crossfadeMs = crossfadeMs,
+                        leadInMs = leadInMs,
                     )
             ) {
                 is DropLandingResult.Scheduled -> result.plan
@@ -158,6 +162,7 @@ object DropChainPlanner {
                 playForMs = (remainingRestMs - landingStart).coerceAtLeast(0L),
                 startAtPositionMs = landingPlan.startAtPositionMs,
                 markerId = landingSong.markerId,
+                leadInMs = landingPlan.leadInMs,
             )
         return DropChainResult.Planned(DropChain(fillers + landing))
     }

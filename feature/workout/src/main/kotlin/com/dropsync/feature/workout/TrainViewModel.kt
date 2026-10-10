@@ -531,6 +531,8 @@ class TrainViewModel
         fun setReps(value: String) {
             _repsInput.value = value
             _repsInputEdited.value = true
+            // Jede manuelle Eingabe macht die Zahl wieder zur eigenen (unabhaengigen) Aussage.
+            adoptedRecountReps = null
         }
 
         fun logSet() {
@@ -573,6 +575,7 @@ class TrainViewModel
                                 weightMilliKg = weightMilliKg,
                                 confirmedReps = reps,
                                 confirmedRepsEdited = repsEdited,
+                                recountAdopted = repsEdited && adoptedRecountReps == reps,
                                 liveCountedReps = counted,
                                 shadowReps = counted,
                                 // RC-17: Ablehnungsmechanismen mit ins JSONL.
@@ -1149,6 +1152,33 @@ class TrainViewModel
             ) { result, edited ->
                 if (edited) null else result?.toHintOrNull()
             }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+        /**
+         * Nachzaehlung am Satzende ([com.dropsync.domain.sensor.SetRecount]): eine konkrete
+         * Zahl aus dem ganzen Signal, wenn sie von der Live-Zaehlung abweicht und die
+         * Analyse sicher ist. Verschwindet, sobald die Person die Zahl selbst aendert
+         * (auch per [adoptRecount]). `Eagerly` aus demselben Grund wie [plausibilityHint].
+         */
+        val recountSuggestion: StateFlow<RecountSuggestion?> =
+            combine(
+                activeSetController.lastRecount,
+                _repsInputEdited,
+            ) { result, edited ->
+                if (edited) null else result?.toSuggestionOrNull()
+            }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+        /** Uebernimmt die Nachzaehlung - erst dieser Tipp macht sie zur aktiven Korrektur. */
+        fun adoptRecount() {
+            val suggestion = recountSuggestion.value ?: return
+            setReps(suggestion.analysisReps.toString())
+            adoptedRecountReps = suggestion.analysisReps
+        }
+
+        /**
+         * Zahl, die per [adoptRecount] uebernommen und seither nicht manuell geaendert wurde.
+         * Nur fuer die Aufzeichnung: eine uebernommene Analyse ist keine unabhaengige Wahrheit.
+         */
+        private var adoptedRecountReps: Int? = null
 
         /**
          * RC-5: Herkunft der Rep-Zahl im Hero (UI-Handbuch 7.4). Zustand und

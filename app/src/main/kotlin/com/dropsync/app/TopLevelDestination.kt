@@ -20,3 +20,10 @@ enum class TopLevelDestination(
     HISTORY("history", BrandIcons.NavHistory, R.string.nav_history),
     SETTINGS("settings", BrandIcons.NavSettings, R.string.nav_settings),
 }
+
+/**
+ * Start-Tab der App: Wurzel des Backstacks und Ziel von `popUpTo` in [navigateTopLevel].
+ * Entscheidung 2026-09-28: Train (vorher Music). Eine Konstante, damit der NavHost in
+ * [DropSyncApp] und sein Spiegel im Backstack-Test nicht auseinanderlaufen.
+ */
+internal val START_TAB: TopLevelDestination = TopLevelDestination.TRAIN

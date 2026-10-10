@@ -49,6 +49,15 @@ class RestMusicSettingsStoreTest {
         }
 
     @Test
+    fun `Build-up ist standardmaessig aus und round-tript`() =
+        runTest {
+            assertEquals(false, store.dropLeadInEnabled.first())
+            store.setDropLeadInEnabled(true)
+            assertEquals(true, store.dropLeadInEnabled.first())
+            store.setDropLeadInEnabled(RestMusicSettingsRepository.DEFAULT_DROP_LEAD_IN_ENABLED)
+        }
+
+    @Test
     fun `Drop-Auto-Schalter round-tript`() =
         runTest {
             store.setDropAutoEnabled(false)

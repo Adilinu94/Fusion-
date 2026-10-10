@@ -2352,3 +2352,39 @@ Deprecation-Sichtung, Abgleich der offenen Punkte aus den Plaenen.
   spotlessCheck, detekt, koverVerify, alle betroffenen Modul-Tests,
   Python-Gates (Baseline 19/23, Doku-Links, Design) und CRLF gruen.
   Restliste: `docs/UEBERARBEITUNGSBERICHT_2026-09-22.md`.
+
+## BC. Bericht 2026-09-28: Zaehl-, Drop- und Timing-Verbesserungen (Session: Claude-chat-2026-09-28)
+
+Quelle: Repo-Analyse vom 28.09.2026 (Stand `7c38967`). Entscheidungen: ADR-0028, 0029, 0030.
+Lokal verifiziert (Kotlin 2.4.10 + JUnit4, ohne Gradle/Android-SDK): `:domain:sensor` 194,
+`:domain:audio` 114, `:domain:timer` 76 Tests gruen; reine JVM-Teile der Feature-Module
+(Mapper, Konfidenz-Policy, Aufnahme-JSON) gelaufen. **Nicht gebaut/gelaufen:** alles mit
+Compose, Hilt, DataStore, Robolectric, Roborazzi - bitte `assembleDebug`, `test`, `spotlessCheck`,
+`detekt` und `recordRoborazziDebug` (Now-Playing) laufen lassen.
+
+- [x] Zaehlpipeline: Tempo-Fehler im `RepCounter`, ZUPT-Abbruch nach langer Ruhe, Luecken-
+      Ueberbrueckung (ADR-0028). Synthetisch (80 Saetze x 10 Reps, 5 % Paketverlust + 1 % Bursts): exakt 5 % -> 98 %.
+- [x] `SetRecount` + Vorschlags-Zeile "Signalanalyse: n Wiederholungen" mit Uebernahme per Tipp.
+- [x] Shadow-Event: `recount`, `recountConfidence`, `recountAdopted`; Harness wertet
+      uebernommene Analysen nicht als Wahrheit. Release-Recorder bewusst NICHT (ADR-0023).
+- [x] Timing-Konfidenz `EXACT` nur bei eingestellter Latenz + Regler in den Einstellungen (ADR-0029).
+- [x] Drop-Erkennung per Bass-Rueckkehr (ADR-0030); im Profil FULL zusaetzlich auf das Taktraster gerastet.
+- [~] Build-up-Vorlauf der Landung: implementiert und per Schalter erreichbar (Einstellungen > "Build-up vor dem Drop
+      (experimentell)", Standard aus, `RestMusicSettings.dropLeadInEnabled`). Offen: Hoertest am Geraet, danach Default entscheiden.
+- [x] Now-Playing: Play/Pause unter der Waveform.
+- [x] Start-Tab: **Train** (Entscheidung des Nutzers, 2026-09-28); eine Konstante `START_TAB` in `TopLevelDestination.kt`.
+- [x] Rest-Konsole: zuletzt geloggter Satz unter dem Timer, DropSync-Chips in Palettenfarbe (kein Lavendel).
+      Ein "naechstes Ziel" gibt es nicht: die App kennt keinen Trainingsplan pro Satz.
+- [x] Aufteilung: `TrainScreen.kt` 2.177 -> 829 Zeilen (+ `RestConsole.kt`, `SetEntryHero.kt`), `NowPlayingScreen.kt`
+      1.519 -> 1.077 Zeilen (+ `NowPlayingWaveform.kt`, `NowPlayingDropSync.kt`); rein mechanisch, Zeilenbilanz geprueft.
+      `TrainViewModel.kt` (1.554 Zeilen) bleibt ungeteilt: eine Klasse laesst sich nicht rein mechanisch zerlegen.
+- [x] CI: Screenshot-Gate gruen (Referenzen auf Linux aufgenommen, `record-goldens.yml`), Runner fest auf `ubuntu-24.04`,
+      `security.yml` (CodeQL, Dependency Review), Dependency-Verification fuer Linux ergaenzt.
+- [x] Instrumentierte Tests: `DualPlayerCrossfadeInstrumentedTest` war der einzige rote von sechs (Tick-Race im Test).
+- [x] Tests fuer den Nachzaehlungs-Vorschlag im `TrainViewModel` (Vorschlag, Uebernahme, Editieren); README-Aussage zur
+      absoluten `minNovelty` korrigiert (Befund 10.4 erledigt).
+- [ ] **Offen, bewusst nicht geaendert (Befund 5.8):** `PeakDetector` startet sein Prominenz-Gate im Live-Pfad mit
+      `spk = detectionThreshold`; `config.expectedProminence` speist nur den `QualityScorer`. Der Fix in `updateThreshold`
+      greift dort nicht. Wirkung: nur die ersten Peaks, danach passt sich `spk` an. Zusaetzlich mischt der Kommentar
+      zwei Groessen (`spk` = Peak-Wert, `expectedProminence` = Peak minus Tal). Ohne echte Saetze nicht entscheidbar:
+      erst am Korpus (Gate 11b) pruefen, ob die Startphase Reps verliert oder Stoerungen durchlaesst.

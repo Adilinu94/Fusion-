@@ -25,8 +25,22 @@ interface RestMusicSettingsRepository {
     /** Setzt den Drop-Auto-Schalter dauerhaft. */
     suspend fun setDropAutoEnabled(enabled: Boolean)
 
+    /**
+     * Build-up vor dem Drop (experimentell): Liegt der Drop hinter dem Pausenende, steigt der
+     * Titel [DropLandingPlanner.DEFAULT_LEAD_IN_MS] vor dem Drop ein, der Drop faellt weiter aufs
+     * Pausenende. **Default aus** - ob der Wechsel mitten in der Pause besser klingt als der
+     * Direktsprung zum Go, laesst sich nur hoeren.
+     */
+    val dropLeadInEnabled: Flow<Boolean>
+
+    /** Schaltet den Build-up dauerhaft ein oder aus. */
+    suspend fun setDropLeadInEnabled(enabled: Boolean)
+
     companion object {
         /** Produktabsicht: Drop-Auto ist standardmaessig aktiv. */
         const val DEFAULT_DROP_AUTO_ENABLED: Boolean = true
+
+        /** Build-up ist standardmaessig aus (Hoertest steht aus). */
+        const val DEFAULT_DROP_LEAD_IN_ENABLED: Boolean = false
     }
 }

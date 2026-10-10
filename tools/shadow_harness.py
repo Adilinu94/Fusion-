@@ -209,12 +209,15 @@ def evaluate_session(jsonl_path: Path, manifest: dict) -> dict:
         confirmed = set_event.get("confirmedReps", 0)
         shadow = set_event.get("shadowReps", 0)
         edited = set_event.get("confirmedRepsEdited", False)
+        # Eine per Tipp uebernommene Nachzaehlung ist keine unabhaengige Wahrheit
+        # (Zirkelschluss beim Vergleich Nachzaehlung gegen Wahrheit).
+        adopted = set_event.get("recountAdopted", False)
 
         # Wahrheits-Prioritaet (Abschnitt 7)
         if i < len(known_active_reps):
             truth = known_active_reps[i]
             truth_source = "known_active_reps"
-        elif edited:
+        elif edited and not adopted:
             truth = confirmed
             truth_source = "confirmedReps (edited)"
         else:

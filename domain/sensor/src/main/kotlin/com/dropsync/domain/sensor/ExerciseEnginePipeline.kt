@@ -68,6 +68,25 @@ data class ExerciseEngineConfig(
      */
     val zuptEnabled: Boolean = true,
     /**
+     * Ein Pending-Rep wird durch ZUPT-Ruhe erst verworfen, wenn die Ruhe mindestens
+     * diesen Anteil der erwarteten Rep-Dauer anhaelt (untere Grenze: 400 ms, die
+     * Bias-Bestaetigung). Sonst gilt die Halte-Phase einer Pause-Rep (Squeeze oben,
+     * Tempo-Training) als "echte Ruhe" und die Wiederholung geht verloren.
+     * 0.0 = altes Verhalten (Abbruch schon nach 400 ms Ruhe).
+     */
+    val zuptAbortQuietFraction: Double = 0.5,
+    /**
+     * Luecken ab [ExerciseEnginePipeline.LARGE_GAP_MS] bis zu dieser Dauer (ms) werden
+     * linear ueberbrueckt: die fehlenden Samples werden aus dem letzten und dem neuen
+     * Rohsample interpoliert und durch die normale Kette geschickt. Das laufende
+     * Pending-Fenster und die Zaehlbereitschaft bleiben so erhalten. Die Luecke zaehlt
+     * weiterhin in largeGapCount (die Daten fehlten wirklich). Linear ueberbrueckt kann
+     * nie ein Peak ENTSTEHEN, nur ein Peak-Scheitel abgeflacht werden. 6 Pakete
+     * (= 24 Samples) entsprechen ca. 500 ms. Laengere Luecken verwerfen wie bisher.
+     * 0 = altes Verhalten (jede Luecke ab 250 ms verwirft).
+     */
+    val gapInterpolateMaxMs: Long = 500L,
+    /**
      * Umbauplan 2026-09-04 Phase 6.2: Vote-Fenster des Accel-Kanals in ms.
      * War bisher nur als RepCounter-Default (800) existent und damit fuer
      * den Offline-Sweep nicht erreichbar. Default unveraendert.
@@ -259,6 +278,17 @@ class ExerciseEnginePipeline(
      * Satz-Segmentierung. null, wenn per Config abgeschaltet.
      */
     private val zupt = if (config.zuptEnabled) ZuptDetector() else null
+    private val zuptAbortQuietMs: Long =
+        maxOf(
+            ZuptDetector.DEFAULT_MIN_STATIONARY_MS,
+            (config.expectedDurationMs * config.zuptAbortQuietFraction).toLong(),
+        )
+    private var zuptAbortDoneInWindow = false
+    private var lastRaw: DoubleArray? = null
+
+    /** Anzahl der durch Luecken-Interpolation eingefuegten Samples (Diagnose). */
+    var interpolatedSamples: Int = 0
+        private set
 
     /** Anzahl der nachgefuehrten Bias-Korrekturen (Diagnose). */
     var zuptBiasUpdates = 0
@@ -299,11 +329,71 @@ class ExerciseEnginePipeline(
         az: Double = 0.0,
     ): EngineFrameResult {
         val last = lastSampleTimestampMs
+        val prev = lastRaw
+        var carried: RepResult? = null
         if (last != null && timestampMs - last >= LARGE_GAP_MS) {
-            onLargeGap()
+            val gapMs = timestampMs - last
+            if (prev != null && gapMs <= config.gapInterpolateMaxMs) {
+                largeGapCount++
+                carried = interpolateGap(last, gapMs, prev, gx, gy, gz, ax, ay, az)
+            } else {
+                onLargeGap()
+            }
         }
+        val result = feedSample(timestampMs, gx, gy, gz, ax, ay, az, trackRate = true)
+        lastRaw = doubleArrayOf(gx, gy, gz, ax, ay, az)
+        val own = result.repResult
+        return if (carried != null && !own.repCounted && own.rejection == null) {
+            result.copy(repResult = carried)
+        } else {
+            result
+        }
+    }
+
+    /**
+     * Ueberbrueckt eine Luecke linear (siehe [ExerciseEngineConfig.gapInterpolateMaxMs]).
+     * Rueckgabe: das erste bemerkenswerte Rep-Ergebnis der eingefuegten Samples (gezaehlt
+     * oder abgelehnt), damit der Aufrufer es nicht verliert; sonst null.
+     */
+    private fun interpolateGap(
+        lastTimestampMs: Long,
+        gapMs: Long,
+        prev: DoubleArray,
+        gx: Double,
+        gy: Double,
+        gz: Double,
+        ax: Double,
+        ay: Double,
+        az: Double,
+    ): RepResult? {
+        val spacingMs = 1000.0 / appliedSampleRateHz
+        val missing = (gapMs / spacingMs).toInt() - 1
+        if (missing < 1) return null
+        val now = doubleArrayOf(gx, gy, gz, ax, ay, az)
+        var carried: RepResult? = null
+        for (k in 1..missing) {
+            val f = k.toDouble() / (missing + 1)
+            val t = lastTimestampMs + (gapMs * f).toLong()
+            val v = DoubleArray(6) { prev[it] + (now[it] - prev[it]) * f }
+            val r = feedSample(t, v[0], v[1], v[2], v[3], v[4], v[5], trackRate = false).repResult
+            interpolatedSamples++
+            if (carried == null && (r.repCounted || r.rejection != null)) carried = r
+        }
+        return carried
+    }
+
+    private fun feedSample(
+        timestampMs: Long,
+        gx: Double,
+        gy: Double,
+        gz: Double,
+        ax: Double,
+        ay: Double,
+        az: Double,
+        trackRate: Boolean,
+    ): EngineFrameResult {
         lastSampleTimestampMs = timestampMs
-        trackSampleRate(timestampMs)
+        if (trackRate) trackSampleRate(timestampMs)
         applyZupt(timestampMs, gx, gy, gz, ax, ay, az)
         val frame = signalChain.process(timestampMs, gx, gy, gz, ax, ay, az)
         if (!frame.isSettled) {
@@ -396,15 +486,22 @@ class ExerciseEnginePipeline(
     ) {
         val detector = zupt ?: return
         val result = detector.onSample(timestampMs, gx, gy, gz, ax, ay, az)
-        if (!result.zuptConfirmed) return
 
-        // Ruhe bestaetigt: ein noch offener Pending-Rep hat keine
-        // Rueckbewegung mehr zu erwarten. Gezaehlt wird nur der ECHTE
-        // Verwerf-Fall (RC-16) — eine Ruhephase ohne offenen Pending ist
-        // kein verlorener Rep.
-        if (repCounter.abortPending()) {
-            zuptAbortedPending++
+        // Lange Ruhe: ein noch offener Pending-Rep hat keine Rueckbewegung mehr zu
+        // erwarten. "Lang" heisst: mindestens zuptAbortQuietMs (Anteil der erwarteten
+        // Rep-Dauer), damit die Halte-Phase einer Pause-Rep nicht als Ruhe zaehlt.
+        // Gezaehlt wird nur der ECHTE Verwerf-Fall (RC-16) — eine Ruhephase ohne
+        // offenen Pending ist kein verlorener Rep. Einmal pro Ruhefenster.
+        if (result.quietMs == 0L) {
+            zuptAbortDoneInWindow = false
+        } else if (!zuptAbortDoneInWindow && result.quietMs >= zuptAbortQuietMs) {
+            zuptAbortDoneInWindow = true
+            if (repCounter.abortPending()) {
+                zuptAbortedPending++
+            }
         }
+
+        if (!result.zuptConfirmed) return
 
         detector.biasEstimate?.let { bias ->
             signalChain.updateGyroBias(bias)
@@ -550,6 +647,9 @@ class ExerciseEnginePipeline(
         signalHead = 0
         signalFill = 0
         zupt?.reset()
+        zuptAbortDoneInWindow = false
+        lastRaw = null
+        interpolatedSamples = 0
         zuptBiasUpdates = 0
         zuptAbortedPending = 0
         rejectionCounts.clear()

@@ -43,13 +43,13 @@ class NavHostBackstackTest {
     /**
      * Spiegelbild des echten Graphen aus [DropSyncApp] mit denselben
      * Routenkonstanten und denselben Optionen (launchSingleTop,
-     * navigateTopLevel-Verhalten); Start ist der Music-Tab.
+     * navigateTopLevel-Verhalten); Start ist [START_TAB] (Train).
      */
     @Composable
     private fun TestGraph(navController: NavHostController) {
         NavHost(
             navController = navController,
-            startDestination = TopLevelDestination.MUSIC.route,
+            startDestination = START_TAB.route,
             enterTransition = { EnterTransition.None },
             exitTransition = { ExitTransition.None },
             popEnterTransition = { EnterTransition.None },
@@ -98,7 +98,7 @@ class NavHostBackstackTest {
         compose.waitForIdle()
         compose.runOnIdle {
             assertEquals(
-                TopLevelDestination.MUSIC.route,
+                START_TAB.route,
                 requireNotNull(navHolder.get()).currentBackStackEntry?.destination?.route,
             )
         }
@@ -186,7 +186,7 @@ class NavHostBackstackTest {
             val routes =
                 requireNotNull(navHolder.get()).currentBackStack.value.map { it.destination.route }
             assertTrue(ROUTE_TIMER !in routes)
-            assertTrue(routes.contains(TopLevelDestination.MUSIC.route))
+            assertTrue(routes.contains(START_TAB.route))
         }
     }
 }

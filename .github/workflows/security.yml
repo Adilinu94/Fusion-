@@ -1,0 +1,119 @@
+name: Security
+
+# Ergaenzung zu ci.yml (A5/B4 im Bericht vom 2026-09-28): ci.yml prueft Qualitaet, hier
+# liegen die Sicherheitspruefungen. Bewusst als EIGENE Datei: ci.yml hat eine dokumentierte,
+# bewusst sequenzielle Gate-Reihenfolge (Screenshot-Gate vor test), die hier nicht angefasst wird.
+#
+# - CodeQL (java-kotlin): Kotlin wird von CodeQL NUR mit echtem Build analysiert (build-mode
+#   "none" verarbeitet in einem reinen Kotlin-Repo nichts und bricht ab). Gebaut wird deshalb
+#   mit Gradle, ohne Build-Cache und ohne Daemon, damit der Extraktor die Compiler-Laeufe sieht.
+#   Laeuft bewusst nicht bei jedem Feature-Branch-Push (lang): master, Pull Requests,
+#   woechentlich und manuell.
+# - Dependency Review: bei Pull Requests, schlaegt bei neuen Abhaengigkeiten mit bekannter
+#   Schwachstelle der Stufe "high" oder hoeher fehl. Braucht den Dependency Graph des Repos.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    # Montags 03:17 UTC: neue CodeQL-Regeln auch ohne Code-Aenderung anwenden.
+    - cron: "17 3 * * 1"
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  codeql:
+    name: CodeQL (Kotlin/Java)
+    # Fest auf 24.04: ubuntu-latest wechselt am 2026-10-19 auf 26, und die Roborazzi-Referenzen
+    # (auf Linux aufgenommen) rendern je Image-Version leicht anders. Beim bewussten Wechsel die
+    # Referenzen neu aufnehmen (record-goldens.yml) und hier alle runs-on gemeinsam umstellen.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      security-events: write
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # :training-core ist ein Submodul (wie in ci.yml).
+          submodules: recursive
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: gradlew ausfuehrbar
+        run: chmod +x ./gradlew
+
+      - name: Android-SDK
+        run: |
+          SDK_ROOT="${ANDROID_SDK_ROOT:-$ANDROID_HOME}"
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" -name sdkmanager -type f 2>/dev/null | sort -r | head -n1)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="sdkmanager"; fi
+          yes | "$SDKMANAGER" --licenses > /dev/null || true
+          "$SDKMANAGER" "platforms;android-37.0" "build-tools;37.0.0" "platform-tools"
+
+      - name: CodeQL initialisieren
+        uses: github/codeql-action/init@v4
+        with:
+          languages: java-kotlin
+          build-mode: manual
+
+      - name: Bauen (nur Kompilieren, ohne Cache und Daemon)
+        run: >
+          ./gradlew compileDebugKotlin compileKotlin
+          --no-daemon --no-build-cache --rerun-tasks
+
+      - name: CodeQL-Analyse
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:java-kotlin"
+
+  dependency-review:
+    name: Dependency Review
+    if: github.event_name == 'pull_request'
+    # Siehe oben: Runner-Image fest auf 24.04.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Die Action bricht ohne aktivierten Dependency Graph mit "not supported on this repository" ab
+      # (Repo-Einstellung, nicht Code). Damit der Job nicht dauerhaft rot auf jedem PR steht, wird der
+      # Graph vorher abgefragt (SBOM-Endpunkt: 200 nur bei aktivem Graph) und die Pruefung sonst
+      # uebersprungen. Aktivieren: Settings > Advanced Security > Dependency graph; danach laeuft sie von selbst.
+      - name: Dependency Graph verfuegbar?
+        id: graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/dependency-graph/sbom")
+          if [ "$code" = "200" ]; then
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Dependency Review uebersprungen::Der Dependency Graph ist fuer dieses Repository nicht aktiv (HTTP $code). Aktivieren unter Settings > Advanced Security > Dependency graph."
+          fi
+
+      # Exakter Tag: fuer diese Action gibt es kein bewegliches v4/v5-Tag (nur v1-v3 und Voll-Tags).
+      - name: Abhaengigkeiten pruefen
+        if: steps.graph.outputs.enabled == 'true'
+        uses: actions/dependency-review-action@v4.9.0
+        with:
+          fail-on-severity: high

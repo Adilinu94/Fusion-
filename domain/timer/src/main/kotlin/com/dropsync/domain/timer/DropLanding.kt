@@ -27,8 +27,10 @@ data class WorkSongDrop(
  * - [Kind.INTRO]: Drop liegt vor dem Pausenende -> Work-Titel startet
  *   nach der Verzoegerung von vorn (Intro), Crossfade aus [crossfadeMs].
  * - [Kind.DIRECT_TO_DROP]: Drop liegt hinter dem Pausenende -> Rest-Musik
- *   laeuft die volle Restzeit, beim Go springt der Player direkt auf den
- *   Drop (kein Intro, kein Knacksen dank Mikro-Rampe).
+ *   laeuft bis kurz vor dem Go; der Titel steigt dann [leadInMs] VOR dem Drop
+ *   ein (Build-up: Snare-Wirbel, Riser), sodass der Drop selbst genau aufs Go faellt.
+ *   Mit [leadInMs] = 0 springt der Player beim Go direkt auf den Drop (kein Intro,
+ *   kein Knacksen dank Mikro-Rampe).
  */
 data class DropLandingPlan(
     val songId: Long,
@@ -37,8 +39,22 @@ data class DropLandingPlan(
     val startAfterDelayMs: Long,
     val kind: Kind = Kind.INTRO,
     val crossfadeMs: Long = 0L,
+    /** Nur DIRECT_TO_DROP: so weit liegt die Startposition VOR dem Drop (Build-up). */
+    val leadInMs: Long = 0L,
 ) {
     enum class Kind { INTRO, DIRECT_TO_DROP }
+
+    /**
+     * Startposition, wenn die Armierung [lateMs] zu spaet kam: der Titel muss so weit
+     * vorspulen, dass der Drop trotzdem aufs Go faellt (MP-3). Bei DIRECT_TO_DROP kann
+     * hoechstens um [leadInMs] vorgespult werden - ohne Build-up ([leadInMs] = 0) startet
+     * der Titel direkt auf dem Drop, wie bisher.
+     */
+    fun startPositionAfterLate(lateMs: Long): Long =
+        when (kind) {
+            Kind.INTRO -> startAtPositionMs + lateMs
+            Kind.DIRECT_TO_DROP -> startAtPositionMs + lateMs.coerceIn(0L, leadInMs)
+        }
 }
 
 /** Warum keine Drop-Landung moeglich ist (Fallback-Kette im Coordinator). */
@@ -69,8 +85,9 @@ sealed interface DropLandingResult {
  * (alle relativ zum Pausenende, also vor dem Go-Zeitpunkt):
  * - R < [MIN_REST_MS]                 -> NotPossible(REST_TOO_SHORT)
  * - kein Kandidat mit brauchbarem Drop -> NotPossible(NO_WORK_SONG_WITH_DROP)
- * - D >= R: DIRECT_TO_DROP - die Rest-Musik laeuft die volle Restzeit,
- *   beim Go springt der Player direkt zum Drop.
+ * - D >= R: DIRECT_TO_DROP - die Rest-Musik laeuft bis [leadInMs] vor dem Go,
+ *   dann steigt der Titel [leadInMs] vor dem Drop ein (Build-up); mit
+ *   [leadInMs] = 0 springt der Player beim Go direkt zum Drop.
  * - D <  R: INTRO - der Work-Titel startet R - D vor dem Go von vorn,
  *   damit sein Intro genau in den Drop muendet.
  *
@@ -89,12 +106,24 @@ object DropLandingPlanner {
      */
     const val MIN_DROP_AUTO_REST_MS: Long = 60_000L
 
+    /**
+     * Build-up vor dem Drop bei DIRECT_TO_DROP: Der Titel steigt so lange vor dem Drop ein,
+     * dass der Aufbau (Snare-Wirbel, Riser) zu hoeren ist. 6 s sind ca. 3 Takte bei 120 BPM.
+     * Startwert, nicht an echter Musik abgestimmt. Aktiv nur, wenn der Schalter "Build-up vor dem Drop"
+     * in den Einstellungen an ist (Standard aus, [RestMusicSettingsRepository.dropLeadInEnabled]).
+     */
+    const val DEFAULT_LEAD_IN_MS: Long = 6_000L
+
+    /** Der Build-up darf hoechstens 1/4 der Restzeit belegen. */
+    private const val MAX_LEAD_IN_REST_DIVISOR: Long = 4L
+
     fun plan(
         remainingRestMs: Long,
         candidates: List<WorkSongDrop>,
         minRestMs: Long = MIN_REST_MS,
         latencyMs: Long = 0L,
         crossfadeMs: Long = 0L,
+        leadInMs: Long = 0L,
     ): DropLandingResult {
         if (remainingRestMs < minRestMs) {
             return DropLandingResult.NotPossible(DropLandingReason.REST_TOO_SHORT)
@@ -121,13 +150,17 @@ object DropLandingPlanner {
             if (drop >= rest) {
                 // Drop liegt hinter dem Go: Rest-Musik laeuft die volle
                 // Restzeit; beim Go (abzueglich Latenz) direkt zum Drop.
+                // Build-up: nie vor Position 0 und nie laenger als ein Viertel der Restzeit,
+                // damit die Rest-Musik den groesseren Teil der Pause behaelt.
+                val lead = leadInMs.coerceIn(0L, minOf(drop, rest / MAX_LEAD_IN_REST_DIVISOR))
                 DropLandingPlan(
                     songId = candidate.songId,
                     markerId = candidate.markerId,
-                    startAtPositionMs = drop,
-                    startAfterDelayMs = (rest - latencyMs).coerceAtLeast(0),
+                    startAtPositionMs = drop - lead,
+                    startAfterDelayMs = (rest - lead - latencyMs).coerceAtLeast(0),
                     kind = DropLandingPlan.Kind.DIRECT_TO_DROP,
                     crossfadeMs = 0L,
+                    leadInMs = lead,
                 )
             } else {
                 // Drop liegt vor dem Go: Work-Titel startet (R - D - L)

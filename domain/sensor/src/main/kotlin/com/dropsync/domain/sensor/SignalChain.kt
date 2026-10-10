@@ -23,6 +23,7 @@ class SignalChain(
     private val oneEuroBeta: Double = 0.007,
     private val envelopeCutoffHz: Double = 3.0,
     private val settleSamples: Int = 50,
+    private val gapSettleSamples: Int = DEFAULT_GAP_SETTLE_SAMPLES,
     private val accelEnabled: Boolean = false,
     private val accelOneEuroMinCutoff: Double = 2.0,
     private val orientationTracker: OrientationTracker? = null,
@@ -195,7 +196,15 @@ class SignalChain(
      * Reconnect), [resetCountingReadiness] fuer die weiche Luecke.
      */
     fun resetCountingReadiness() {
-        samplesSeen = 0
+        // Nur die wenigen Samples, die der One-Euro-Filter zum Einschwingen braucht
+        // (siehe oben: 50-100 ms), nicht die volle Warm-up-Zeit. minOf() verkuerzt nie
+        // ein Warm-up, das vor der Luecke noch nicht fertig war.
+        samplesSeen = minOf(samplesSeen, settleSamples - gapSettleSamples.coerceIn(0, settleSamples))
+    }
+
+    companion object {
+        /** 8 Samples = 160 ms bei 50 Hz: deckt die Filter-Einschwingzeit nach einer Luecke ab. */
+        const val DEFAULT_GAP_SETTLE_SAMPLES = 8
     }
 }
 

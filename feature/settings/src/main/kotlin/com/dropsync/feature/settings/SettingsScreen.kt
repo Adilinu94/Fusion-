@@ -37,6 +37,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -102,6 +103,8 @@ fun SettingsScreen(
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val themeMode by viewModel.themeMode.collectAsStateWithLifecycle()
     val accentColor by viewModel.accentColor.collectAsStateWithLifecycle()
+    val dropTiming by viewModel.dropTiming.collectAsStateWithLifecycle()
+    val dropLeadInEnabled by viewModel.dropLeadInEnabled.collectAsStateWithLifecycle()
     val getReadyEnabled by viewModel.getReadyEnabled.collectAsStateWithLifecycle()
     val getReadySeconds by viewModel.getReadySeconds.collectAsStateWithLifecycle()
     val restPresets by viewModel.restPresets.collectAsStateWithLifecycle()
@@ -190,6 +193,25 @@ fun SettingsScreen(
                 text = stringResource(R.string.settings_timing_hint),
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+        }
+        dropTiming?.let { timing ->
+            item {
+                DropTimingSection(
+                    state = timing,
+                    onSetLatency = viewModel::setDropLatency,
+                    onReset = viewModel::resetDropLatency,
+                )
+            }
+        }
+        item {
+            // Build-up vor dem Drop (experimentell): zum Ausprobieren nach Gehoer.
+            ListItem(
+                headlineContent = { Text(stringResource(R.string.settings_drop_leadin_title)) },
+                supportingContent = { Text(stringResource(R.string.settings_drop_leadin_desc)) },
+                trailingContent = {
+                    Switch(checked = dropLeadInEnabled, onCheckedChange = viewModel::setDropLeadInEnabled)
+                },
             )
         }
         item {
@@ -633,6 +655,71 @@ private fun LinkMarkerDialog(
             }
         },
     )
+}
+
+/**
+ * Ausgabe-Latenz der aktuellen Route. Die Drop-Landung zieht diese Latenz von der Startzeit
+ * ab; ein Tabellenwert (Lautsprecher, Kabel, Bluetooth-Codec) ist nur eine Schaetzung und
+ * streut je Geraet um 100 ms und mehr. Hier stellt die Person ihn nach Gehoer ein - erst
+ * dann gilt das Timing als "stabil" (TimingConfidencePolicy).
+ *
+ * Lokaler Zwischenstand waehrend des Ziehens: gespeichert wird beim Loslassen, damit nicht
+ * jeder 10-ms-Schritt in den DataStore geschrieben wird und der Regler nicht zurueckspringt.
+ */
+@Composable
+private fun DropTimingSection(
+    state: DropTimingState,
+    onSetLatency: (Long) -> Unit,
+    onReset: () -> Unit,
+) {
+    var draft by remember(state.latencyMs) { mutableFloatStateOf(state.latencyMs.toFloat()) }
+    val shownMs = draft.roundToInt()
+    val description = stringResource(R.string.a11y_drop_timing_ms, shownMs)
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = stringResource(R.string.settings_drop_timing_title),
+            style = MaterialTheme.typography.titleSmall,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+        )
+        Text(
+            text = stringResource(R.string.settings_drop_timing_value, shownMs),
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Slider(
+            value = draft,
+            onValueChange = { draft = it },
+            onValueChangeFinished = { onSetLatency(draft.roundToInt().toLong()) },
+            valueRange = DropTimingState.MIN_MS.toFloat()..DropTimingState.MAX_MS.toFloat(),
+            steps = ((DropTimingState.MAX_MS - DropTimingState.MIN_MS) / DropTimingState.STEP_MS).toInt() - 1,
+            modifier =
+                Modifier
+                    .padding(horizontal = 16.dp)
+                    .semantics { stateDescription = description },
+        )
+        Text(
+            text =
+                stringResource(
+                    if (state.calibrated) {
+                        R.string.settings_drop_timing_calibrated
+                    } else {
+                        R.string.settings_drop_timing_estimated
+                    },
+                ),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        Text(
+            text = stringResource(R.string.settings_drop_timing_howto),
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        if (state.calibrated) {
+            TextButton(onClick = onReset, modifier = Modifier.padding(horizontal = 8.dp)) {
+                Text(stringResource(R.string.settings_drop_timing_reset))
+            }
+        }
+    }
 }
 
 /**

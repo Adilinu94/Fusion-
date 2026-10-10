@@ -54,6 +54,7 @@
     <string name="train_new_exercise_chip">+ Neue Übung</string>
     <string name="train_weight_label">GEWICHT · KG</string>
     <string name="train_weight_last">Zuletzt %1$.1f kg</string>
+    <string name="train_rest_last_set">Zuletzt %1$.1f kg × %2$d</string>
     <string name="train_reps_last">Zuletzt %1$d</string>
     <string name="train_weight_decrement">− 2,5</string>
     <string name="train_weight_increment">+ 2,5</string>
@@ -185,6 +186,11 @@
          Eine Frage, keine Korrektur: die Prüfung kann die Zahl nicht exakt
          bestimmen, sie merkt nur, wenn die Signalperiodik widerspricht. -->
     <string name="plausibility_hint">Gezählt %1$d — der Bewegungsrhythmus sagt %2$d. Stimmt die Zahl?</string>
+
+    <!-- Nachzählung am Satzende (SetRecount): eine konkrete Zahl aus dem gesamten
+         Signal, die die Person mit einem Tipp übernehmen kann. Nie automatisch. -->
+    <string name="recount_suggestion">Signalanalyse: %2$d Wiederholungen (live gezählt: %1$d)</string>
+    <string name="recount_adopt">%1$d übernehmen</string>
 
     <!-- Kalibrierungs-Wizard (#26) -->
     <string name="calibration_title">Kalibrierung</string>

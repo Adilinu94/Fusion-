@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 class FakeRestMusicSettingsRepository(
     initialBehavior: RestMusicBehavior = RestMusicBehavior.NORMAL,
     initialDropAuto: Boolean = RestMusicSettingsRepository.DEFAULT_DROP_AUTO_ENABLED,
+    initialDropLeadIn: Boolean = RestMusicSettingsRepository.DEFAULT_DROP_LEAD_IN_ENABLED,
 ) : RestMusicSettingsRepository {
     private val behaviorState = MutableStateFlow(initialBehavior)
     override val behavior: Flow<RestMusicBehavior> = behaviorState
@@ -20,11 +21,17 @@ class FakeRestMusicSettingsRepository(
     private val dropAutoState = MutableStateFlow(initialDropAuto)
     override val dropAutoEnabled: Flow<Boolean> = dropAutoState
 
+    private val dropLeadInState = MutableStateFlow(initialDropLeadIn)
+    override val dropLeadInEnabled: Flow<Boolean> = dropLeadInState
+
     /** Zuletzt gesetzter Wert; null, wenn nie geschrieben wurde. */
     var lastWritten: RestMusicBehavior? = null
         private set
 
     var lastDropAutoWritten: Boolean? = null
+        private set
+
+    var lastDropLeadInWritten: Boolean? = null
         private set
 
     override suspend fun setBehavior(behavior: RestMusicBehavior) {
@@ -35,5 +42,10 @@ class FakeRestMusicSettingsRepository(
     override suspend fun setDropAutoEnabled(enabled: Boolean) {
         lastDropAutoWritten = enabled
         dropAutoState.value = enabled
+    }
+
+    override suspend fun setDropLeadInEnabled(enabled: Boolean) {
+        lastDropLeadInWritten = enabled
+        dropLeadInState.value = enabled
     }
 }

@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -421,6 +422,22 @@ class DropSyncCoordinatorTest {
             dispatcher.scheduler.advanceUntilIdle()
 
             assertEquals(listOf(ArmCall(20L, 60_000L, 20_000L, 0L)), playback.armCalls)
+        }
+
+    @Test
+    fun `DIRECT_TO_DROP mit Build-up steigt vor dem Drop ein, der Drop faellt weiter aufs Go`() =
+        runTest(dispatcher) {
+            restSetup(dropPositionMs = 60_000L)
+            settings.behaviorState.value = RestMusicBehavior.DROP_LANDING
+            settings.dropLeadInState.value = true
+
+            coordinator().start()
+            engine.start(TimerMode.REST, durationMs = 20_000L)
+            dispatcher.scheduler.advanceUntilIdle()
+
+            // Vorlauf = min(6 s, Drop, Restzeit/4 = 5 s) = 5 s: Start bei 55 s nach 15 s Pause,
+            // 55 s + 5 s Wiedergabe = 60 s = Drop genau am Pausenende.
+            assertEquals(listOf(ArmCall(20L, 55_000L, 15_000L, 0L)), playback.armCalls)
         }
 
     @Test
@@ -1074,10 +1091,13 @@ private data class ArmCall(
 private class CoordinatorRestMusicSettings : RestMusicSettingsRepository {
     val behaviorState = MutableStateFlow(RestMusicBehavior.NORMAL)
     val dropAutoState = MutableStateFlow(RestMusicSettingsRepository.DEFAULT_DROP_AUTO_ENABLED)
+    val dropLeadInState = MutableStateFlow(RestMusicSettingsRepository.DEFAULT_DROP_LEAD_IN_ENABLED)
 
     override val behavior: Flow<RestMusicBehavior> = behaviorState
 
     override val dropAutoEnabled: Flow<Boolean> = dropAutoState
+
+    override val dropLeadInEnabled: Flow<Boolean> = dropLeadInState
 
     override suspend fun setBehavior(behavior: RestMusicBehavior) {
         behaviorState.value = behavior
@@ -1085,6 +1105,10 @@ private class CoordinatorRestMusicSettings : RestMusicSettingsRepository {
 
     override suspend fun setDropAutoEnabled(enabled: Boolean) {
         dropAutoState.value = enabled
+    }
+
+    override suspend fun setDropLeadInEnabled(enabled: Boolean) {
+        dropLeadInState.value = enabled
     }
 }
 
@@ -1366,13 +1390,31 @@ private class CoordinatorDropTargetRepository : DropTargetRepository {
 private class CoordinatorRouteProfiles : RouteProfileRepository {
     var latencyMs: Long? = null
 
-    override val currentProfile: Flow<AudioRouteProfile?> = emptyFlow()
+    /** Wie die Latenz zustande kam; Tests mit einer eingestellten Route belassen CALIBRATED. */
+    var confidence: AudioRouteProfile.Confidence = AudioRouteProfile.Confidence.CALIBRATED
+
+    override val currentProfile: Flow<AudioRouteProfile?> =
+        flow {
+            emit(
+                latencyMs?.let {
+                    AudioRouteProfile(
+                        routeKey = "coordinator-test",
+                        sampleRate = 48_000,
+                        channels = 2,
+                        estimatedLatencyMs = it,
+                        confidence = confidence,
+                    )
+                },
+            )
+        }
 
     override suspend fun currentLatencyMs(): Long? = latencyMs
 
     override suspend fun markStale() = Unit
 
     override suspend fun upsert(profile: AudioRouteProfile) = Unit
+
+    override suspend fun clearCalibration() = Unit
 }
 
 private class CoordinatorRestDucking : RestDuckingGate {

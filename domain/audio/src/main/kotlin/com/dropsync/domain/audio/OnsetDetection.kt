@@ -70,7 +70,31 @@ object OnsetDetection {
         minSpacingMs: Long = DEFAULT_MIN_SPACING_MS,
         maxCandidates: Int = DEFAULT_MAX_CANDIDATES,
         minNovelty: Double = DEFAULT_MIN_NOVELTY,
-    ): List<Long> {
+    ): List<Long> =
+        detectScored(
+            energyWindows,
+            windowDurationMs,
+            thresholdWindow,
+            k,
+            minSpacingMs,
+            maxCandidates,
+            minNovelty,
+        ).map { it.first }.sorted()
+
+    /**
+     * Wie [detectOnsets], liefert aber (Position in ms, Novelty) und BEHAELT die Staerke-
+     * Reihenfolge (staerkster zuerst). [DropDetection] braucht die Staerke, um Fullband-
+     * Kandidaten gegen Bass-Rueckkehr-Kandidaten einzuordnen.
+     */
+    internal fun detectScored(
+        energyWindows: List<Double>,
+        windowDurationMs: Long,
+        thresholdWindow: Int = DEFAULT_THRESHOLD_WINDOW,
+        k: Double = DEFAULT_K,
+        minSpacingMs: Long = DEFAULT_MIN_SPACING_MS,
+        maxCandidates: Int = DEFAULT_MAX_CANDIDATES,
+        minNovelty: Double = DEFAULT_MIN_NOVELTY,
+    ): List<Pair<Long, Double>> {
         require(windowDurationMs > 0) { "windowDurationMs muss positiv sein" }
         if (energyWindows.size < 2 || maxCandidates <= 0) return emptyList()
 
@@ -135,9 +159,7 @@ object OnsetDetection {
             }
         }
 
-        return selected
-            .map { it.first * windowDurationMs }
-            .sorted()
+        return selected.map { it.first * windowDurationMs to it.second }
     }
 
     /**
